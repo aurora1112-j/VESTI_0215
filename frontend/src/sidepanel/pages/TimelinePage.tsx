@@ -34,9 +34,9 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
   return (
     <div className="flex h-full flex-col bg-bg-app">
       <header className="flex h-8 shrink-0 items-center justify-between px-4">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <img src={LOGO_BASE64} alt="Vesti" width={20} height={20} />
-          <span className="vesti-brand-wordmark text-vesti-base text-text-primary">
+          <span className="vesti-brand-wordmark text-[14px] text-text-primary">
             Vesti
           </span>
         </div>

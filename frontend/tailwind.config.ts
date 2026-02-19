@@ -2,7 +2,7 @@
 
 const config: Config = {
   darkMode: ["class"],
-  content: ["./src/**/*.{ts,tsx}"],
+  content: ["./src/**/*.{ts,tsx}", "../../packages/vesti-ui/src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
@@ -15,6 +15,10 @@ const config: Config = {
         "bg-primary": "hsl(var(--bg-primary))",
         "bg-secondary": "hsl(var(--bg-secondary))",
         "bg-tertiary": "hsl(var(--bg-tertiary))",
+        "bg-surface-card": "hsl(var(--surface-card))",
+        "bg-surface-card-hover": "hsl(var(--surface-card-hover))",
+        "bg-surface-card-active": "hsl(var(--surface-card-active))",
+        "bg-surface-ai-message": "hsl(var(--surface-ai-message))",
         "surface-card": "hsl(var(--surface-card))",
         "surface-card-hover": "hsl(var(--surface-card-hover))",
         "surface-card-active": "hsl(var(--surface-card-active))",

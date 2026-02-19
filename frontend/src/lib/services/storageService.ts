@@ -10,6 +10,8 @@ import type {
   StorageUsageSnapshot,
   SummaryRecord,
   WeeklyReportRecord,
+  Topic,
+  GardenerResult,
 } from "../types";
 import { sendRequest } from "../messaging/runtime";
 
@@ -26,6 +28,64 @@ export async function getConversations(filters?: {
     target: "offscreen",
     payload: filters,
   }) as Promise<Conversation[]>;
+}
+
+export async function getTopics(): Promise<Topic[]> {
+  return sendRequest({
+    type: "GET_TOPICS",
+    target: "offscreen",
+  }) as Promise<Topic[]>;
+}
+
+export async function createTopic(name: string, parent_id?: number | null): Promise<Topic> {
+  const result = (await sendRequest({
+    type: "CREATE_TOPIC",
+    target: "offscreen",
+    payload: { name, parent_id },
+  })) as { topic: Topic };
+
+  chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+    void chrome.runtime.lastError;
+  });
+
+  return result.topic;
+}
+
+export async function updateConversationTopic(
+  id: number,
+  topic_id: number | null
+): Promise<Conversation> {
+  const result = (await sendRequest({
+    type: "UPDATE_CONVERSATION_TOPIC",
+    target: "offscreen",
+    payload: { id, topic_id },
+  })) as { updated: boolean; conversation: Conversation };
+
+  if (result.updated) {
+    chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+
+  return result.conversation;
+}
+
+export async function runGardener(
+  conversationId: number
+): Promise<{ updated: boolean; conversation: Conversation; result: GardenerResult }> {
+  const result = (await sendRequest({
+    type: "RUN_GARDENER",
+    target: "offscreen",
+    payload: { conversationId },
+  })) as { updated: boolean; conversation: Conversation; result: GardenerResult };
+
+  if (result.updated) {
+    chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+
+  return result;
 }
 
 export async function getMessages(

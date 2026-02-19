@@ -51,6 +51,8 @@ export class CapturePipeline {
         is_archived: false,
         is_trash: false,
         tags: [],
+        topic_id: null,
+        is_starred: false,
       };
 
       const result = await this.sender({ conversation, messages });

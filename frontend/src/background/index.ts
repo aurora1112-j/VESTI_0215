@@ -4,6 +4,9 @@ import type { RequestMessage, ResponseMessage } from "../lib/messaging/protocol"
 import { interceptAndPersistCapture } from "../lib/capture/storage-interceptor";
 import {
   listConversations,
+  getTopics,
+  createTopic,
+  updateConversationTopic,
   listMessages,
   deleteConversation,
   updateConversationTitle,
@@ -14,6 +17,7 @@ import {
   getSummary,
   getWeeklyReport,
 } from "../lib/db/repository";
+import { runGardener } from "../lib/services/gardenerService";
 import { getLlmSettings, setLlmSettings } from "../lib/services/llmSettingsService";
 import { callInference } from "../lib/services/llmService";
 import {
@@ -300,6 +304,25 @@ async function handleOffscreenRequest(message: RequestMessage): Promise<Response
         const data = await listConversations(message.payload);
         return { ok: true, type: messageType, data };
       }
+      case "GET_TOPICS": {
+        const data = await getTopics();
+        return { ok: true, type: messageType, data };
+      }
+      case "CREATE_TOPIC": {
+        const topic = await createTopic(message.payload);
+        return { ok: true, type: messageType, data: { topic } };
+      }
+      case "UPDATE_CONVERSATION_TOPIC": {
+        const conversation = await updateConversationTopic(
+          message.payload.id,
+          message.payload.topic_id
+        );
+        return { ok: true, type: messageType, data: { updated: true, conversation } };
+      }
+      case "RUN_GARDENER": {
+        const data = await runGardener(message.payload.conversationId);
+        return { ok: true, type: messageType, data };
+      }
       case "GET_MESSAGES": {
         const data = await listMessages(message.payload.conversationId);
         return { ok: true, type: messageType, data };
@@ -456,4 +479,3 @@ chrome.runtime.onMessage.addListener(
     return true;
   }
 );
-

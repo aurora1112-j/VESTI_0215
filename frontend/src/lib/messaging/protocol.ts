@@ -7,6 +7,8 @@ import type {
   ExportFormat,
   ExportPayload,
   Platform,
+  Topic,
+  GardenerResult,
   LlmConfig,
   ForceArchiveTransientResult,
   StorageUsageSnapshot,
@@ -39,6 +41,8 @@ export interface ConversationDraft {
   is_archived: boolean;
   is_trash: boolean;
   tags: string[];
+  topic_id: number | null;
+  is_starred: boolean;
 }
 
 export interface ParsedMessage {
@@ -66,6 +70,33 @@ export type RequestMessage =
       via?: "background";
       requestId?: string;
       payload?: ConversationFilters;
+    }
+  | {
+      type: "GET_TOPICS";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+    }
+  | {
+      type: "CREATE_TOPIC";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: { name: string; parent_id?: number | null };
+    }
+  | {
+      type: "UPDATE_CONVERSATION_TOPIC";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: { id: number; topic_id: number | null };
+    }
+  | {
+      type: "RUN_GARDENER";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: { conversationId: number };
     }
   | {
       type: "GET_MESSAGES";
@@ -179,6 +210,10 @@ export type ResponseDataMap = {
     decision: CaptureDecisionMeta;
   };
   GET_CONVERSATIONS: Conversation[];
+  GET_TOPICS: Topic[];
+  CREATE_TOPIC: { topic: Topic };
+  UPDATE_CONVERSATION_TOPIC: { updated: boolean; conversation: Conversation };
+  RUN_GARDENER: { updated: boolean; conversation: Conversation; result: GardenerResult };
   GET_MESSAGES: Message[];
   DELETE_CONVERSATION: { deleted: boolean };
   UPDATE_CONVERSATION_TITLE: { updated: boolean; conversation: Conversation };

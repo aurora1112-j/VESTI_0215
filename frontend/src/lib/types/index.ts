@@ -11,6 +11,29 @@ export type Platform =
   | "Qwen"
   | "Doubao";
 
+export interface Topic {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  created_at: number;
+  updated_at: number;
+  count?: number;
+  children?: Topic[];
+}
+
+export interface GardenerStep {
+  step: string;
+  status: "pending" | "running" | "completed";
+  details?: string;
+}
+
+export interface GardenerResult {
+  tags: string[];
+  matchedTopic?: Topic;
+  createdTopic?: Topic;
+  steps: GardenerStep[];
+}
+
 export interface Conversation {
   id: number;
   uuid: string;
@@ -26,6 +49,8 @@ export interface Conversation {
   is_archived: boolean;
   is_trash: boolean;
   tags: string[];
+  topic_id: number | null;
+  is_starred: boolean;
 }
 
 export interface Message {

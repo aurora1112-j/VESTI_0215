@@ -10,17 +10,7 @@ import type {
   ChatSummaryData,
   WeeklySummaryData,
 } from "../types/insightsPresentation";
-
-const TECH_KEYWORDS: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /\breact\b/i, label: "React" },
-  { pattern: /typescript|\bts\b/i, label: "TypeScript" },
-  { pattern: /plasmo/i, label: "Plasmo" },
-  { pattern: /tailwind/i, label: "Tailwind CSS" },
-  { pattern: /dexie|indexeddb/i, label: "IndexedDB" },
-  { pattern: /parser|selector/i, label: "Parser" },
-  { pattern: /modelscope|qwen|deepseek/i, label: "Model Inference" },
-  { pattern: /prompt|schema/i, label: "Prompt Engineering" },
-];
+import { resolveTechTags } from "./tagging";
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -41,27 +31,7 @@ function dedupe(items: string[]): string[] {
 }
 
 function inferTags(explicitTags: string[] | undefined, fallbackText: string): string[] {
-  const fromExplicit = dedupe(explicitTags ?? []).slice(0, 6);
-  if (fromExplicit.length > 0) {
-    return fromExplicit;
-  }
-
-  const inferred: string[] = [];
-  for (const item of TECH_KEYWORDS) {
-    if (item.pattern.test(fallbackText)) {
-      inferred.push(item.label);
-    }
-    if (inferred.length >= 3) {
-      break;
-    }
-  }
-
-  const deduped = dedupe(inferred);
-  if (deduped.length > 0) {
-    return deduped;
-  }
-
-  return ["General"];
+  return resolveTechTags(explicitTags, fallbackText);
 }
 
 function toLines(text: string): string[] {
