@@ -1,25 +1,26 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  ChevronRight,
   ChevronDown,
   BookOpen,
   List,
   Star,
   ChevronUp,
   Check,
-  Clock,
   ArrowRight,
 } from "lucide-react";
-import type { Conversation, GardenerResult, Platform, Topic, StorageApi } from "../types";
+import type { Platform, Topic, StorageApi, RelatedConversation } from "../types";
 import { MOCK_NOTES } from "../mock-data";
+import { useLibraryData } from "../contexts/library-data";
 
 const platformColors: Record<Platform, string> = {
   ChatGPT: "#1A1A1A",
   Claude: "#1A1A1A",
   Gemini: "#FFFFFF",
   DeepSeek: "#FFFFFF",
+  Qwen: "#1A1A1A",
+  Doubao: "#1A1A1A",
 };
 
 const platformBackgrounds: Record<Platform, string> = {
@@ -27,6 +28,8 @@ const platformBackgrounds: Record<Platform, string> = {
   Claude: "#F7D8BA",
   Gemini: "#3A62D9",
   DeepSeek: "#172554",
+  Qwen: "#F3F4F6",
+  Doubao: "#F3F4F6",
 };
 
 type ViewMode = "conversations" | "notes";
@@ -36,17 +39,17 @@ type LibraryTabProps = {
 };
 
 export function LibraryTab({ storage }: LibraryTabProps) {
-  const { getTopics, getConversations, runGardener } = storage;
+  const { topics, conversations } = useLibraryData();
+  const getRelatedConversations = storage.getRelatedConversations;
   const [viewMode, setViewMode] = useState<ViewMode>("conversations");
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
   const [gardenerExpanded, setGardenerExpanded] = useState(false);
-  const [gardenerResults, setGardenerResults] = useState<Record<number, GardenerResult>>({});
-  const [gardenerRunningId, setGardenerRunningId] = useState<number | null>(null);
-  const [gardenerError, setGardenerError] = useState<string | null>(null);
+  const [listFilter, setListFilter] = useState<"all" | "starred">("all");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [relatedConversations, setRelatedConversations] = useState<RelatedConversation[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
 
   // Note editing state
   const [editingTitle, setEditingTitle] = useState(false);
@@ -55,40 +58,6 @@ export function LibraryTab({ storage }: LibraryTabProps) {
   const [noteSaveStatus, setNoteSaveStatus] = useState<"saved" | "unsaved">("saved");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-
-  const loadLibraryData = useCallback(async () => {
-    try {
-      const [topicData, conversationData] = await Promise.all([
-        getTopics(),
-        getConversations(),
-      ]);
-      setTopics(topicData);
-      setConversations(conversationData);
-    } catch (error) {
-      console.error("[dashboard] Failed to load library data", error);
-    }
-  }, [getTopics, getConversations]);
-
-  useEffect(() => {
-    void loadLibraryData();
-  }, [loadLibraryData]);
-
-  useEffect(() => {
-    if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
-    const handler = (message: unknown) => {
-      if (
-        typeof message === "object" &&
-        message &&
-        (message as { type?: string }).type === "VESTI_DATA_UPDATED"
-      ) {
-        void loadLibraryData();
-      }
-    };
-    chrome.runtime.onMessage.addListener(handler);
-    return () => {
-      chrome.runtime.onMessage.removeListener(handler);
-    };
-  }, [loadLibraryData]);
 
   // Auto-save note with debounce
   useEffect(() => {
@@ -113,34 +82,55 @@ export function LibraryTab({ storage }: LibraryTabProps) {
     }
   }, [selectedNoteId, viewMode]);
 
-  // Initialize selections when data arrives
-  useEffect(() => {
-    if (topics.length > 0 && selectedTopicId === null) {
-      setSelectedTopicId(topics[0].id);
-    }
-    if (topics.length > 0 && selectedTopicId !== null) {
-      const exists = findTopicById(topics, selectedTopicId);
-      if (!exists) {
-        setSelectedTopicId(topics[0].id);
-      }
-    }
-  }, [topics, selectedTopicId]);
-
   useEffect(() => {
     if (conversations.length > 0 && selectedConversationId === null) {
-      setSelectedConversationId(conversations[0].id);
+      return;
     }
     if (conversations.length > 0 && selectedConversationId !== null) {
       const exists = conversations.some((c) => c.id === selectedConversationId);
       if (!exists) {
-        setSelectedConversationId(conversations[0].id);
+        setSelectedConversationId(null);
       }
     }
   }, [conversations, selectedConversationId]);
 
   useEffect(() => {
-    setGardenerError(null);
-  }, [selectedConversationId]);
+    let cancelled = false;
+
+    const loadRelated = async () => {
+      if (!selectedConversationId || !getRelatedConversations) {
+        setRelatedConversations([]);
+        setRelatedError(null);
+        return;
+      }
+
+      setRelatedLoading(true);
+      setRelatedError(null);
+      try {
+        const data = await getRelatedConversations(selectedConversationId, 3);
+        if (!cancelled) {
+          setRelatedConversations(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRelatedConversations([]);
+          setRelatedError(
+            (error as Error)?.message ?? "Failed to load related conversations"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setRelatedLoading(false);
+        }
+      }
+    };
+
+    void loadRelated();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConversationId, getRelatedConversations]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -160,29 +150,48 @@ export function LibraryTab({ storage }: LibraryTabProps) {
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
   const selectedNote = MOCK_NOTES.find((n) => n.id === selectedNoteId);
-  const activeGardener =
-    selectedConversationId !== null ? gardenerResults[selectedConversationId] : undefined;
-  const activeTags =
-    activeGardener?.tags && activeGardener.tags.length > 0
-      ? activeGardener.tags
-      : selectedConversation?.tags ?? [];
-  const activeTopicName =
-    activeGardener?.matchedTopic?.name ??
-    activeGardener?.createdTopic?.name ??
-    (selectedConversation?.topic_id
-      ? findTopicById(topics, selectedConversation.topic_id)?.name
-      : undefined);
-  const hasAnalysis = Boolean(activeTags.length > 0 || activeTopicName);
-  const gardenerSteps = activeGardener?.steps ?? [];
+  const normalizeTags = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
+  };
 
-  const filteredConversations = selectedTopicId
-    ? conversations.filter((c) => {
-        const topic = findTopicById(topics, selectedTopicId);
-        if (!topic) return false;
-        const topicIds = collectTopicIds(topic);
-        return c.topic_id !== null && topicIds.includes(c.topic_id);
-      })
-    : conversations;
+  const activeTags = normalizeTags(selectedConversation?.tags);
+  const activeTopicName =
+    selectedConversation?.topic_id
+      ? findTopicById(topics, selectedConversation.topic_id)?.name
+      : undefined;
+  const hasAnalysis = Boolean(activeTags.length > 0 || activeTopicName);
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const conversation of conversations) {
+      for (const tag of normalizeTags(conversation.tags)) {
+        const normalized = tag.trim();
+        if (!normalized) continue;
+        counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  }, [conversations]);
+
+  const starredCount = useMemo(
+    () => conversations.filter((conversation) => conversation.is_starred).length,
+    [conversations]
+  );
+
+  const baseConversations =
+    listFilter === "starred"
+      ? conversations.filter((conversation) => conversation.is_starred)
+      : conversations;
+  const tagFilteredConversations = selectedTag
+    ? baseConversations.filter((conversation) =>
+        normalizeTags(conversation.tags).includes(selectedTag)
+      )
+    : baseConversations;
+
+  const filteredConversations = tagFilteredConversations;
+
 
   function formatTimeAgo(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -198,16 +207,6 @@ export function LibraryTab({ storage }: LibraryTabProps) {
     return `${Math.floor(months / 12)}y ago`;
   }
 
-  function renderGardenerStepIcon(status: "pending" | "running" | "completed") {
-    if (status === "completed") {
-      return <Check strokeWidth={1.5} className="w-4 h-4 text-success" />;
-    }
-    if (status === "running") {
-      return <Clock strokeWidth={1.5} className="w-4 h-4 text-text-tertiary" />;
-    }
-    return <ChevronRight strokeWidth={1.5} className="w-4 h-4 text-text-tertiary" />;
-  }
-
   function findTopicById(nodes: Topic[], id: number): Topic | null {
     for (const node of nodes) {
       if (node.id === id) return node;
@@ -219,72 +218,10 @@ export function LibraryTab({ storage }: LibraryTabProps) {
     return null;
   }
 
-  function collectTopicIds(topic: Topic): number[] {
-    const ids = [topic.id];
-    if (topic.children) {
-      topic.children.forEach((child) => {
-        ids.push(...collectTopicIds(child));
-      });
-    }
-    return ids;
-  }
-
-  const renderTopicItem = (topic: Topic, level: number = 0) => {
-    const isSelected = selectedTopicId === topic.id;
-    const hasChildren = topic.children && topic.children.length > 0;
-
-    return (
-      <div key={topic.id}>
-        <button
-          onClick={() => {
-            setSelectedTopicId(topic.id);
-            setViewMode("conversations");
-          }}
-          className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-200 relative ${
-            isSelected && viewMode === "conversations"
-              ? "bg-bg-surface-card-hover"
-              : "hover:bg-bg-surface-card"
-          }`}
-          style={{ paddingLeft: `${12 + level * 16}px` }}
-        >
-          {isSelected && viewMode === "conversations" && (
-            <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary" />
-          )}
-          {hasChildren && (
-            <span className="flex-shrink-0">
-              <ChevronRight strokeWidth={1.5} className="w-4 h-4 text-text-primary" />
-            </span>
-          )}
-          <span className="flex-1 text-sm font-sans font-normal text-text-primary">
-            {topic.name}
-          </span>
-          <span className="text-xs font-sans text-text-tertiary">{topic.count ?? 0}</span>
-        </button>
-      </div>
-    );
-  };
-
-  const handleRunGardener = async (conversationId: number) => {
-    if (!runGardener) return;
-    setSelectedConversationId(conversationId);
-    setViewMode("conversations");
-    setGardenerExpanded(true);
-    setGardenerError(null);
-    setGardenerRunningId(conversationId);
-    try {
-      const result = await runGardener(conversationId);
-      setGardenerResults((prev) => ({ ...prev, [conversationId]: result.result }));
-      await loadLibraryData();
-    } catch (error) {
-      console.error("[dashboard] Gardener failed", error);
-      setGardenerError((error as Error)?.message ?? "Failed to run Gardener.");
-    } finally {
-      setGardenerRunningId(null);
-    }
-  };
-
   const switchToConversation = (conversationId: number) => {
     setViewMode("conversations");
+    setListFilter("all");
+    setSelectedTag(null);
     setSelectedConversationId(conversationId);
     const conversation = conversations.find((c) => c.id === conversationId);
     if (conversation) {
@@ -296,30 +233,82 @@ export function LibraryTab({ storage }: LibraryTabProps) {
     <div className="flex h-full">
       {/* Left Column - Sidebar (200px) */}
       <aside className="w-[200px] bg-bg-secondary flex flex-col">
-        <div className="flex-1 overflow-y-auto pt-4">{topics.map((topic) => renderTopicItem(topic))}</div>
+        <div className="flex-1 overflow-y-auto pt-4">
+          {tagCounts.length > 0 && (
+            <div className="flex flex-col">
+              {tagCounts.map(({ tag, count }) => {
+                const isSelected = selectedTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      setViewMode("conversations");
+                      setListFilter("all");
+                      setSelectedTag(tag);
+                      setSelectedConversationId(null);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-200 relative ${
+                      isSelected && viewMode === "conversations"
+                        ? "bg-bg-surface-card-hover"
+                        : "hover:bg-bg-surface-card"
+                    }`}
+                  >
+                    {isSelected && viewMode === "conversations" && (
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary" />
+                    )}
+                    <span className="flex-1 text-sm font-sans text-text-primary">{tag}</span>
+                    <span className="text-xs font-sans text-text-tertiary">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="border-t border-border-subtle">
           <button
             onClick={() => {
               setViewMode("conversations");
-              setSelectedTopicId(null);
+              setListFilter("all");
+              setSelectedTag(null);
+              setSelectedConversationId(null);
             }}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors relative ${
-              viewMode === "conversations" && !selectedTopicId
+              viewMode === "conversations" &&
+              !selectedTag &&
+              listFilter === "all"
                 ? "bg-bg-surface-card-hover"
                 : "hover:bg-bg-surface-card"
             }`}
           >
-            {viewMode === "conversations" && !selectedTopicId && (
+            {viewMode === "conversations" &&
+              !selectedTag &&
+              listFilter === "all" && (
               <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary" />
             )}
             <List strokeWidth={1.5} className="w-4 h-4 text-text-secondary" />
             <span className="flex-1 text-sm font-sans text-text-primary">All Conversations</span>
             <span className="text-xs font-sans text-text-tertiary">{conversations.length}</span>
           </button>
-          <button className="w-full flex items-center gap-2 px-3 py-2 hover:bg-bg-surface-card transition-colors">
+          <button
+            onClick={() => {
+              setViewMode("conversations");
+              setListFilter("starred");
+              setSelectedTag(null);
+              setSelectedConversationId(null);
+            }}
+            className={`w-full flex items-center gap-2 px-3 py-2 transition-colors relative ${
+              viewMode === "conversations" && listFilter === "starred"
+                ? "bg-bg-surface-card-hover"
+                : "hover:bg-bg-surface-card"
+            }`}
+          >
+            {viewMode === "conversations" && listFilter === "starred" && (
+              <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary" />
+            )}
             <Star strokeWidth={1.5} className="w-4 h-4 text-text-secondary" />
             <span className="flex-1 text-sm font-sans text-text-primary">Starred</span>
+            <span className="text-xs font-sans text-text-tertiary">{starredCount}</span>
           </button>
         </div>
 
@@ -354,7 +343,11 @@ export function LibraryTab({ storage }: LibraryTabProps) {
               <div className="flex items-baseline justify-between">
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-serif font-normal text-text-primary">
-                    {selectedTopicId ? findTopicById(topics, selectedTopicId)?.name : "All Conversations"}
+                    {selectedTag
+                        ? selectedTag
+                      : listFilter === "starred"
+                        ? "Starred"
+                        : "All Conversations"}
                   </h2>
                   <span className="text-xs font-sans text-text-tertiary">
                     · {filteredConversations.length} conversations
@@ -376,10 +369,6 @@ export function LibraryTab({ storage }: LibraryTabProps) {
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5 mt-2">
               {filteredConversations.map((conv) => {
                 const isSelected = conv.id === selectedConversationId;
-                const displayTags =
-                  gardenerResults[conv.id]?.tags && gardenerResults[conv.id]!.tags.length > 0
-                    ? gardenerResults[conv.id]!.tags
-                    : conv.tags;
                 return (
                   <button
                     key={conv.id}
@@ -390,66 +379,54 @@ export function LibraryTab({ storage }: LibraryTabProps) {
                         : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
                     }`}
                   >
-                    {runGardener && (
-                      <span
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleRunGardener(conv.id);
-                        }}
-                        role="button"
-                        aria-disabled={gardenerRunningId === conv.id}
-                        className={`absolute top-2 right-2 px-2 py-1 rounded-md text-[10px] font-sans transition-all cursor-pointer ${
-                          gardenerRunningId === conv.id
-                            ? "bg-bg-secondary text-text-secondary"
-                            : "bg-bg-secondary text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-text-primary"
-                        }`}
-                      >
-                        {gardenerRunningId === conv.id ? "Running..." : "Run Gardener"}
-                      </span>
-                    )}
-                    {isSelected && (
-                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary rounded-r" />
-                    )}
-                    <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug">
+                    <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug line-clamp-1">
                       {conv.title}
                     </h3>
-                    <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
-                      {conv.snippet}
-                    </p>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span
-                        className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
-                        style={{
-                          backgroundColor: platformBackgrounds[conv.platform],
-                          color: platformColors[conv.platform],
-                        }}
-                      >
-                        {conv.platform}
-                      </span>
-                      {displayTags.slice(0, 2).map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-2 py-0.5 rounded-full text-[11px] font-sans text-text-secondary bg-bg-secondary"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      <span className="ml-auto text-[11px] font-sans text-text-tertiary">
-                        {formatTimeAgo(conv.updated_at)}
-                      </span>
-                      {conv.has_note && (
-                        <span
-                          title="Has notes"
-                          style={{
-                            display: "inline-block",
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            backgroundColor: "#3266AD",
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
+                    <div
+                      className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
+                        isSelected ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
+                          {conv.snippet}
+                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
+                            style={{
+                              backgroundColor: platformBackgrounds[conv.platform],
+                              color: platformColors[conv.platform],
+                            }}
+                          >
+                            {conv.platform}
+                          </span>
+                          {normalizeTags(conv.tags).slice(0, 2).map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-full text-[11px] font-sans text-text-secondary bg-bg-secondary"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          <span className="ml-auto text-[11px] font-sans text-text-tertiary">
+                            {formatTimeAgo(conv.updated_at)}
+                          </span>
+                          {conv.has_note && (
+                            <span
+                              title="Has notes"
+                              style={{
+                                display: "inline-block",
+                                width: 6,
+                                height: 6,
+                                borderRadius: "50%",
+                                backgroundColor: "#3266AD",
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </button>
                 );
@@ -608,29 +585,9 @@ export function LibraryTab({ storage }: LibraryTabProps) {
               </button>
 
               {gardenerExpanded && (
-                <>
-                  {gardenerSteps.length > 0 ? (
-                    <div className="mt-3 p-4 rounded-lg bg-bg-surface-card space-y-3">
-                      {gardenerSteps.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-sm font-sans">
-                          {renderGardenerStepIcon(item.status)}
-                          <span className="text-text-primary">{item.step}</span>
-                          {item.details && (
-                            <span className="text-xs text-text-tertiary ml-auto">
-                              {item.details}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-3 p-4 rounded-lg bg-bg-surface-card text-sm font-sans text-text-tertiary">
-                      {gardenerError
-                        ? `Gardener failed: ${gardenerError}`
-                        : "Run Gardener to see the analysis steps."}
-                    </div>
-                  )}
-                </>
+                <div className="mt-3 p-4 rounded-lg bg-bg-surface-card text-sm font-sans text-text-tertiary">
+                  Analysis runs automatically after capture. Step details are not stored yet.
+                </div>
               )}
             </div>
 
@@ -665,8 +622,8 @@ export function LibraryTab({ storage }: LibraryTabProps) {
                   note.linked_conversation_ids.includes(selectedConversation.id)
                 ).length > 0 && (
                   <>
-                    <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-3">
-                      Related Notes
+                    <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-4">
+                      RELATED NOTES
                     </h3>
                     <div className="space-y-2">
                       {MOCK_NOTES.filter((note) =>
@@ -680,10 +637,11 @@ export function LibraryTab({ storage }: LibraryTabProps) {
                           }}
                           className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-bg-surface-card transition-colors group"
                         >
-                          <span className="text-sm font-sans text-text-primary">{note.title}</span>
-                          <span className="text-xs font-sans text-accent-primary flex items-center gap-1">
-                            Open
-                            <ArrowRight strokeWidth={1.5} className="w-3 h-3" />
+                          <span className="text-[13px] font-sans text-text-primary">
+                            {note.title}
+                          </span>
+                          <span className="text-[13px] font-sans text-accent-primary">
+                            Open →
                           </span>
                         </button>
                       ))}
@@ -694,41 +652,48 @@ export function LibraryTab({ storage }: LibraryTabProps) {
             )}
 
             {/* Related Conversations */}
-            <div className="mt-10">
-              <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-3">
-                Related Conversations
+            <div className="mt-12 pt-6 border-t border-border-subtle">
+              <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-4">
+                RELATED CONVERSATIONS
               </h3>
               <div className="space-y-2">
-                {[1, 2, 3].map((convId) => {
-                  const conversation = conversations.find((c) => c.id === convId);
-                  if (!conversation) return null;
-                  return (
+                {relatedLoading && (
+                  <div className="text-[13px] font-sans text-text-tertiary">
+                    Finding related conversations...
+                  </div>
+                )}
+                {!relatedLoading && relatedConversations.length === 0 && (
+                  <div className="text-[13px] font-sans text-text-tertiary">
+                    {relatedError ? "Unable to load related conversations." : "No related conversations yet."}
+                  </div>
+                )}
+                {!relatedLoading &&
+                  relatedConversations.map((related) => (
                     <button
-                      key={conversation.id}
-                      onClick={() => switchToConversation(conversation.id)}
+                      key={related.id}
+                      onClick={() => switchToConversation(related.id)}
                       className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-bg-surface-card transition-colors group relative"
                     >
-                      <div>
-                        <span className="text-sm font-sans text-text-primary block">
-                          {conversation.title}
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-primary opacity-0 group-hover:opacity-100 transition-opacity rounded-r" />
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className="text-[13px] font-sans text-text-primary truncate">
+                          {related.title}
                         </span>
                         <span
-                          className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none mt-1 inline-block"
+                          className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none flex-shrink-0"
                           style={{
-                            backgroundColor: platformBackgrounds[conversation.platform],
-                            color: platformColors[conversation.platform],
+                            backgroundColor: platformBackgrounds[related.platform],
+                            color: platformColors[related.platform],
                           }}
                         >
-                          {conversation.platform}
+                          {related.platform}
                         </span>
                       </div>
-                      <span className="text-xs font-sans text-accent-primary flex items-center gap-1">
-                        View
-                        <ArrowRight strokeWidth={1.5} className="w-3 h-3" />
+                      <span className="text-xs font-sans text-accent-primary font-medium">
+                        {related.similarity}%
                       </span>
                     </button>
-                  );
-                })}
+                  ))}
               </div>
             </div>
           </div>
@@ -738,49 +703,60 @@ export function LibraryTab({ storage }: LibraryTabProps) {
       {viewMode === "notes" && selectedNote && (
         <div className="flex-1 bg-bg-primary overflow-y-auto">
           <div className="max-w-3xl mx-auto px-8 py-6">
-            <div className="mb-6">
+            <div className="mb-4">
               {editingTitle ? (
                 <input
                   ref={titleInputRef}
+                  type="text"
                   value={noteTitle}
                   onChange={(e) => setNoteTitle(e.target.value)}
                   onBlur={() => setEditingTitle(false)}
-                  className="text-2xl font-serif font-normal text-text-primary bg-transparent border-b border-accent-primary focus:outline-none w-full"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setEditingTitle(false);
+                    if (e.key === "Escape") {
+                      setNoteTitle(selectedNote.title);
+                      setEditingTitle(false);
+                    }
+                  }}
+                  className="w-full text-2xl font-serif font-normal text-text-primary bg-transparent border-b border-accent-primary outline-none"
                 />
               ) : (
-                <button
+                <h1
                   onClick={() => setEditingTitle(true)}
-                  className="text-2xl font-serif font-normal text-text-primary hover:text-accent-primary transition-colors"
+                  className="text-2xl font-serif font-normal text-text-primary cursor-text hover:opacity-70 transition-opacity"
                 >
-                  {noteTitle}
-                </button>
+                  {noteTitle || selectedNote.title}
+                </h1>
               )}
-              <div className="flex items-center gap-2 mt-2">
-                {selectedNote.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-1 rounded-md text-[13px] font-sans text-text-secondary bg-bg-secondary"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                <span className="text-xs font-sans text-text-tertiary ml-auto">
-                  {noteSaveStatus === "unsaved"
-                    ? "Unsaved changes"
-                    : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
-                </span>
-              </div>
             </div>
 
-            <div className="mb-8">
-              <textarea
-                ref={textareaRef}
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                className="w-full min-h-[240px] bg-transparent text-[13px] font-mono text-text-primary leading-relaxed focus:outline-none resize-none"
-                placeholder="Start writing..."
-              />
+            <div className="flex items-center gap-2 text-[13px] font-sans text-text-secondary mb-6 pb-6 border-b border-border-subtle">
+              {selectedNote.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2.5 py-1 rounded-md text-[13px] font-sans text-text-secondary bg-bg-secondary"
+                >
+                  {tag}
+                </span>
+              ))}
+              <span className="ml-auto">
+                {noteSaveStatus === "unsaved"
+                  ? "Unsaved changes"
+                  : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
+              </span>
             </div>
+
+            <textarea
+              ref={textareaRef}
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Start writing..."
+              className="w-full bg-transparent border-none outline-none resize-none text-[13px] leading-[1.7] text-text-primary placeholder:text-text-tertiary mb-12"
+              style={{
+                fontFamily: "\"JetBrains Mono\", \"SF Mono\", Menlo, monospace",
+                minHeight: "240px",
+              }}
+            />
 
             <div className="mt-8">
               <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-3">

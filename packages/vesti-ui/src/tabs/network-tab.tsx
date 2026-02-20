@@ -1,20 +1,49 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X, ArrowRight, ChevronDown } from "lucide-react";
+import type { Platform } from "../types";
+import { useLibraryData } from "../contexts/library-data";
 
-const mockNodes = [
-  { id: 1, x: 420, y: 280, r: 22, color: "#10A37F", label: "React Virtual List", platform: "ChatGPT" },
-  { id: 2, x: 580, y: 200, r: 18, color: "#D97757", label: "Rust Ownership", platform: "Claude" },
-  { id: 3, x: 650, y: 340, r: 16, color: "#4285F4", label: "AI Papers 2024", platform: "Gemini" },
-  { id: 4, x: 300, y: 200, r: 20, color: "#1565C0", label: "PostgreSQL Tuning", platform: "DeepSeek" },
-  { id: 5, x: 500, y: 420, r: 24, color: "#10A37F", label: "Chrome Extension", platform: "ChatGPT" },
-  { id: 6, x: 740, y: 260, r: 17, color: "#D97757", label: "TypeScript Migration", platform: "Claude" },
-  { id: 7, x: 350, y: 380, r: 15, color: "#1565C0", label: "Docker Compose", platform: "DeepSeek" },
-  { id: 8, x: 680, y: 440, r: 16, color: "#4285F4", label: "SwiftUI vs Flutter", platform: "Gemini" },
+const platformColors: Record<Platform, string> = {
+  ChatGPT: "#F3F4F6",
+  Claude: "#F7D8BA",
+  Gemini: "#3A62D9",
+  DeepSeek: "#172554",
+  Qwen: "#F3F4F6",
+  Doubao: "#F3F4F6",
+};
+
+interface Node {
+  id: number;
+  x: number;
+  y: number;
+  r: number;
+  color: string;
+  label: string;
+  platform: Platform;
+  topicName?: string;
+  isStarred?: boolean;
+}
+
+interface Edge {
+  source: number;
+  target: number;
+  weight: number;
+}
+
+const mockNodes: Node[] = [
+  { id: 1, x: 420, y: 280, r: 22, color: "#F3F4F6", label: "React Virtual List", platform: "ChatGPT" },
+  { id: 2, x: 580, y: 200, r: 18, color: "#F7D8BA", label: "Rust Ownership", platform: "Claude" },
+  { id: 3, x: 650, y: 340, r: 16, color: "#3A62D9", label: "AI Papers 2024", platform: "Gemini" },
+  { id: 4, x: 300, y: 200, r: 20, color: "#172554", label: "PostgreSQL Tuning", platform: "DeepSeek" },
+  { id: 5, x: 500, y: 420, r: 24, color: "#F3F4F6", label: "Chrome Extension", platform: "ChatGPT" },
+  { id: 6, x: 740, y: 260, r: 17, color: "#F7D8BA", label: "TypeScript Migration", platform: "Claude" },
+  { id: 7, x: 350, y: 380, r: 15, color: "#172554", label: "Docker Compose", platform: "DeepSeek" },
+  { id: 8, x: 680, y: 440, r: 16, color: "#3A62D9", label: "SwiftUI vs Flutter", platform: "Gemini" },
 ];
 
-const mockEdges = [
+const mockEdges: Edge[] = [
   { source: 1, target: 5, weight: 0.87 },
   { source: 1, target: 6, weight: 0.74 },
   { source: 2, target: 6, weight: 0.65 },
@@ -24,40 +53,137 @@ const mockEdges = [
   { source: 1, target: 4, weight: 0.42 },
 ];
 
-const platformFilters = [
-  { label: "All", value: "all" },
-  { label: "ChatGPT", value: "chatgpt" },
-  { label: "Claude", value: "claude" },
-  { label: "Gemini", value: "gemini" },
-  { label: "DeepSeek", value: "deepseek" },
-];
-
 export function NetworkTab() {
-  const [selectedFilter, setSelectedFilter] = useState("all");
-  const [selectedNode, setSelectedNode] = useState<typeof mockNodes[number] | null>(null);
+  const { conversations, topics } = useLibraryData();
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform | "all">("all");
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+
+  const platforms: (Platform | "all")[] = [
+    "all",
+    "ChatGPT",
+    "Claude",
+    "Gemini",
+    "DeepSeek",
+    "Qwen",
+    "Doubao",
+  ];
+
+  const layoutPositions = useMemo(
+    () =>
+      mockNodes.map((node) => ({
+        x: node.x,
+        y: node.y,
+      })),
+    []
+  );
+
+  const topicMap = useMemo(() => {
+    const map = new Map<number, string>();
+    const walk = (items: typeof topics) => {
+      items.forEach((topic) => {
+        map.set(topic.id, topic.name);
+        if (topic.children) walk(topic.children);
+      });
+    };
+    walk(topics);
+    return map;
+  }, [topics]);
+
+  const baseNodes = useMemo<Node[]>(() => {
+    if (!conversations.length) {
+      return mockNodes;
+    }
+
+    return conversations.slice(0, layoutPositions.length).map((conversation, index) => {
+      const position = layoutPositions[index];
+      return {
+        id: conversation.id,
+        x: position.x,
+        y: position.y,
+        r: conversation.is_starred ? 24 : 16,
+        color: platformColors[conversation.platform],
+        label: conversation.title || "Untitled Conversation",
+        platform: conversation.platform,
+        topicName: conversation.topic_id ? topicMap.get(conversation.topic_id) : undefined,
+        isStarred: conversation.is_starred,
+      };
+    });
+  }, [conversations, layoutPositions, topicMap]);
+
+  const visibleNodes = useMemo(() => {
+    if (selectedPlatform === "all") return baseNodes;
+    return baseNodes.filter((node) => node.platform === selectedPlatform);
+  }, [baseNodes, selectedPlatform]);
+
+  const visibleNodeIds = useMemo(
+    () => new Set(visibleNodes.map((node) => node.id)),
+    [visibleNodes]
+  );
+
+  const baseEdges = useMemo<Edge[]>(() => {
+    if (!conversations.length) {
+      return mockEdges;
+    }
+    return baseNodes.slice(0, baseNodes.length - 1).map((node, index) => {
+      const next = baseNodes[index + 1];
+      return {
+        source: node.id,
+        target: next.id,
+        weight: node.isStarred || next.isStarred ? 0.7 : 0.5,
+      };
+    });
+  }, [baseNodes, conversations.length]);
+
+  const visibleEdges = useMemo(
+    () =>
+      baseEdges.filter(
+        (edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
+      ),
+    [baseEdges, visibleNodeIds]
+  );
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const next = baseNodes.find((node) => node.id === selectedNode.id);
+    if (!next || !visibleNodeIds.has(next.id)) {
+      setSelectedNode(null);
+      return;
+    }
+    setSelectedNode(next);
+  }, [baseNodes, selectedNode, visibleNodeIds]);
 
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="h-10 bg-bg-tertiary border-b border-border-subtle px-4 flex items-center gap-3">
-        {platformFilters.map((filter) => (
-          <button
-            key={filter.value}
-            onClick={() => setSelectedFilter(filter.value)}
-            className={`px-3 py-1 rounded-full text-[11px] font-sans transition-all ${
-              selectedFilter === filter.value
-                ? "bg-accent-primary text-white"
-                : "bg-bg-surface-card text-text-secondary hover:bg-bg-surface-card-hover"
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+        <div className="flex items-center gap-2">
+          {platforms.map((platform) => (
+            <button
+              key={platform}
+              onClick={() => setSelectedPlatform(platform)}
+              className={`px-3 py-1 rounded-full text-[11px] font-sans font-medium transition-all ${
+                selectedPlatform === platform
+                  ? platform === "all"
+                    ? "bg-accent-primary text-white"
+                    : "text-white"
+                  : "bg-bg-surface-card text-text-secondary hover:bg-bg-surface-card-hover"
+              }`}
+              style={
+                selectedPlatform === platform && platform !== "all"
+                  ? { backgroundColor: platformColors[platform] }
+                  : {}
+              }
+            >
+              {platform === "all" ? "All" : platform}
+            </button>
+          ))}
+        </div>
 
         <button className="ml-auto px-3 py-1 rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover text-[11px] font-sans text-text-secondary transition-all flex items-center gap-1.5">
-          Time Range
+          <span>Time Range</span>
           <ChevronDown strokeWidth={1.5} className="w-3 h-3" />
         </button>
+
         <button className="px-3 py-1 rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover text-[11px] font-sans text-text-secondary transition-all">
           Reset View
         </button>
@@ -65,10 +191,10 @@ export function NetworkTab() {
 
       {/* Graph Area */}
       <div className="flex-1 relative bg-bg-tertiary overflow-hidden">
-        <svg width="100%" height="100%" viewBox="0 0 1040 580">
-          {mockEdges.map((edge) => {
-            const s = mockNodes.find((n) => n.id === edge.source);
-            const t = mockNodes.find((n) => n.id === edge.target);
+        <svg width="100%" height="100%" viewBox="0 0 1040 580" className="absolute inset-0">
+          {visibleEdges.map((edge) => {
+            const s = visibleNodes.find((n) => n.id === edge.source);
+            const t = visibleNodes.find((n) => n.id === edge.target);
             if (!s || !t) return null;
             return (
               <line
@@ -83,11 +209,12 @@ export function NetworkTab() {
               />
             );
           })}
-          {mockNodes.map((node) => (
+          {visibleNodes.map((node) => (
             <g
               key={node.id}
               style={{ cursor: "pointer" }}
               onClick={() => setSelectedNode(node)}
+              className="hover:opacity-90 transition-opacity"
             >
               <circle
                 cx={node.x}
@@ -104,7 +231,7 @@ export function NetworkTab() {
                 textAnchor="middle"
                 fontSize={11}
                 fill="#6B6B6B"
-                fontFamily="'Google Sans', sans-serif"
+                fontFamily="'Nunito Sans', sans-serif"
               >
                 {node.label.length > 16 ? node.label.slice(0, 16) + "…" : node.label}
               </text>
@@ -112,66 +239,83 @@ export function NetworkTab() {
           ))}
         </svg>
 
-        {/* Legend */}
         <div className="absolute bottom-4 left-4 bg-bg-surface-card rounded-lg px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.04)] flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#10A37F]" />
-            <span className="text-[11px] font-sans text-text-secondary">ChatGPT</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#D97757]" />
-            <span className="text-[11px] font-sans text-text-secondary">Claude</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#4285F4]" />
-            <span className="text-[11px] font-sans text-text-secondary">Gemini</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#1565C0]" />
-            <span className="text-[11px] font-sans text-text-secondary">DeepSeek</span>
-          </div>
+          {(["ChatGPT", "Claude", "Gemini", "DeepSeek"] as Platform[]).map((platform) => (
+            <div key={platform} className="flex items-center gap-1.5">
+              <div
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: platformColors[platform] }}
+              />
+              <span className="text-[11px] font-sans text-text-secondary">{platform}</span>
+            </div>
+          ))}
         </div>
+      </div>
 
-        {/* Node Detail Drawer */}
-        <div
-          className={`fixed top-0 right-0 bottom-0 w-80 bg-bg-primary shadow-2xl z-50 overflow-y-auto transition-transform duration-200 ${
-            selectedNode ? "translate-x-0" : "translate-x-full"
-          }`}
-        >
-          {selectedNode && (
-            <div className="p-6">
+      {selectedNode && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/20 z-40"
+            onClick={() => setSelectedNode(null)}
+          />
+          <div
+            className="fixed top-0 right-0 bottom-0 w-80 bg-bg-primary shadow-2xl z-50 overflow-y-auto transition-transform duration-200"
+            style={{ transform: "translateX(0)" }}
+          >
+            <div className="p-4">
               <button
                 onClick={() => setSelectedNode(null)}
-                className="text-xs font-sans text-text-tertiary hover:text-text-primary mb-6"
+                className="flex items-center gap-2 text-sm font-sans text-text-secondary hover:text-text-primary mb-4 transition-colors"
               >
-                ← Close
+                <X strokeWidth={1.5} className="w-4 h-4" />
+                <span>Close</span>
               </button>
+
               <h2 className="text-lg font-serif font-normal text-text-primary mb-3">
                 {selectedNode.label}
               </h2>
-              <div className="flex items-center gap-2 text-[11px] font-sans text-text-tertiary mb-6">
-                <span>{selectedNode.platform}</span>
-                <span>·</span>
-                <span>2yr ago</span>
+
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                <span
+                  className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
+                  style={{
+                    backgroundColor: platformColors[selectedNode.platform],
+                    color:
+                      selectedNode.platform === "ChatGPT" || selectedNode.platform === "Claude"
+                        ? "#1A1A1A"
+                        : "#FFFFFF",
+                  }}
+                >
+                  {selectedNode.platform}
+                </span>
+                <span className="text-xs font-sans text-text-tertiary">2yr ago</span>
+                {selectedNode.topicName && (
+                  <span className="text-xs font-sans text-text-tertiary">
+                    · {selectedNode.topicName}
+                  </span>
+                )}
+                {selectedNode.isStarred && (
+                  <span className="text-xs font-sans text-text-tertiary">· Starred</span>
+                )}
               </div>
 
-              {/* Summary Card */}
               <div className="mb-6 p-3 rounded-lg bg-bg-surface-card">
-                <div className="text-sm font-sans text-text-primary mb-2">AI Summary</div>
-                <div className="text-[13px] font-sans text-text-secondary">
-                  Discussed key implementation details and trade-offs. Highlights include performance
-                  optimizations and future scalability concerns.
+                <div className="flex items-center gap-2 text-sm font-sans text-text-primary mb-2">
+                  <span>✓ Analyzed</span>
                 </div>
+                <p className="text-xs font-sans text-text-secondary">
+                  Discussion about {selectedNode.label.toLowerCase()} covering implementation strategies, best practices, and common patterns.
+                </p>
               </div>
 
-              <button className="text-sm font-sans text-accent-primary flex items-center gap-1">
-                View in Library
+              <button className="w-full py-2.5 px-4 rounded-lg bg-accent-primary hover:bg-accent-primary/90 text-white text-sm font-sans font-medium transition-all flex items-center justify-center gap-2">
+                <span>View in Library</span>
                 <ArrowRight strokeWidth={1.5} className="w-4 h-4" />
               </button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

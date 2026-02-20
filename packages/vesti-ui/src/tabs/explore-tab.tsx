@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import type { Platform } from "../types";
+import { useLibraryData } from "../contexts/library-data";
 
 const platformColors: Record<Platform, { bg: string; text: string }> = {
   ChatGPT: { bg: "#F3F4F6", text: "#1A1A1A" },
   Claude: { bg: "#F7D8BA", text: "#1A1A1A" },
   Gemini: { bg: "#3A62D9", text: "#FFFFFF" },
   DeepSeek: { bg: "#172554", text: "#FFFFFF" },
+  Qwen: { bg: "#F3F4F6", text: "#1A1A1A" },
+  Doubao: { bg: "#F3F4F6", text: "#1A1A1A" },
 };
 
 const sampleQuestions = [
@@ -50,8 +53,18 @@ const mockSources = [
 ];
 
 export function ExploreTab() {
+  const { conversations } = useLibraryData();
   const [question, setQuestion] = useState("");
   const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  const sources = useMemo(() => {
+    if (conversations.length === 0) return mockSources;
+    return conversations.slice(0, 3).map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title || "Untitled Conversation",
+      platform: conversation.platform,
+    }));
+  }, [conversations]);
 
   const handleSubmit = (q: string) => {
     setQuestion(q);
@@ -128,7 +141,7 @@ export function ExploreTab() {
                 Sources
               </h3>
               <div className="space-y-2">
-                {mockSources.map((source) => (
+                {sources.map((source) => (
                   <button
                     key={source.id}
                     className="w-full flex items-center justify-between p-3 rounded-lg bg-bg-surface-card hover:bg-bg-surface-card-hover transition-all group"

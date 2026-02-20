@@ -1,4 +1,10 @@
-export type Platform = "ChatGPT" | "Claude" | "Gemini" | "DeepSeek";
+export type Platform =
+  | "ChatGPT"
+  | "Claude"
+  | "Gemini"
+  | "DeepSeek"
+  | "Qwen"
+  | "Doubao";
 
 export interface Topic {
   id: number;
@@ -32,7 +38,16 @@ export interface Conversation {
   topic_id: number | null;
   updated_at: number;
   is_starred: boolean;
+  is_archived?: boolean;
+  is_trash?: boolean;
   has_note?: boolean;
+}
+
+export interface RelatedConversation {
+  id: number;
+  title: string;
+  platform: Platform;
+  similarity: number;
 }
 
 export interface Note {
@@ -57,4 +72,8 @@ export type StorageApi = {
   runGardener?: (
     conversationId: number
   ) => Promise<{ updated: boolean; conversation: Conversation; result: GardenerResult }>;
+  getRelatedConversations?: (
+    conversationId: number,
+    limit?: number
+  ) => Promise<RelatedConversation[]>;
 };
