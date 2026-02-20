@@ -1,4 +1,10 @@
-export type Platform = 'ChatGPT' | 'Claude' | 'Gemini' | 'DeepSeek';
+export type Platform =
+  | 'ChatGPT'
+  | 'Claude'
+  | 'Gemini'
+  | 'DeepSeek'
+  | 'Qwen'
+  | 'Doubao';
 
 export interface Topic {
   id: number;

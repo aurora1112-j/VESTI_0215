@@ -5,6 +5,7 @@ import { ChevronRight, ChevronDown, BookOpen, List, Star, ChevronUp, Check, Arro
 import { Topic, Conversation, Platform } from '@/lib/types';
 import { MOCK_NOTES } from '@/lib/mock-data';
 import { getConversations, getTopics } from '@/lib/storageService';
+import { useExtensionSync, type ConversationUpdatedPayload } from '@/hooks/use-extension-sync';
 
 const platformColors: Record<Platform, string> = {
   ChatGPT: '#1A1A1A',
@@ -39,6 +40,55 @@ export function LibraryTab() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  const recomputeTopicCounts = useCallback(
+    (currentTopics: Topic[], currentConversations: Conversation[]) => {
+      const directCounts = new Map<number, number>();
+
+      for (const conversation of currentConversations) {
+        if (conversation.is_archived || conversation.is_trash) continue;
+        if (conversation.topic_id === null) continue;
+        directCounts.set(
+          conversation.topic_id,
+          (directCounts.get(conversation.topic_id) ?? 0) + 1
+        );
+      }
+
+      const withCounts = (node: Topic): Topic => {
+        const children = node.children?.map(withCounts) ?? [];
+        const childTotal = children.reduce((sum, child) => sum + (child.count ?? 0), 0);
+        const count = (directCounts.get(node.id) ?? 0) + childTotal;
+        return { ...node, children, count };
+      };
+
+      return currentTopics.map(withCounts);
+    },
+    []
+  );
+
+  const updateConversationInState = useCallback(
+    (payload: ConversationUpdatedPayload) => {
+      setConversations((prev) => {
+        const next = prev.map((conversation) =>
+          conversation.id === payload.id
+            ? {
+                ...conversation,
+                ...(payload.changes.topic_id !== undefined
+                  ? { topic_id: payload.changes.topic_id }
+                  : {}),
+                ...(payload.changes.is_starred !== undefined
+                  ? { is_starred: payload.changes.is_starred }
+                  : {}),
+              }
+            : conversation
+        );
+
+        setTopics((currentTopics) => recomputeTopicCounts(currentTopics, next));
+        return next;
+      });
+    },
+    [recomputeTopicCounts]
+  );
+
   const loadLibraryData = useCallback(async () => {
     try {
       const [topicData, conversationData] = await Promise.all([
@@ -68,6 +118,8 @@ export function LibraryTab() {
       chrome.runtime.onMessage.removeListener(handler);
     };
   }, [loadLibraryData]);
+
+  useExtensionSync(updateConversationInState);
 
   // Auto-save note with debounce
   useEffect(() => {

@@ -1,4 +1,10 @@
-import type { Conversation, GardenerResult, Platform, Topic } from './types';
+import type {
+  Conversation,
+  GardenerResult,
+  Platform,
+  RelatedConversation,
+  Topic,
+} from './types';
 
 type ConversationFilters = {
   platform?: Platform;
@@ -35,6 +41,12 @@ type RequestMessage =
       target?: 'offscreen';
       requestId?: string;
       payload: { conversationId: number };
+    }
+  | {
+      type: 'GET_RELATED_CONVERSATIONS';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { conversationId: number; limit?: number };
     };
 
 type ResponseDataMap = {
@@ -43,6 +55,7 @@ type ResponseDataMap = {
   CREATE_TOPIC: { topic: Topic };
   UPDATE_CONVERSATION_TOPIC: { updated: boolean; conversation: Conversation };
   RUN_GARDENER: { updated: boolean; conversation: Conversation; result: GardenerResult };
+  GET_RELATED_CONVERSATIONS: RelatedConversation[];
 };
 
 type ResponseMessage<T extends keyof ResponseDataMap = keyof ResponseDataMap> =
@@ -60,6 +73,7 @@ type ResponseMessage<T extends keyof ResponseDataMap = keyof ResponseDataMap> =
     };
 
 const DEFAULT_TIMEOUT_MS = 4000;
+const LONG_RUNNING_TIMEOUT_MS = 120000;
 
 function assertChromeRuntime(): void {
   if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
@@ -163,4 +177,15 @@ export async function runGardener(
   }
 
   return result;
+}
+
+export async function getRelatedConversations(
+  conversationId: number,
+  limit?: number
+): Promise<RelatedConversation[]> {
+  return sendRequest({
+    type: 'GET_RELATED_CONVERSATIONS',
+    target: 'offscreen',
+    payload: { conversationId, limit },
+  }, LONG_RUNNING_TIMEOUT_MS) as Promise<RelatedConversation[]>;
 }
