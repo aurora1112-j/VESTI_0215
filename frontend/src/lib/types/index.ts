@@ -159,7 +159,9 @@ export interface LlmConfig {
   maxTokens: number;
   updatedAt: number;
   mode?: LlmAccessMode;
+  proxyBaseUrl?: string;
   proxyUrl?: string;
+  proxyServiceToken?: string;
   gatewayLock?: "modelscope";
   customModelId?: string;
   streamMode?: StreamMode;

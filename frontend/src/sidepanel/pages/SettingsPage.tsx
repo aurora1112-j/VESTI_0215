@@ -26,10 +26,12 @@ import {
 } from "~lib/services/captureSettingsService";
 import {
   DEFAULT_BACKUP_MODEL,
+  DEFAULT_PROXY_BASE_URL,
   DEFAULT_PROXY_URL,
   DEFAULT_STABLE_MODEL,
   MODELSCOPE_BASE_URL,
   buildDefaultLlmSettings,
+  getProxyRouteUrl,
   getLlmAccessMode,
   normalizeLlmSettings,
 } from "~lib/services/llmConfig";
@@ -153,7 +155,10 @@ function resolveSettingsForMode(settings: LlmConfig): LlmConfig {
       ...next,
       mode,
       modelId: DEFAULT_STABLE_MODEL,
+      proxyBaseUrl:
+        (next.proxyBaseUrl || next.proxyUrl || "").trim() || DEFAULT_PROXY_BASE_URL,
       proxyUrl: DEFAULT_PROXY_URL,
+      proxyServiceToken: (next.proxyServiceToken || "").trim(),
       thinkHandlingPolicy: next.thinkHandlingPolicy ?? "strip",
     });
   }
@@ -204,6 +209,8 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
   const isCustomMode = mode === "custom_byok";
   const isSmartMode = captureSettings.mode === "smart";
   const isManualMode = captureSettings.mode === "manual";
+  const demoProxyChatUrl = getProxyRouteUrl(llmSettings, "chat");
+  const demoProxyEmbeddingsUrl = getProxyRouteUrl(llmSettings, "embeddings");
   const archiveMode = activeCaptureStatus?.mode;
   const canArchiveByMode = archiveMode === "smart" || archiveMode === "manual";
   const canArchiveNow =
@@ -520,11 +527,61 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
                   <p className="text-[13px] leading-[1.45] text-text-secondary">
                     Backup model: {DEFAULT_BACKUP_MODEL} (auto failover on timeout/429/5xx)
                   </p>
+                  <div className="grid gap-1">
+                    <label className="text-[11px] text-text-tertiary">
+                      Proxy Base URL
+                    </label>
+                    <input
+                      type="text"
+                      value={llmSettings.proxyBaseUrl ?? DEFAULT_PROXY_BASE_URL}
+                      onChange={(event) =>
+                        setLlmSettingsState((prev) =>
+                          normalizeLlmSettings({
+                            ...prev,
+                            proxyBaseUrl: event.target.value,
+                          })
+                        )
+                      }
+                      className="settings-input"
+                      placeholder="http://127.0.0.1:3000/api"
+                    />
+                  </div>
+
+                  <div className="grid gap-1">
+                    <label className="text-[11px] text-text-tertiary">
+                      Proxy Service Token (optional)
+                    </label>
+                    <input
+                      type="password"
+                      value={llmSettings.proxyServiceToken ?? ""}
+                      onChange={(event) =>
+                        setLlmSettingsState((prev) =>
+                          normalizeLlmSettings({
+                            ...prev,
+                            proxyServiceToken: event.target.value,
+                          })
+                        )
+                      }
+                      className="settings-input"
+                      placeholder="local-proxy-token"
+                    />
+                  </div>
+
                   <p className="text-[11px] text-text-tertiary">
-                    Gateway locked to modelscope.cn | Route: Proxy ({DEFAULT_PROXY_URL})
+                    Gateway locked to modelscope.cn | Chat: {demoProxyChatUrl}
+                  </p>
+                  <p className="text-[11px] text-text-tertiary">
+                    Embeddings route: {demoProxyEmbeddingsUrl}
                   </p>
 
-                  <div className="flex items-center gap-2">
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      className="rounded-md border border-text-primary bg-text-primary px-4 py-2 text-[13px] font-medium text-text-inverse transition-colors duration-200 hover:bg-accent-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                    >
+                      Save
+                    </button>
                     <button
                       type="button"
                       onClick={handleTest}
