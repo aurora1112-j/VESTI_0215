@@ -334,7 +334,7 @@ export function ConversationList({
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-2.5 p-4">
+      <div className="flex h-full flex-col gap-2.5 p-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={index}
@@ -347,7 +347,7 @@ export function ConversationList({
 
   if (conversations.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex h-full items-center justify-center p-8">
         <p className="text-vesti-sm text-text-tertiary">No conversations yet</p>
       </div>
     );
@@ -355,7 +355,7 @@ export function ConversationList({
 
   if (filteredConversations.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex h-full items-center justify-center p-8">
         <p className="text-vesti-sm text-text-tertiary">
           {isMessageSearchPending ? "Searching messages..." : "No matches"}
         </p>
@@ -364,7 +364,7 @@ export function ConversationList({
   }
 
   return (
-    <div className="vesti-scroll flex flex-col gap-2 overflow-y-auto px-4 pb-4">
+    <div className="vesti-scroll h-full min-h-0 flex flex-col gap-2 overflow-y-scroll px-4 pb-4">
       {grouped.map((group) => (
         <div key={group.label}>
           <h4 className="-mx-4 sticky top-0 z-10 bg-bg-app px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-tertiary">

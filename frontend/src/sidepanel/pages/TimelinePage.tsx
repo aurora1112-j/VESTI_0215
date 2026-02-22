@@ -67,7 +67,7 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
     <div className="flex h-full flex-col bg-bg-app">
       {headerMode === "search" ? (
         <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
-          <div className="flex h-9 flex-1 items-center gap-2 rounded-lg border border-border-default bg-bg-primary px-3">
+          <div className="threads-search-surface flex h-9 flex-1 items-center gap-2 rounded-lg px-3">
             <Search className="h-3.5 w-3.5 shrink-0 text-text-secondary" strokeWidth={1.8} />
             <input
               type="text"
@@ -191,7 +191,11 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div
+        className={`min-h-0 flex-1 overflow-hidden ${
+          headerMode === "search" ? "pt-3" : ""
+        }`}
+      >
         <ConversationList
           searchQuery={searchQuery}
           datePreset={datePreset}
