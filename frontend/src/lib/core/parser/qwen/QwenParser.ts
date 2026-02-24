@@ -1,6 +1,7 @@
 import type { IParser, ParsedMessage } from "../IParser";
 import type { Platform } from "../../../types";
 import {
+  closestAnySelector,
   extractEarliestTimeFromSelectors,
   normalizeCandidateNodes,
   queryAllWithinUnique,
@@ -13,20 +14,69 @@ import { extractAstFromElement } from "../shared/astExtractor";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
+const USER_ROLE_ANCHORS = [
+  ".questionItem",
+  "[data-role='user']",
+  "[data-author='user']",
+  "[data-message-author-role='user']",
+  "[data-testid*='user']",
+  "[data-testid*='question']",
+  "[data-testid*='prompt']",
+  "[class*='user-message']",
+  "[class*='message-user']",
+  "[class*='question']",
+];
+
+const ASSISTANT_ROLE_ANCHORS = [
+  "[data-role='assistant']",
+  "[data-author='assistant']",
+  "[data-message-author-role='assistant']",
+  "[data-testid*='assistant']",
+  "[data-testid*='answer']",
+  "[data-testid*='response']",
+  "[data-testid*='receive_message']",
+  "[class*='assistant-message']",
+  "[class*='message-assistant']",
+  "[class*='answer']",
+  "[class*='response']",
+  "[class*='qwen-message']",
+];
+
+const COPY_ACTION_ANCHORS = [
+  "[data-testid='action-bar-copy']",
+  "[data-testid*='action-copy']",
+  "[data-testid*='copy']",
+  "[aria-label*='copy' i]",
+];
+
+const ROLE_ANCESTOR_HINTS = [
+  "[data-role]",
+  "[data-author]",
+  "[data-message-author-role]",
+  "[data-testid*='user']",
+  "[data-testid*='assistant']",
+  "[data-testid*='answer']",
+  "[data-testid*='response']",
+  "[class*='user-message']",
+  "[class*='assistant-message']",
+  "[class*='message-user']",
+  "[class*='message-assistant']",
+  "[class*='question']",
+  "[class*='answer']",
+  "[class*='response']",
+];
+
 const SELECTORS = {
+  userRoleAnchors: USER_ROLE_ANCHORS,
+  assistantRoleAnchors: ASSISTANT_ROLE_ANCHORS,
   roleAnchors: [
-    ".questionItem",
     ".bubble-element",
-    "[data-role='user']",
-    "[data-role='assistant']",
-    "[data-author='user']",
-    "[data-author='assistant']",
-    "[data-message-author-role='user']",
-    "[data-message-author-role='assistant']",
-    "[class*='user-message']",
-    "[class*='assistant-message']",
     "[data-testid*='message']",
+    ...USER_ROLE_ANCHORS,
+    ...ASSISTANT_ROLE_ANCHORS,
   ],
+  copyActionAnchors: COPY_ACTION_ANCHORS,
+  roleAncestorHints: ROLE_ANCESTOR_HINTS,
   turnBlocks: [
     "[data-msgid]",
     "[data-message-id]",
@@ -38,14 +88,62 @@ const SELECTORS = {
     "[role='listitem']",
   ],
   messageContent: [
-    ".bubble-element",
-    "[class*='bubble']",
+    ".qwen-markdown",
+    ".chat-response-message .qwen-markdown",
+    ".chat-response-message",
+    "[class*='chat-response-message']",
     "[data-testid*='message-content']",
     "[data-testid*='response-content']",
     ".markdown",
     ".prose",
     "div[class*='markdown']",
     "div[class*='content']",
+    ".bubble-element",
+    "[class*='bubble']",
+  ],
+  preferredMessageContent: [
+    ".qwen-markdown",
+    ".chat-response-message",
+    "[class*='chat-response-message']",
+    "[data-testid*='message-content']",
+    "[data-testid*='response-content']",
+    ".markdown",
+    ".prose",
+    "div[class*='markdown']",
+  ],
+  discardContainers: [
+    ".qwen-chat-ui-packages-siblings",
+    ".qwen-chat-search-card",
+    "[class*='packages-siblings']",
+    "[class*='search-card']",
+    "[class*='edit-history']",
+    "[data-testid*='edit-history']",
+    "[data-testid*='history-switch']",
+    "hr",
+    "[class*='divider']",
+    "[class*='separator']",
+  ],
+  inlineNoiseSelectors: [
+    ".qwen-chat-ui-packages-siblings",
+    ".qwen-chat-ui-packages-siblings-text",
+    ".qwen-chat-search-card",
+    "[class*='packages-siblings']",
+    "[class*='search-card']",
+    "[class*='edit-history']",
+    "[data-testid*='edit-history']",
+    "[data-testid*='history-switch']",
+    "[data-testid*='action-bar']",
+    "[data-testid='action-bar-copy']",
+    "[data-testid*='action-copy']",
+    "[data-testid*='copy']",
+    "button",
+    "svg",
+  ],
+  dividerSelectors: [
+    "hr",
+    "[class*='divider']",
+    "[class*='separator']",
+    "[class*='border-b']",
   ],
   title: [
     ".conversation-title",
@@ -83,6 +181,14 @@ const SELECTORS = {
     /^retry$/i,
     /^edit$/i,
     /^copy$/i,
+    /^edit history$/i,
+    /^\u7f16\u8f91\u5386\u53f2$/i,
+    /^\d+\s*\/\s*\d+$/i,
+    /^references?\s*[:\uff1a]?\s*\d+$/i,
+    /^(?:\u53c2\u8003\u94fe\u63a5|\u5f15\u7528)\s*[:\uff1a]?\s*\d+$/i,
+    /^show more$/i,
+    /^done$/i,
+    /^thought for\s+\d+s/i,
     /^qwen can make mistakes\.?/i,
   ],
   sourceTimes: ["time[datetime]", "article time[datetime]"],
@@ -314,7 +420,7 @@ export class QwenParser implements IParser {
         droppedUnknownRole += 1;
         continue;
       }
-      if (!parsed.message.textContent.trim()) {
+      if (!parsed.message.textContent.trim() || this.isLikelyNoiseText(parsed.message.textContent)) {
         droppedNoise += 1;
         continue;
       }
@@ -365,7 +471,7 @@ export class QwenParser implements IParser {
         droppedUnknownRole += 1;
         continue;
       }
-      if (!parsed.message.textContent.trim()) {
+      if (!parsed.message.textContent.trim() || this.isLikelyNoiseText(parsed.message.textContent)) {
         droppedNoise += 1;
         continue;
       }
@@ -398,6 +504,7 @@ export class QwenParser implements IParser {
 
   private collectMessageCandidates(root: Element): Element[] {
     const combinedCandidates: Element[] = [...this.queryAllUniqueWithin(root, SELECTORS.roleAnchors)];
+    combinedCandidates.push(...this.collectCopyActionCandidates(root));
 
     for (const turnNode of this.queryAllUniqueWithin(root, SELECTORS.turnBlocks)) {
       const splitNodes = queryAllWithinUnique(turnNode, SELECTORS.roleAnchors);
@@ -405,10 +512,83 @@ export class QwenParser implements IParser {
         combinedCandidates.push(...splitNodes);
         continue;
       }
-      combinedCandidates.push(turnNode);
+      if (this.isLikelyMessageCandidate(turnNode)) {
+        combinedCandidates.push(turnNode);
+      }
     }
 
-    return uniqueNodesInDocumentOrder(combinedCandidates);
+    return uniqueNodesInDocumentOrder(
+      combinedCandidates.filter((candidate) => this.isLikelyMessageCandidate(candidate)),
+    );
+  }
+
+  // Reverse-locate assistant message containers when explicit assistant role markers drift.
+  private collectCopyActionCandidates(root: Element): Element[] {
+    const actionAnchors = this.queryAllUniqueWithin(root, SELECTORS.copyActionAnchors);
+    const resolvedNodes: Element[] = [];
+
+    for (const anchor of actionAnchors) {
+      const resolved = this.resolveActionAnchorMessageNode(anchor);
+      if (resolved) {
+        resolvedNodes.push(resolved);
+      }
+    }
+
+    return uniqueNodesInDocumentOrder(resolvedNodes);
+  }
+
+  private resolveActionAnchorMessageNode(anchor: Element): Element | null {
+    let current: Element | null = anchor.parentElement;
+
+    while (current) {
+      if (SELECTORS.noiseContainers.some((selector) => current?.matches(selector))) {
+        return null;
+      }
+
+      const contentEl = this.resolveContentElement(current, "ai");
+      const text = this.extractSanitizedText(contentEl ?? current);
+      if (!text || text.length < 12 || text.length > 12000) {
+        current = current.parentElement;
+        continue;
+      }
+
+      if (this.hasUserMarker(current)) {
+        current = current.parentElement;
+        continue;
+      }
+
+      if (this.hasCopyAction(current)) {
+        return current;
+      }
+
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  private isLikelyMessageCandidate(node: Element): boolean {
+    if (this.isDiscardNode(node)) {
+      return false;
+    }
+
+    if (SELECTORS.noiseContainers.some((selector) => node.closest(selector) !== null)) {
+      return false;
+    }
+
+    const hasRoleMarker = this.hasUserMarker(node) || this.hasAssistantMarker(node);
+    const preferredContent = queryFirstWithin(node, SELECTORS.preferredMessageContent);
+    if (!hasRoleMarker && !preferredContent) {
+      return false;
+    }
+
+    const contentEl = preferredContent ?? queryFirstWithin(node, SELECTORS.messageContent);
+    const normalizedText = this.extractSanitizedText(contentEl ?? node);
+    if (normalizedText.length < 2) {
+      return false;
+    }
+
+    return !this.isLikelyNoiseText(normalizedText);
   }
 
   private queryAllUniqueWithin(root: Element, selectors: string[]): Element[] {
@@ -541,12 +721,21 @@ export class QwenParser implements IParser {
   }
 
   private parseMessageNode(node: Element, perfMode: AstPerfMode): ParsedNodeResult | null {
+    if (this.isDiscardNode(node)) {
+      return null;
+    }
+
     const role = this.inferRole(node);
     if (!role) return null;
 
-    const contentEl = queryFirstWithin(node, SELECTORS.messageContent);
-    const textContent = this.cleanExtractedText(safeTextContent(contentEl ?? node));
-    const ast = extractAstFromElement(contentEl ?? node, {
+    const contentEl = this.resolveContentElement(node, role);
+    if (contentEl && this.isDiscardNode(contentEl)) {
+      return null;
+    }
+
+    const sanitizedContent = this.sanitizeContentElement(contentEl ?? node);
+    const textContent = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
+    const ast = extractAstFromElement(sanitizedContent, {
       platform: "Qwen",
       perfMode,
     });
@@ -558,35 +747,105 @@ export class QwenParser implements IParser {
         contentAst: ast.root,
         contentAstVersion: ast.root ? "ast_v1" : null,
         degradedNodesCount: ast.degradedNodesCount,
-        htmlContent: contentEl ? contentEl.innerHTML : undefined,
+        htmlContent: sanitizedContent.innerHTML,
       },
       degradedNodesCount: ast.degradedNodesCount,
       astNodeCount: ast.astNodeCount,
     };
   }
 
+  private resolveContentElement(node: Element, role: MessageRole): Element | null {
+    const preferred = queryFirstWithin(node, SELECTORS.preferredMessageContent);
+    if (preferred) {
+      return preferred;
+    }
+
+    if (role === "ai") {
+      const aiSpecific = queryFirstWithin(node, [
+        ".qwen-markdown",
+        ".chat-response-message",
+        "[class*='chat-response-message']",
+        "div[class*='response']",
+        "div[class*='answer']",
+      ]);
+      if (aiSpecific) {
+        return aiSpecific;
+      }
+    }
+
+    return queryFirstWithin(node, SELECTORS.messageContent);
+  }
+
+  private sanitizeContentElement(source: Element): Element {
+    const clone = source.cloneNode(true) as Element;
+
+    for (const selector of SELECTORS.inlineNoiseSelectors) {
+      clone.querySelectorAll(selector).forEach((node) => node.remove());
+    }
+
+    for (const selector of SELECTORS.dividerSelectors) {
+      clone.querySelectorAll(selector).forEach((divider) => {
+        divider.replaceWith(document.createTextNode("\n"));
+      });
+    }
+
+    return clone;
+  }
+
+  private extractVisibleText(element: Element): string {
+    if (element instanceof HTMLElement) {
+      const innerText = (element.innerText || "").trim();
+      if (innerText) {
+        return innerText;
+      }
+    }
+    return safeTextContent(element);
+  }
+
+  private extractSanitizedText(source: Element): string {
+    const normalizedSource = this.sanitizeContentElement(source);
+    const rawText = this.extractVisibleText(normalizedSource);
+    return this.cleanExtractedText(rawText);
+  }
+
+  private isDiscardNode(node: Element): boolean {
+    return SELECTORS.discardContainers.some((selector) => node.matches(selector));
+  }
+
   private inferRole(node: Element): MessageRole | null {
     const attrRole =
+      this.roleFromAttribute(node.getAttribute("data-message-author-role")) ??
       this.roleFromAttribute(node.getAttribute("data-role")) ??
       this.roleFromAttribute(node.getAttribute("data-author")) ??
-      this.roleFromAttribute(node.getAttribute("data-message-author-role"));
+      this.roleFromAttribute(node.getAttribute("role"));
     if (attrRole) return attrRole;
 
-    const testIdRole = this.roleFromHint(node.getAttribute("data-testid"));
+    const testIdRole = this.roleFromTestId(node.getAttribute("data-testid"));
     if (testIdRole) return testIdRole;
 
     const classRole = this.roleFromHint(node.className?.toString() ?? "");
     if (classRole) return classRole;
 
-    const ancestor = node.parentElement?.closest("[data-role], [data-author], [data-testid], [class]");
+    if (this.hasUserMarker(node)) return "user";
+    if (this.hasAssistantMarker(node)) return "ai";
+
+    const descendantRole = this.roleFromDescendants(node);
+    if (descendantRole) return descendantRole;
+
+    const ancestor = node.parentElement
+      ? closestAnySelector(node.parentElement, SELECTORS.roleAncestorHints)
+      : null;
     if (ancestor) {
       const ancestorRole =
+        this.roleFromAttribute(ancestor.getAttribute("data-message-author-role")) ??
         this.roleFromAttribute(ancestor.getAttribute("data-role")) ??
         this.roleFromAttribute(ancestor.getAttribute("data-author")) ??
-        this.roleFromAttribute(ancestor.getAttribute("data-message-author-role")) ??
-        this.roleFromHint(ancestor.getAttribute("data-testid")) ??
+        this.roleFromTestId(ancestor.getAttribute("data-testid")) ??
         this.roleFromHint(ancestor.className?.toString() ?? "");
       if (ancestorRole) return ancestorRole;
+
+      if (this.hasUserMarker(ancestor)) return "user";
+      if (this.hasAssistantMarker(ancestor)) return "ai";
     }
 
     return null;
@@ -607,9 +866,37 @@ export class QwenParser implements IParser {
     return null;
   }
 
+  private roleFromTestId(value: string | null): MessageRole | null {
+    if (!value) return null;
+    const normalized = value.toLowerCase();
+
+    if (/(^|[-_:])(user|human|prompt|query|question|send_message)([-_:]|$)/.test(normalized)) {
+      return "user";
+    }
+
+    if (
+      /(^|[-_:])(assistant|model|qwen|ai|answer|reply|response|receive_message)([-_:]|$)/.test(
+        normalized,
+      )
+    ) {
+      return "ai";
+    }
+
+    return this.roleFromHint(normalized);
+  }
+
   private roleFromHint(value: string | null): MessageRole | null {
     if (!value) return null;
     const normalized = value.toLowerCase();
+
+    if (/(^|[-_:])(user|human|prompt|query|question)([-_:]|$)/.test(normalized)) {
+      return "user";
+    }
+
+    if (/(^|[-_:])(assistant|model|qwen|ai|answer|reply|response)([-_:]|$)/.test(normalized)) {
+      return "ai";
+    }
+
     if (
       normalized.includes("user") ||
       normalized.includes("human") ||
@@ -631,11 +918,82 @@ export class QwenParser implements IParser {
     return null;
   }
 
+  private hasUserMarker(node: Element): boolean {
+    const selector = SELECTORS.userRoleAnchors.join(", ");
+    return node.matches(selector) || node.querySelector(selector) !== null;
+  }
+
+  private hasAssistantMarker(node: Element): boolean {
+    const selector = SELECTORS.assistantRoleAnchors.join(", ");
+    if (node.matches(selector) || node.querySelector(selector) !== null) {
+      return true;
+    }
+    return this.hasCopyAction(node);
+  }
+
+  private hasCopyAction(node: Element): boolean {
+    const selector = SELECTORS.copyActionAnchors.join(", ");
+    return node.matches(selector) || node.querySelector(selector) !== null;
+  }
+
+  private roleFromDescendants(node: Element): MessageRole | null {
+    const userSelector = SELECTORS.userRoleAnchors.join(", ");
+    const assistantSelector = SELECTORS.assistantRoleAnchors.join(", ");
+    const copySelector = SELECTORS.copyActionAnchors.join(", ");
+
+    const hasUserDescendant = node.querySelector(userSelector) !== null;
+    const hasAssistantDescendant =
+      node.querySelector(assistantSelector) !== null || node.querySelector(copySelector) !== null;
+
+    if (hasUserDescendant && !hasAssistantDescendant) return "user";
+    if (hasAssistantDescendant && !hasUserDescendant) return "ai";
+    return null;
+  }
+
   private cleanExtractedText(rawText: string): string {
-    return rawText
-      .replace(/\s+/g, " ")
-      .replace(/^(copy|edit|retry)\s+/i, "")
+    let text = rawText;
+
+    text = text.replace(/\r/g, "");
+    text = text.replace(/^Thought for\s+\d+s[\s\S]*?Show more\s*Done\s*/i, "");
+    text = text.replace(/^Thought for\s+\d+s\s*/i, "");
+    text = text.replace(/^Show more\s*Done\s*/i, "");
+    text = text.replace(/^Show more\s*/i, "");
+    text = text.replace(/^Done\s*/i, "");
+
+    text = text
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t\f\v]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/^(copy|edit|retry|regenerate|share)\s+/i, "")
       .trim();
+
+    text = text
+      .replace(
+        /(?:^|\n)\s*(?:show more|done|edit history|\u7f16\u8f91\u5386\u53f2)\s*(?=\n|$)/gi,
+        "\n",
+      )
+      .replace(/(?:^|\n)\s*\d+\s*\/\s*\d+\s*(?=\n|$)/g, "\n")
+      .replace(
+        /(?:^|\n)\s*(?:references?|\u53c2\u8003\u94fe\u63a5|\u5f15\u7528)\s*[:\uff1a]?\s*\d+\s*(?=\n|$)/gi,
+        "\n",
+      )
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    return text;
+  }
+
+  private isLikelyNoiseText(text: string): boolean {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return true;
+    }
+
+    if (SELECTORS.noiseTextPatterns.some((pattern) => pattern.test(normalized))) {
+      return true;
+    }
+
+    return /^(show more|done|copy|edit|retry|regenerate)$/i.test(normalized);
   }
 
   private dedupeNearDuplicates(messages: ParsedMessage[]): ParsedMessage[] {
@@ -727,3 +1085,4 @@ export class QwenParser implements IParser {
     }
   }
 }
+
