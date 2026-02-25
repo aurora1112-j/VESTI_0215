@@ -17,15 +17,16 @@ import {
 } from "lucide-react";
 import type {
   Conversation,
-  Platform,
   Topic,
   StorageApi,
   RelatedConversation,
   Message,
+  ChatSummaryData,
+  Note,
 } from "../types";
-import { MOCK_NOTES } from "../mock-data";
 import { useLibraryData } from "../contexts/library-data";
 import { PLATFORM_COLORS, PLATFORM_TEXT_COLORS } from "../constants/platform";
+import { StructuredSummaryCard } from "../components/StructuredSummaryCard";
 
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
@@ -62,13 +63,19 @@ export function LibraryTab({
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [isConversationExpanded, setIsConversationExpanded] = useState(false);
-  const [analysisData, setAnalysisData] = useState<{
+  const [, setAnalysisData] = useState<{
     summary?: string;
     keyInsights?: string[];
   } | null>(null);
+  const [summaryData, setSummaryData] = useState<ChatSummaryData | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryGenerating, setSummaryGenerating] = useState(false);
   const [customFolders, setCustomFolders] = useState<string[]>([]);
   const [openConversationMenuId, setOpenConversationMenuId] = useState<number | null>(null);
   const [openFolderMenuName, setOpenFolderMenuName] = useState<string | null>(null);
+
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
 
   // Note editing state
   const [editingTitle, setEditingTitle] = useState(false);
@@ -94,15 +101,24 @@ export function LibraryTab({
 
   // Load selected note
   useEffect(() => {
-    if (viewMode === "notes" && selectedNoteId) {
-      const note = MOCK_NOTES.find((n) => n.id === selectedNoteId);
-      if (note) {
-        setNoteTitle(note.title);
-        setNoteContent(note.content);
-        setIsEditingNoteBody(false);
-      }
+    if (!selectedNoteId) return;
+    const note = notes.find((n) => n.id === selectedNoteId);
+    if (note) {
+      setNoteTitle(note.title);
+      setNoteContent(note.content);
+      setIsEditingNoteBody(false);
     }
-  }, [selectedNoteId, viewMode]);
+  }, [selectedNoteId, notes]);
+
+  useEffect(() => {
+    if (!storage.getNotes) return;
+    setNotesLoading(true);
+    storage
+      .getNotes()
+      .then((data) => setNotes(data))
+      .catch(() => setNotes([]))
+      .finally(() => setNotesLoading(false));
+  }, [storage]);
 
   const persistFolderMeta = (nextCustom: string[]) => {
     setCustomFolders(nextCustom);
@@ -163,6 +179,19 @@ export function LibraryTab({
   useEffect(() => {
     setAnalysisData(null);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId || !storage.getSummary) {
+      setSummaryData(null);
+      return;
+    }
+    setSummaryLoading(true);
+    storage
+      .getSummary(selectedConversationId)
+      .then((data) => setSummaryData(data))
+      .catch(() => setSummaryData(null))
+      .finally(() => setSummaryLoading(false));
+  }, [selectedConversationId, storage]);
 
   useEffect(() => {
     setIsConversationExpanded(false);
@@ -268,7 +297,7 @@ export function LibraryTab({
   }, [editingTitle]);
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
-  const selectedNote = MOCK_NOTES.find((n) => n.id === selectedNoteId);
+  const selectedNote = notes.find((n) => n.id === selectedNoteId);
   const messageCount = messages.length;
   const messageDate =
     messages.length > 0 ? messages[0].created_at : selectedConversation?.updated_at;
@@ -277,12 +306,6 @@ export function LibraryTab({
     const html = marked.parse(noteContent, { gfm: true, breaks: false }) as string;
     return DOMPurify.sanitize(html);
   }, [noteContent]);
-  const renderedAnalysisSummary = useMemo(() => {
-    const summary = analysisData?.summary?.trim();
-    if (!summary) return "";
-    const html = marked.parse(summary, { gfm: true, breaks: false }) as string;
-    return DOMPurify.sanitize(html);
-  }, [analysisData?.summary]);
   const normalizeTags = (value: unknown): string[] => {
     if (!Array.isArray(value)) return [];
     return value.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
@@ -797,8 +820,8 @@ export function LibraryTab({
           <button
             onClick={() => {
               setViewMode("notes");
-              if (MOCK_NOTES.length > 0 && !selectedNoteId) {
-                setSelectedNoteId(MOCK_NOTES[0].id);
+              if (notes.length > 0 && !selectedNoteId) {
+                setSelectedNoteId(notes[0].id);
               }
             }}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors my-1 rounded-lg ${
@@ -807,7 +830,7 @@ export function LibraryTab({
           >
             <BookOpen strokeWidth={1.5} className="w-4 h-4 text-text-secondary" />
             <span className="flex-1 text-sm font-sans text-text-primary">My Notes</span>
-            <span className="text-xs font-sans text-text-tertiary">{MOCK_NOTES.length}</span>
+            <span className="text-xs font-sans text-text-tertiary">{notes.length}</span>
           </button>
         </div>
       </aside>
@@ -998,7 +1021,7 @@ export function LibraryTab({
               <div className="flex items-baseline justify-between">
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-serif font-normal text-text-primary">My Notes</h2>
-                  <span className="text-xs font-sans text-text-tertiary">· {MOCK_NOTES.length} notes</span>
+                  <span className="text-xs font-sans text-text-tertiary">· {notes.length} notes</span>
                 </div>
                 <button
                   onClick={() => console.log("[dashboard] Create new note")}
@@ -1010,66 +1033,64 @@ export function LibraryTab({
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {MOCK_NOTES.map((note) => {
-                const isSelected = note.id === selectedNoteId;
-                const preview = note.content.replace(/[#*\[\]]/g, "").slice(0, 100);
-                return (
-                  <button
-                    key={note.id}
-                    onClick={() => setSelectedNoteId(note.id)}
-                    className={`w-full text-left p-3 rounded-lg transition-all duration-200 relative group ${
-                      isSelected
-                        ? "bg-bg-surface-card-active shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-                        : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-                    }`}
-                  >
-                    <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug">
-                      {note.title}
-                    </h3>
-                    <div
-                      className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
+              {notesLoading && notes.length === 0 ? (
+                <div className="text-[13px] font-sans text-text-tertiary">
+                  Loading notes...
+                </div>
+              ) : (
+                notes.map((note) => {
+                  const isSelected = note.id === selectedNoteId;
+                  const preview = note.content.replace(/[#*\[\]]/g, "").slice(0, 100);
+                  return (
+                    <button
+                      key={note.id}
+                      onClick={() => setSelectedNoteId(note.id)}
+                      className={`w-full text-left p-3 rounded-lg transition-all duration-200 relative group ${
                         isSelected
-                          ? "grid-rows-[1fr] opacity-100"
-                          : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
+                          ? "bg-bg-surface-card-active shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                          : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
                       }`}
                     >
-                      <div className="overflow-hidden">
-                        <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
-                          {preview}
-                        </p>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {note.tags.slice(0, 2).map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-0.5 rounded-full text-[11px] font-sans text-text-secondary bg-bg-secondary"
-                            >
-                              {tag}
+                      <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug">
+                        {note.title}
+                      </h3>
+                      <div
+                        className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
+                          isSelected
+                            ? "grid-rows-[1fr] opacity-100"
+                            : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
+                        }`}
+                      >
+                        <div className="overflow-hidden">
+                          <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
+                            {preview}
+                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="ml-auto text-[11px] font-sans text-text-tertiary">
+                              {formatTimeAgo(note.updated_at)}
                             </span>
-                          ))}
-                          <span className="ml-auto text-[11px] font-sans text-text-tertiary">
-                            {formatTimeAgo(note.updated_at)}
-                          </span>
-                          {note.linked_conversation_ids.length > 0 && (
-                            <span
-                              title={`Linked to ${note.linked_conversation_ids.length} conversation${
-                                note.linked_conversation_ids.length > 1 ? "s" : ""
-                              }`}
-                              style={{
-                                display: "inline-block",
-                                width: 6,
-                                height: 6,
-                                borderRadius: "50%",
-                                backgroundColor: "#3266AD",
-                                flexShrink: 0,
-                              }}
-                            />
-                          )}
+                            {note.linked_conversation_ids.length > 0 && (
+                              <span
+                                title={`Linked to ${note.linked_conversation_ids.length} conversation${
+                                  note.linked_conversation_ids.length > 1 ? "s" : ""
+                                }`}
+                                style={{
+                                  display: "inline-block",
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  backgroundColor: "#3266AD",
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })
+              )}
             </div>
           </>
         )}
@@ -1145,22 +1166,45 @@ export function LibraryTab({
 
                 {/* Summary 区域 */}
                 <div className="p-4">
-                  {analysisData?.summary ? (
-                    <div
-                      className="prose prose-slate max-w-none text-sm
-                        prose-p:text-text-secondary prose-p:leading-relaxed
-                        prose-li:text-text-secondary prose-li:leading-relaxed
-                        prose-p:my-1 prose-li:my-0.5"
-                    >
-                      <div
-                        className="text-text-secondary"
-                        dangerouslySetInnerHTML={{ __html: renderedAnalysisSummary }}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-[13px] font-sans text-text-tertiary leading-relaxed">
-                      Analysis runs automatically after capture. Step details are not stored yet.
+                  {summaryLoading ? (
+                    <p className="text-[13px] font-sans text-text-tertiary">
+                      Loading summary...
                     </p>
+                  ) : summaryData ? (
+                    <StructuredSummaryCard data={summaryData} />
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <p className="text-[13px] font-sans text-text-tertiary leading-relaxed">
+                        No summary yet. Generate one to see structured insights.
+                      </p>
+                      {storage.generateSummary && (
+                        <button
+                          type="button"
+                          disabled={summaryGenerating}
+                          onClick={async () => {
+                            if (!selectedConversationId) return;
+                            setSummaryGenerating(true);
+                            try {
+                              const data = await storage.generateSummary!(
+                                selectedConversationId
+                              );
+                              setSummaryData(data);
+                            } catch (error) {
+                              console.error("[library] generateSummary failed", error);
+                            } finally {
+                              setSummaryGenerating(false);
+                            }
+                          }}
+                          className="self-start inline-flex items-center gap-1.5 px-3 py-1.5
+                           rounded-md text-[13px] font-sans text-text-secondary
+                           hover:text-accent-primary hover:bg-accent-primary-light
+                           transition-colors duration-150 disabled:opacity-50
+                           disabled:cursor-not-allowed"
+                        >
+                          {summaryGenerating ? "Generating..." : "Generate Summary"}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1168,9 +1212,35 @@ export function LibraryTab({
                 <div className="px-4 pb-3 flex items-center gap-2 border-t border-border-subtle pt-3">
                   <button
                     type="button"
-                    onClick={() =>
-                      console.log("[library] import to notes", selectedConversationId)
-                    }
+                    onClick={async () => {
+                      if (!selectedConversationId || !storage.saveNote) return;
+                      const title = selectedConversation?.title ?? "Untitled";
+                      const content = summaryData
+                        ? [
+                            `## ${summaryData.core_question}`,
+                            "",
+                            "### Key Insights",
+                            ...summaryData.key_insights.map(
+                              (item) => `**${item.term}**: ${item.definition}`
+                            ),
+                            "",
+                            "### Unresolved Threads",
+                            ...summaryData.unresolved_threads.map((item) => `- ${item}`),
+                          ].join("\n")
+                        : `Notes for: ${title}`;
+                      try {
+                        const newNote = await storage.saveNote({
+                          title,
+                          content,
+                          linked_conversation_ids: [selectedConversationId],
+                        });
+                        setNotes((prev) => [newNote, ...prev]);
+                        setSelectedNoteId(newNote.id);
+                        setViewMode("notes");
+                      } catch (error) {
+                        console.error("[library] saveNote failed", error);
+                      }
+                    }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-sans
                       text-text-secondary hover:text-accent-primary hover:bg-accent-primary-light
                       transition-colors duration-150"
@@ -1183,7 +1253,7 @@ export function LibraryTab({
                     onClick={() => {
                       // TODO: navigate to linked note
                       // 当 has_note 为 true 时跳转到对应笔记
-                      const linkedNote = MOCK_NOTES.find((n) =>
+                      const linkedNote = notes.find((n) =>
                         n.linked_conversation_ids.includes(selectedConversationId ?? -1)
                       );
                       if (linkedNote) {
@@ -1303,7 +1373,7 @@ export function LibraryTab({
             {/* Related Notes */}
             {selectedConversation && (
               <div className="mt-10">
-                {MOCK_NOTES.filter((note) =>
+                {notes.filter((note) =>
                   note.linked_conversation_ids.includes(selectedConversation.id)
                 ).length > 0 && (
                   <>
@@ -1311,7 +1381,7 @@ export function LibraryTab({
                       RELATED NOTES
                     </h3>
                     <div className="space-y-2">
-                      {MOCK_NOTES.filter((note) =>
+                      {notes.filter((note) =>
                         note.linked_conversation_ids.includes(selectedConversation.id)
                       ).map((note) => (
                         <button
@@ -1405,15 +1475,7 @@ export function LibraryTab({
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-[13px] font-sans text-text-secondary mb-6 pb-6 border-b border-border-subtle">
-              {selectedNote.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2.5 py-1 rounded-md text-[13px] font-sans text-text-secondary bg-bg-secondary"
-                >
-                  {tag}
-                </span>
-              ))}
+            <div className="flex items-center text-[13px] font-sans text-text-secondary mb-6 pb-6 border-b border-border-subtle">
               <span className="ml-auto">
                 {noteSaveStatus === "unsaved"
                   ? "Unsaved changes"
@@ -1426,7 +1488,20 @@ export function LibraryTab({
                 ref={textareaRef}
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
-                onBlur={() => setIsEditingNoteBody(false)}
+                onBlur={async () => {
+                  setIsEditingNoteBody(false);
+                  if (!selectedNote || !storage.updateNote) return;
+                  try {
+                    const updated = await storage.updateNote(selectedNote.id, {
+                      content: noteContent,
+                    });
+                    setNotes((prev) =>
+                      prev.map((note) => (note.id === updated.id ? updated : note))
+                    );
+                  } catch (error) {
+                    console.error("[library] updateNote failed", error);
+                  }
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && event.metaKey) {
                     event.preventDefault();

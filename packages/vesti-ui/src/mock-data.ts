@@ -21,7 +21,6 @@ The core insight from the React virtual list conversation is that DOM node count
     linked_conversation_ids: [1],
     created_at: Date.now() - 50000,
     updated_at: Date.now() - 30000,
-    tags: ["React", "Performance"],
   },
   {
     id: 2,
@@ -42,7 +41,6 @@ After the Plasmo conversation, my current thinking:
     linked_conversation_ids: [5],
     created_at: Date.now() - 432000000,
     updated_at: Date.now() - 400000000,
-    tags: ["Chrome", "Plasmo"],
   },
   {
     id: 3,
@@ -58,7 +56,6 @@ TypeScript gives you escape hatches (any, as). Rust doesn't. That's both the fru
     linked_conversation_ids: [2],
     created_at: Date.now() - 259200000,
     updated_at: Date.now() - 250000000,
-    tags: ["Rust", "TypeScript"],
   },
   {
     id: 4,
@@ -73,6 +70,5 @@ Not linked to any specific conversation — just personal reading notes.
     linked_conversation_ids: [],
     created_at: Date.now() - 600000000,
     updated_at: Date.now() - 580000000,
-    tags: ["Reading"],
   },
 ];

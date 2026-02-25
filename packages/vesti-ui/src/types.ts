@@ -64,16 +64,6 @@ export interface Message {
   created_at: number;
 }
 
-export interface Note {
-  id: number;
-  title: string;
-  content: string;
-  linked_conversation_ids: number[];
-  created_at: number;
-  updated_at: number;
-  tags: string[];
-}
-
 export type ConversationFilters = {
   platform?: Platform;
   search?: string;
@@ -110,4 +100,53 @@ export type StorageApi = {
   ) => Promise<{ updated: number }>;
   removeFolderTag?: (tag: string) => Promise<{ updated: number }>;
   askKnowledgeBase?: (query: string, limit?: number) => Promise<RagResponse>;
+  getSummary?: (conversationId: number) => Promise<ChatSummaryData | null>;
+  generateSummary?: (conversationId: number) => Promise<ChatSummaryData>;
+  getNotes?: () => Promise<Note[]>;
+  saveNote?: (note: Omit<Note, "id" | "created_at" | "updated_at">) => Promise<Note>;
+  updateNote?: (
+    id: number,
+    changes: Partial<Pick<Note, "title" | "content">>
+  ) => Promise<Note>;
+  deleteNote?: (id: number) => Promise<void>;
 };
+
+export interface ArtifactMetaData {
+  title: string;
+  generated_at: string;
+  tags: string[];
+  fallback: boolean;
+  range_label?: string;
+}
+
+export interface ChatSummaryData {
+  meta: ArtifactMetaData;
+  core_question: string;
+  thinking_journey: Array<{
+    step: number;
+    speaker: "User" | "AI";
+    assertion: string;
+    real_world_anchor: string | null;
+  }>;
+  key_insights: Array<{
+    term: string;
+    definition: string;
+  }>;
+  unresolved_threads: string[];
+  meta_observations: {
+    thinking_style: string;
+    emotional_tone: string;
+    depth_level: "superficial" | "moderate" | "deep";
+  };
+  actionable_next_steps: string[];
+  plain_text?: string;
+}
+
+export interface Note {
+  id: number;
+  title: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+  linked_conversation_ids: number[];
+}

@@ -2,8 +2,11 @@ export { VestiDashboard } from "./dashboard";
 export { LibraryTab } from "./tabs/library-tab";
 export { ExploreTab } from "./tabs/explore-tab";
 export { NetworkTab } from "./tabs/network-tab";
+export { StructuredSummaryCard } from "./components/StructuredSummaryCard";
 export { MOCK_NOTES } from "./mock-data";
 export type {
+  ArtifactMetaData,
+  ChatSummaryData,
   Platform,
   Topic,
   Conversation,
