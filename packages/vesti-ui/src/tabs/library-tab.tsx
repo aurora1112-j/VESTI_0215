@@ -83,6 +83,8 @@ export function LibraryTab({
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [hasLinkedNote, setHasLinkedNote] = useState(false);
+  const [renameNoteTarget, setRenameNoteTarget] = useState<Note | null>(null);
+  const [renameNoteTitle, setRenameNoteTitle] = useState("");
 
   // Note editing state
   const [editingTitle, setEditingTitle] = useState(false);
@@ -92,6 +94,7 @@ export function LibraryTab({
   const [isEditingNoteBody, setIsEditingNoteBody] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const renameNoteInputRef = useRef<HTMLInputElement>(null);
   const FOLDER_META_KEY = "vesti_folder_meta";
 
   function getInitialStages(): PipelineStageState[] {
@@ -350,8 +353,22 @@ export function LibraryTab({
     }
   }, [editingTitle]);
 
+  useEffect(() => {
+    if (renameNoteTarget && renameNoteInputRef.current) {
+      renameNoteInputRef.current.focus();
+      renameNoteInputRef.current.select();
+    }
+  }, [renameNoteTarget]);
+
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
   const selectedNote = notes.find((n) => n.id === selectedNoteId);
+  const renameNoteTrimmed = renameNoteTitle.trim();
+  const canSaveRenamedNote = Boolean(
+    renameNoteTarget &&
+    storage.updateNote &&
+    renameNoteTrimmed &&
+    renameNoteTrimmed !== renameNoteTarget.title
+  );
   const messageCount = messages.length;
   const messageDate =
     messages.length > 0 ? messages[0].created_at : selectedConversation?.updated_at;
@@ -640,6 +657,54 @@ export function LibraryTab({
       await refresh();
     } catch (error) {
       window.alert((error as Error)?.message ?? "Failed to delete conversation.");
+    }
+  };
+
+  const handleNoteDelete = async (note: Note) => {
+    if (!storage.deleteNote) {
+      window.alert("Delete is not available yet.");
+      return;
+    }
+    const confirmed = window.confirm(`Delete note "${note.title}"?`);
+    if (!confirmed) return;
+    try {
+      await storage.deleteNote(note.id);
+      const nextNotes = notes.filter((item) => item.id !== note.id);
+      setNotes(nextNotes);
+      if (selectedNoteId === note.id) {
+        setSelectedNoteId(nextNotes[0]?.id ?? null);
+      }
+      if (renameNoteTarget?.id === note.id) {
+        setRenameNoteTarget(null);
+      }
+    } catch (error) {
+      console.error("[library] deleteNote failed", error);
+    }
+  };
+
+  const openNoteRenameDialog = (note: Note) => {
+    setRenameNoteTarget(note);
+    setRenameNoteTitle(note.title);
+  };
+
+  const submitNoteRename = async () => {
+    if (!renameNoteTarget || !storage.updateNote) return;
+    const trimmedTitle = renameNoteTitle.trim();
+    if (!trimmedTitle || trimmedTitle === renameNoteTarget.title) {
+      setRenameNoteTarget(null);
+      return;
+    }
+    try {
+      const updated = await storage.updateNote(renameNoteTarget.id, {
+        title: trimmedTitle,
+      });
+      setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)));
+      if (selectedNoteId === updated.id) {
+        setNoteTitle(updated.title);
+      }
+      setRenameNoteTarget(null);
+    } catch (error) {
+      window.alert((error as Error)?.message ?? "Failed to rename note.");
     }
   };
 
@@ -1112,52 +1177,84 @@ export function LibraryTab({
                   const isSelected = note.id === selectedNoteId;
                   const preview = note.content.replace(/[#*\[\]]/g, "").slice(0, 100);
                   return (
-                    <button
+                    <div
                       key={note.id}
-                      onClick={() => setSelectedNoteId(note.id)}
                       className={`w-full text-left p-3 rounded-lg transition-all duration-200 relative group ${
                         isSelected
                           ? "bg-bg-surface-card-active shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
                           : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
                       }`}
                     >
-                      <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug">
-                        {note.title}
-                      </h3>
-                      <div
-                        className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
-                          isSelected
-                            ? "grid-rows-[1fr] opacity-100"
-                            : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
-                        }`}
+                      <span className="absolute right-3 top-3 text-[11px] font-sans text-text-tertiary">
+                        {formatTimeAgo(note.updated_at)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNoteId(note.id)}
+                        className="w-full text-left"
                       >
-                        <div className="overflow-hidden">
-                          <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
-                            {preview}
-                          </p>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="ml-auto text-[11px] font-sans text-text-tertiary">
-                              {formatTimeAgo(note.updated_at)}
-                            </span>
-                            {note.linked_conversation_ids.length > 0 && (
-                              <span
-                                title={`Linked to ${note.linked_conversation_ids.length} conversation${
-                                  note.linked_conversation_ids.length > 1 ? "s" : ""
-                                }`}
-                                style={{
-                                  display: "inline-block",
-                                  width: 6,
-                                  height: 6,
-                                  borderRadius: "50%",
-                                  backgroundColor: "#3266AD",
-                                  flexShrink: 0,
-                                }}
-                              />
-                            )}
+                        <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug pr-16">
+                          {note.title}
+                        </h3>
+                        <div
+                          className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
+                            isSelected
+                              ? "grid-rows-[1fr] opacity-100"
+                              : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
+                          }`}
+                        >
+                          <div className="overflow-hidden pb-7">
+                            <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
+                              {preview}
+                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {note.linked_conversation_ids.length > 0 && (
+                                <span
+                                  title={`Linked to ${note.linked_conversation_ids.length} conversation${
+                                    note.linked_conversation_ids.length > 1 ? "s" : ""
+                                  }`}
+                                  style={{
+                                    display: "inline-block",
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: "50%",
+                                    backgroundColor: "#3266AD",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                              )}
+                            </div>
                           </div>
                         </div>
+                      </button>
+                      <div
+                        className={`absolute right-2 bottom-2 flex items-center gap-1 transition-opacity ${
+                          isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedNoteId(note.id);
+                            openNoteRenameDialog(note);
+                          }}
+                          className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-bg-surface-card transition-colors"
+                          aria-label={`Rename note ${note.title}`}
+                        >
+                          <Pencil strokeWidth={1.5} className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleNoteDelete(note);
+                          }}
+                          className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:text-[#B42318] hover:bg-bg-surface-card transition-colors"
+                          aria-label={`Delete note ${note.title}`}
+                        >
+                          <Trash2 strokeWidth={1.5} className="w-4 h-4" />
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   );
                 })
               )}
@@ -1833,6 +1930,60 @@ export function LibraryTab({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renameNoteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => setRenameNoteTarget(null)}
+            className="absolute inset-0 bg-black/25"
+            aria-label="Close rename note dialog"
+          />
+          <div className="relative w-full max-w-md rounded-xl border border-border-subtle bg-bg-primary shadow-[0_16px_48px_rgba(0,0,0,0.18)] p-4">
+            <h3 className="text-[16px] font-sans font-medium text-text-primary">Rename Note</h3>
+            <p className="mt-1 text-[13px] font-sans text-text-tertiary">
+              Update the title for this note.
+            </p>
+            <input
+              ref={renameNoteInputRef}
+              type="text"
+              value={renameNoteTitle}
+              onChange={(event) => setRenameNoteTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitNoteRename();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setRenameNoteTarget(null);
+                }
+              }}
+              placeholder="Note title"
+              className="mt-3 w-full rounded-md border border-border-subtle bg-bg-surface-card px-3 py-2 text-[13px] font-sans text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRenameNoteTarget(null)}
+                className="px-3 py-1.5 rounded-md text-[13px] font-sans text-text-secondary hover:text-text-primary hover:bg-bg-surface-card transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void submitNoteRename();
+                }}
+                disabled={!canSaveRenamedNote}
+                className="px-3 py-1.5 rounded-md text-[13px] font-sans bg-accent-primary text-white hover:bg-accent-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
