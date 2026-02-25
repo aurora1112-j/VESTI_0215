@@ -37,8 +37,9 @@
   https://github.com/user-attachments/assets/3d702080-91c8-4461-8566-92e1bd82f05e
 
   <b>🎥 视频演示：捕获对话与其他试验功能</b>
-
-  flowchart TB
+  <br>
+```mermaid
+flowchart TB
     subgraph EXT["🧩 捕获引擎层 Chrome Extension"]
         direction TB
         CS["Content Scripts\nPlatform Parsers\nObserver / Gate"]
