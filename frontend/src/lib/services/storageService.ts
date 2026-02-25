@@ -6,6 +6,7 @@ import type {
   ForceArchiveTransientResult,
   LlmConfig,
   Message,
+  Note,
   Platform,
   RelatedConversation,
   RagResponse,
@@ -15,8 +16,10 @@ import type {
   Topic,
   GardenerResult,
 } from "../types";
+import type { ChatSummaryData } from "../types/insightsPresentation";
 import { sendRequest } from "../messaging/runtime";
 import type { ConversationUpdateChanges } from "../messaging/protocol";
+import { toChatSummaryData } from "./insightAdapter";
 
 const LONG_RUNNING_TIMEOUT_MS = 120000;
 const TEST_CONNECTION_TIMEOUT_MS = 30000;
@@ -190,6 +193,44 @@ export async function getMessages(
   }) as Promise<Message[]>;
 }
 
+export async function getNotes(): Promise<Note[]> {
+  return sendRequest({
+    type: "GET_NOTES",
+    target: "offscreen",
+  }) as Promise<Note[]>;
+}
+
+export async function saveNote(
+  data: Omit<Note, "id" | "created_at" | "updated_at">
+): Promise<Note> {
+  const result = (await sendRequest({
+    type: "CREATE_NOTE",
+    target: "offscreen",
+    payload: data,
+  })) as { note: Note };
+  return result.note;
+}
+
+export async function updateNote(
+  id: number,
+  changes: Partial<Pick<Note, "title" | "content">>
+): Promise<Note> {
+  const result = (await sendRequest({
+    type: "UPDATE_NOTE",
+    target: "offscreen",
+    payload: { id, changes },
+  })) as { note: Note };
+  return result.note;
+}
+
+export async function deleteNote(id: number): Promise<void> {
+  await sendRequest({
+    type: "DELETE_NOTE",
+    target: "offscreen",
+    payload: { id },
+  });
+}
+
 export async function searchConversationIdsByText(
   query: string
 ): Promise<number[]> {
@@ -325,6 +366,13 @@ export async function getConversationSummary(
   }) as Promise<SummaryRecord | null>;
 }
 
+export async function getSummary(
+  conversationId: number
+): Promise<ChatSummaryData | null> {
+  const record = await getConversationSummary(conversationId);
+  return record ? toChatSummaryData(record) : null;
+}
+
 export async function generateConversationSummary(
   conversationId: number
 ): Promise<SummaryRecord> {
@@ -336,6 +384,13 @@ export async function generateConversationSummary(
     },
     LONG_RUNNING_TIMEOUT_MS
   ) as Promise<SummaryRecord>;
+}
+
+export async function generateSummary(
+  conversationId: number
+): Promise<ChatSummaryData> {
+  const record = await generateConversationSummary(conversationId);
+  return toChatSummaryData(record);
 }
 
 export async function getWeeklyReport(
