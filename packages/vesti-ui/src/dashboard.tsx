@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { LibraryTab } from "./tabs/library-tab";
 import { ExploreTab } from "./tabs/explore-tab";
 import { NetworkTab } from "./tabs/network-tab";
@@ -96,20 +96,7 @@ export function VestiDashboard({
             </h1>
           </div>
 
-          {/* Center - Search */}
-          <div className="flex-1 max-w-[480px] mx-auto">
-            <div className="relative">
-              <Search
-                strokeWidth={1.5}
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary"
-              />
-              <input
-                type="text"
-                placeholder="Search..."
-                className="w-full pl-10 pr-4 py-2 bg-bg-primary border border-border-default rounded-md text-sm font-sans text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 focus:border-accent-primary transition-all"
-              />
-            </div>
-          </div>
+          <div className="flex-1" />
 
           {/* Right - Actions */}
           <div className="flex items-center gap-1 relative">

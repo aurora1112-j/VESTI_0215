@@ -1,15 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import type { RagResponse, RelatedConversation, StorageApi } from "../types";
 
 const sampleQuestions = [
   "What React performance optimization techniques have I discussed?",
   "Summarize all conversations about database architecture",
   "Find all discussions involving TypeScript type system",
+];
+
+const SEARCH_STAGES = [
+  { label: "Understanding your question...", progress: 22 },
+  { label: "Searching relevant conversations...", progress: 48 },
+  { label: "Cross-checking related evidence...", progress: 72 },
+  { label: "Drafting final answer...", progress: 88 },
 ];
 
 type ExploreTabProps = {
@@ -24,12 +31,28 @@ export function ExploreTab({ askKnowledgeBase, onOpenConversation }: ExploreTabP
   const [sources, setSources] = useState<RelatedConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchStageIndex, setSearchStageIndex] = useState(0);
+
+  useEffect(() => {
+    if (!loading) {
+      setSearchStageIndex(0);
+      return;
+    }
+
+    setSearchStageIndex(0);
+    const timer = setInterval(() => {
+      setSearchStageIndex((prev) => (prev + 1) % SEARCH_STAGES.length);
+    }, 900);
+    return () => clearInterval(timer);
+  }, [loading]);
 
   const renderedAnswer = useMemo(() => {
     if (!answer) return "";
     const html = marked.parse(answer, { gfm: true, breaks: false }) as string;
     return DOMPurify.sanitize(html);
   }, [answer]);
+
+  const activeSearchStage = SEARCH_STAGES[searchStageIndex];
 
   const handleSubmit = async (q: string) => {
     const trimmed = q.trim();
@@ -119,8 +142,24 @@ export function ExploreTab({ askKnowledgeBase, onOpenConversation }: ExploreTabP
             <div className="mb-8">
               <div className="prose prose-slate prose-lg max-w-none prose-p:leading-relaxed prose-li:leading-relaxed prose-p:text-text-primary prose-li:text-text-primary">
                 {loading ? (
-                  <div className="text-base font-serif text-text-primary leading-relaxed">
-                    Searching your knowledge base...
+                  <div className="rounded-lg border border-border-subtle bg-bg-surface-card p-4">
+                    <div className="flex items-center gap-2 text-text-primary">
+                      <Loader2 className="h-4 w-4 animate-spin text-accent-primary" />
+                      <span className="text-[14px] font-sans font-medium">
+                        {activeSearchStage.label}
+                      </span>
+                    </div>
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-bg-secondary">
+                      <div
+                        className="h-full rounded-full bg-accent-primary transition-all duration-500 ease-out"
+                        style={{ width: `${activeSearchStage.progress}%` }}
+                      />
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <div className="h-3 w-[92%] animate-pulse rounded bg-bg-secondary" />
+                      <div className="h-3 w-[88%] animate-pulse rounded bg-bg-secondary" />
+                      <div className="h-3 w-[76%] animate-pulse rounded bg-bg-secondary" />
+                    </div>
                   </div>
                 ) : error ? (
                   <div className="text-base font-serif text-text-primary leading-relaxed">
@@ -146,8 +185,13 @@ export function ExploreTab({ askKnowledgeBase, onOpenConversation }: ExploreTabP
               </h3>
               <div className="space-y-2">
                 {loading && (
-                  <div className="text-[13px] font-sans text-text-tertiary">
-                    Retrieving sources...
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[13px] font-sans text-text-tertiary">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-primary" />
+                      <span>Retrieving sources...</span>
+                    </div>
+                    <div className="h-10 w-full animate-pulse rounded-lg bg-bg-surface-card" />
+                    <div className="h-10 w-full animate-pulse rounded-lg bg-bg-surface-card" />
                   </div>
                 )}
                 {!loading && sources.length === 0 && (
