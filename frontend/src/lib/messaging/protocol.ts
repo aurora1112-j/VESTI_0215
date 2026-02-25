@@ -16,6 +16,7 @@ import type {
   WeeklyReportRecord,
   RelatedConversation,
 } from "../types";
+import type { AstRoot, AstVersion } from "../types/ast";
 
 export interface DateRange {
   start: number;
@@ -54,6 +55,9 @@ export interface ConversationDraft {
 export interface ParsedMessage {
   role: "user" | "ai";
   textContent: string;
+  contentAst?: AstRoot | null;
+  contentAstVersion?: AstVersion | null;
+  degradedNodesCount?: number;
   htmlContent?: string;
   timestamp?: number;
 }
@@ -124,6 +128,13 @@ export type RequestMessage =
       via?: "background";
       requestId?: string;
       payload: { conversationId: number };
+    }
+  | {
+      type: "SEARCH_CONVERSATION_IDS_BY_TEXT";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: { query: string };
     }
   | {
       type: "DELETE_CONVERSATION";
@@ -242,6 +253,7 @@ export type ResponseDataMap = {
   RUN_GARDENER: { updated: boolean; conversation: Conversation; result: GardenerResult };
   GET_RELATED_CONVERSATIONS: RelatedConversation[];
   GET_MESSAGES: Message[];
+  SEARCH_CONVERSATION_IDS_BY_TEXT: number[];
   DELETE_CONVERSATION: { deleted: boolean };
   UPDATE_CONVERSATION_TITLE: { updated: boolean; conversation: Conversation };
   GET_DASHBOARD_STATS: DashboardStats;

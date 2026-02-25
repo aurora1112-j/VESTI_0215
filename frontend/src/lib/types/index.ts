@@ -3,6 +3,8 @@
 // All interface definitions for Vesti (kept in sync with frontend)
 // ============================================================
 
+import type { AstRoot, AstVersion } from "./ast";
+
 export type Platform =
   | "ChatGPT"
   | "Claude"
@@ -72,6 +74,9 @@ export interface Message {
   conversation_id: number;
   role: "user" | "ai";
   content_text: string;
+  content_ast?: AstRoot | null;
+  content_ast_version?: AstVersion | null;
+  degraded_nodes_count?: number;
   created_at: number;
 }
 
@@ -222,6 +227,27 @@ export interface ConversationSummaryV1 {
 
 export interface ConversationSummaryV2 {
   core_question: string;
+  thinking_journey: Array<{
+    step: number;
+    speaker: "User" | "AI";
+    assertion: string;
+    real_world_anchor: string | null;
+  }>;
+  key_insights: Array<{
+    term: string;
+    definition: string;
+  }>;
+  unresolved_threads: string[];
+  meta_observations: {
+    thinking_style: string;
+    emotional_tone: string;
+    depth_level: "superficial" | "moderate" | "deep";
+  };
+  actionable_next_steps: string[];
+}
+
+export interface ConversationSummaryV2Legacy {
+  core_question: string;
   thinking_journey: {
     initial_state: string;
     key_turns: string[];
@@ -253,6 +279,12 @@ export interface WeeklyLiteReportV1 {
   };
   highlights: string[];
   recurring_questions: string[];
+  cross_domain_echoes: Array<{
+    domain_a: string;
+    domain_b: string;
+    shared_logic: string;
+    evidence_ids: number[];
+  }>;
   unresolved_threads: string[];
   suggested_focus: string[];
   evidence: Array<{
@@ -266,7 +298,11 @@ export interface SummaryRecord {
   id: number;
   conversationId: number;
   content: string;
-  structured?: ConversationSummaryV1 | ConversationSummaryV2 | null;
+  structured?:
+    | ConversationSummaryV1
+    | ConversationSummaryV2
+    | ConversationSummaryV2Legacy
+    | null;
   format?: InsightFormat;
   status?: InsightStatus;
   schemaVersion?: "conversation_summary.v1" | "conversation_summary.v2";

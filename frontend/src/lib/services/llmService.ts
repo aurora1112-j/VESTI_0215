@@ -10,6 +10,7 @@ import {
   getLlmAccessMode,
   getProxyRouteUrl,
 } from "./llmConfig";
+import { parseJsonObjectFromText } from "./insightSchemas";
 
 const SYSTEM_PROMPT = "You are a careful technical summarization assistant.";
 const STRICT_JSON_SYSTEM_PROMPT =
@@ -38,6 +39,7 @@ export interface ModelScopeCallResult {
   mode: ModelScopeMode;
   streamStage: StreamExecutionStage;
   streamReason: string;
+  contentSource?: "content" | "reasoning_content";
 }
 
 export interface InferenceCallResult extends ModelScopeCallResult {
@@ -120,6 +122,35 @@ function hasReasoningContent(data: ModelScopeResponse): boolean {
   }
   const deltaReasoning = toText(choice?.delta?.reasoning_content);
   return deltaReasoning.trim().length > 0;
+}
+
+function extractReasoningContent(data: ModelScopeResponse): string {
+  const choice = data.choices?.[0];
+  const messageReasoning = toText(choice?.message?.reasoning_content);
+  if (messageReasoning.trim()) {
+    return messageReasoning.trim();
+  }
+  const deltaReasoning = toText(choice?.delta?.reasoning_content);
+  if (deltaReasoning.trim()) {
+    return deltaReasoning.trim();
+  }
+  return "";
+}
+
+function recoverJsonContentFromReasoning(data: ModelScopeResponse): string {
+  const reasoning = extractReasoningContent(data);
+  if (!reasoning) {
+    return "";
+  }
+  try {
+    const parsed = parseJsonObjectFromText(reasoning);
+    if (typeof parsed === "object" && parsed !== null) {
+      return JSON.stringify(parsed);
+    }
+    return "";
+  } catch {
+    return "";
+  }
 }
 
 async function parseError(response: Response): Promise<string> {
@@ -255,12 +286,28 @@ async function callProvider(
           mode: "json_mode",
           streamStage: streamDecision.stage,
           streamReason: streamDecision.reason,
+          contentSource: "content",
+        };
+      }
+
+      const recoveredJson = recoverJsonContentFromReasoning(data);
+      if (recoveredJson) {
+        logger.info("llm", `${route} JSON recovered from reasoning_content`, {
+          summary_json_recovered_from_reasoning: true,
+        });
+        return {
+          content: recoveredJson,
+          mode: "json_mode",
+          streamStage: streamDecision.stage,
+          streamReason: streamDecision.reason,
+          contentSource: "reasoning_content",
         };
       }
 
       shouldPromptJsonFallback = true;
       logger.warn("llm", `${route} JSON mode returned empty content, fallback to prompt_json`, {
         hasReasoningContent: hasReasoningContent(data),
+        summary_json_recovered_from_reasoning: false,
       });
     } else {
       const jsonErrorText = await parseError(jsonResponse);
@@ -300,11 +347,41 @@ async function callProvider(
       }
 
       const promptJsonData = (await promptJsonResponse.json()) as ModelScopeResponse;
+      const promptJsonContent = extractContent(promptJsonData);
+      if (promptJsonContent.trim()) {
+        return {
+          content: promptJsonContent,
+          mode: "prompt_json",
+          streamStage: streamDecision.stage,
+          streamReason: streamDecision.reason,
+          contentSource: "content",
+        };
+      }
+
+      const recoveredPromptJson = recoverJsonContentFromReasoning(promptJsonData);
+      if (recoveredPromptJson) {
+        logger.info("llm", `${route} prompt_json recovered from reasoning_content`, {
+          summary_json_recovered_from_reasoning: true,
+        });
+        return {
+          content: recoveredPromptJson,
+          mode: "prompt_json",
+          streamStage: streamDecision.stage,
+          streamReason: streamDecision.reason,
+          contentSource: "reasoning_content",
+        };
+      }
+
+      logger.warn("llm", `${route} prompt_json returned empty content`, {
+        hasReasoningContent: hasReasoningContent(promptJsonData),
+        summary_json_recovered_from_reasoning: false,
+      });
       return {
-        content: extractContent(promptJsonData),
+        content: promptJsonContent,
         mode: "prompt_json",
         streamStage: streamDecision.stage,
         streamReason: streamDecision.reason,
+        contentSource: "content",
       };
     }
   }
@@ -322,6 +399,7 @@ async function callProvider(
     mode: "plain_text",
     streamStage: streamDecision.stage,
     streamReason: streamDecision.reason,
+    contentSource: "content",
   };
 }
 

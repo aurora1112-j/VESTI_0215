@@ -19,6 +19,7 @@ import type { ConversationUpdateChanges } from "../messaging/protocol";
 
 const LONG_RUNNING_TIMEOUT_MS = 120000;
 const TEST_CONNECTION_TIMEOUT_MS = 30000;
+const FULL_TEXT_SEARCH_TIMEOUT_MS = 15000;
 
 export async function getConversations(filters?: {
   platform?: Platform;
@@ -120,6 +121,19 @@ export async function getMessages(
     target: "offscreen",
     payload: { conversationId },
   }) as Promise<Message[]>;
+}
+
+export async function searchConversationIdsByText(
+  query: string
+): Promise<number[]> {
+  return sendRequest(
+    {
+      type: "SEARCH_CONVERSATION_IDS_BY_TEXT",
+      target: "offscreen",
+      payload: { query },
+    },
+    FULL_TEXT_SEARCH_TIMEOUT_MS
+  ) as Promise<number[]>;
 }
 
 export async function deleteConversation(id: number): Promise<void> {

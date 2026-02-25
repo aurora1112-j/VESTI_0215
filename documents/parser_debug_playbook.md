@@ -1,7 +1,7 @@
-﻿# Claude / ChatGPT Parser 排查复盘与可复用 SOP
+# Claude / ChatGPT / Doubao Parser 排查复盘与可复用 SOP
 
-版本: v1.0
-更新日期: 2026-02-11
+版本: v1.1
+更新日期: 2026-02-23
 适用范围: Vesti 浏览器扩展（Local-First）
 
 ---
@@ -249,6 +249,37 @@ Parser 每次输出固定字段：
 ### Case D: 存储幂等
 - 连续点击手动保存不应重复插入相同消息
 - 旧会话发生策略修复后可被替换校正
+
+---
+
+## 8.1 Doubao CoT + 正式输出双分支 DOM（专项）
+
+典型结构（同一 assistant turn 内并列子树）：
+- 分支 A: 折叠思考区（常见 `collapse-wrapper*`）
+- 分支 B: 正式 Markdown 区（常见 `flow-markdown-body` / `container-*-flow-markdown-body`）
+- 夹层噪声: 检索挂件、编辑历史、页码器、引用数量卡片
+
+推荐诊断顺序：
+1. 先确认是否存在 CoT/正式输出并列子树，而不是串行单根。
+2. 检查 parser 是否执行“分段提取 + 局部失败隔离”：
+   - CoT 分支失败不应阻断正式输出分支。
+   - 正式输出有效时必须优先入库。
+3. 检查落库结构是否为单条 `ai` 消息，且包含分段标题：
+   - `思考过程`
+   - `正式回答`
+4. 检查 `Doubao parse stats.ai_segment_stats`：
+   - `cot_detected`
+   - `final_detected`
+   - `cot_parse_failed`
+   - `final_parse_failed`
+   - `final_only_fallback_used`
+
+Doubao 本轮噪声规则（行级）：
+- `^\d+\s*/\s*\d+$`（页码）
+- `^(编辑历史|历史版本)$`
+- `^(references?|参考链接|引用)\s*[:：]?\s*\d+$`
+- `^(展开|收起|show more|done|copy|edit|retry)$`
+- `^(找到|检索到)\s*\d+\s*篇?.*(资料|参考|结果).*$`
 
 ---
 

@@ -1,7 +1,7 @@
 # Vesti Insights Engineering Spec (Prompt + UI/UX v2.0)
 
 - Document version: v1.2-ui-pre.6
-- Updated on: 2026-02-15
+- Updated on: 2026-02-22
 - Scope: Vesti Sidepanel (Insights first, linked with Settings/Timeline/Reader)
 - Positioning: `v1.1 guardrail` (stable delivery) + `v1.2 target` (design convergence)
 - Related doc: `documents/prompt_engineering/model_settings.md`
@@ -10,7 +10,7 @@
 
 ## 0. Revision Notes
 
-1. Synced with `v1.1.0-rc.4` implementation: Summary v2 + Weekly Lite + adapter bridge coexistence.
+1. Synced with `v1.7.0-rc.x` docs freeze: `conversation_summary.v3` and `weekly_lite.v2` as defaults, with one-cycle legacy coexistence.
 2. Synced with Demo routing: Node proxy dual-model fallback (`DS14 -> Qwen3-14B`, one retry).
 3. Synced with output resilience: empty `json_mode` content degrades to `prompt_json`, then `fallback_text`.
 4. Warm Paper theme is mandatory: restore sepia-like paper palette, keep typography upgrades.
@@ -18,6 +18,7 @@
 6. Data Management is promoted to an independent Dock entry (`Data`), while Settings keeps only an entry card.
 7. Toggle geometry is corrected with Y-axis center-lock to remove thumb downward drift/jitter.
 8. v2.0 proxy contract adds embeddings route (`POST /api/embeddings`) and `proxyBaseUrl` config.
+9. v1.8.1 Insights keeps grouped accordion IA (`On-demand / Scheduled / Discovery`) and upgrades Weekly Digest to a dynamic four-state machine aligned with future weekly schema fields.
 
 ---
 
@@ -79,7 +80,7 @@ Interpretation:
 
 ### 4.1 Default prompt strategy (`current`)
 
-1. Conversation Summary: thinking-journey template (v2 schema target).
+1. Thread Summary: thinking-journey template (v3 schema target).
 2. Weekly Digest: Weekly Lite template (short context, MVP-safe).
 
 ### 4.2 Prompt version governance
@@ -107,10 +108,12 @@ Interpretation:
 
 - Conversation:
   - `conversation_summary.v1` (legacy)
-  - `conversation_summary.v2` (default)
+  - `conversation_summary.v2` (legacy, one-cycle coexistence)
+  - `conversation_summary.v3` (default)
 - Weekly:
   - `weekly_report.v1` (legacy)
-  - `weekly_lite.v1` (default)
+  - `weekly_lite.v1` (legacy, one-cycle coexistence)
+  - `weekly_lite.v2` (default)
 
 ### 5.2 Adapter bridge responsibilities
 
@@ -120,8 +123,8 @@ Interpretation:
 
 ### 5.3 Presentation contract (current)
 
-1. Summary: `core_question + thinking_journey + key_insights + unresolved_threads + actionable_next_steps`
-2. Weekly Lite: `highlights + recurring_questions + unresolved_threads + suggested_focus + evidence + insufficient_data`
+1. Summary (v3): `core_question + thinking_journey[] + key_insights[] + unresolved_threads + actionable_next_steps`
+2. Weekly Lite (v2): `highlights + recurring_questions + cross_domain_echoes + unresolved_threads + suggested_focus + evidence + insufficient_data`
 
 ---
 
@@ -187,6 +190,18 @@ Assignment:
 3. Input/select fields: 40px height, white surface, warm subtle border.
 4. Button hierarchy: `Test` ghost, `Save` solid dark primary.
 
+### 8.5 Insights accordion IA contract (v1.8.1 weekly dynamic)
+
+1. Group order is fixed: `On-demand -> Scheduled -> Discovery`.
+2. On-demand item is `Thread Summary` (context-bound generation).
+3. Scheduled item is `Weekly Digest` (7-day digest artifact).
+4. Discovery item is `Explore & Network`, disabled with `Soon` tag in v1.8.1.
+5. Generate controls use wand semantics: first pass `Generate Summary` / `Generate Digest`, subsequent action `Regenerate`.
+6. Weekly state contract is `idle | generating | ready | sparse_week | error`, with local phase track (`loading_thread_summaries -> pattern_detection -> cross_domain_mapping -> composing_and_persisting`).
+7. Weekly uses previous natural week (Mon-Sun, local timezone) as a shared window for list/get/generate paths.
+8. Weekly idle includes local collapse interaction (`COLLAPSE_AT = 3`, `N more`/`Collapse`) and must not trigger extra remote calls.
+9. Weekly ready rendering is forward-compatible: optional sections (for example `cross_domain_echoes`) render only when fields exist; missing fields are hidden, not treated as errors.
+
 ---
 
 ## 9. Engineering Notes
@@ -222,8 +237,8 @@ Assignment:
 
 ### A. Prompt / Schema
 
-1. Conversation output hits v2 required fields.
-2. Weekly output hits `weekly_lite.v1`; `<3` conversations sets `insufficient_data=true`.
+1. Conversation output hits `conversation_summary.v3` required fields.
+2. Weekly output hits `weekly_lite.v2`; `<3` conversations set `insufficient_data=true`, with `cross_domain_echoes` present (can be empty).
 3. Structured failure degrades to readable `fallback_text`.
 
 ### B. Warm theme
@@ -256,7 +271,7 @@ Assignment:
 
 ### P0 (implemented baseline)
 
-1. Summary v2 + Weekly Lite templates
+1. Summary v3 + Weekly Lite v2 templates (legacy bridge retained for one-cycle coexistence)
 2. Adapter bridge for legacy compatibility
 3. Warm Paper UI + Settings interaction fixes
 4. Node proxy + dual-model fallback

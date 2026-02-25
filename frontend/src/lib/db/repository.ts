@@ -54,7 +54,18 @@ function toMessage(record: MessageRecord): Message {
   if (record.id === undefined) {
     throw new Error("Message record missing id");
   }
-  return record as Message;
+  const degradedNodesCount =
+    typeof record.degraded_nodes_count === "number" &&
+    Number.isFinite(record.degraded_nodes_count)
+      ? Math.max(0, Math.floor(record.degraded_nodes_count))
+      : 0;
+
+  return {
+    ...(record as Message),
+    content_ast: record.content_ast ?? null,
+    content_ast_version: record.content_ast_version ?? null,
+    degraded_nodes_count: degradedNodesCount,
+  };
 }
 
 function toTopic(record: TopicRecord): Topic {
@@ -401,6 +412,32 @@ export async function listMessages(
     .sortBy("created_at");
 
   return records.map(toMessage);
+}
+
+export async function searchConversationIdsByText(query: string): Promise<number[]> {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const conversationIds = new Set<number>();
+  await db.messages.toCollection().each((record) => {
+    const conversationId = record.conversation_id;
+    if (typeof conversationId !== "number" || conversationIds.has(conversationId)) {
+      return;
+    }
+
+    const content = record.content_text;
+    if (typeof content !== "string") {
+      return;
+    }
+
+    if (content.toLowerCase().includes(normalizedQuery)) {
+      conversationIds.add(conversationId);
+    }
+  });
+
+  return Array.from(conversationIds);
 }
 
 export async function deleteConversation(id: number): Promise<boolean> {
