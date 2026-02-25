@@ -24,7 +24,13 @@ export function VestiDashboard({
   rootClassName,
 }: DashboardProps) {
   const SETTINGS_KEY = "vesti_llm_settings";
-  const [activeTab, setActiveTab] = useState<Tab>("library");
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "library";
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab === "explore" || tab === "network" || tab === "library") return tab;
+    return "library";
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelscopeKey, setModelscopeKey] = useState("");
   const [settingsStatus, setSettingsStatus] = useState<"idle" | "saved" | "error">(
