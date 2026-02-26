@@ -5,29 +5,29 @@
 
   <h3>📷 Vesti 界面概览与核心功能演示</h3>
 
-  <table border="0" width="100%" cellspacing="0" cellpadding="10">
+<table border="0" width="100%" cellspacing="0" cellpadding="10">
     <tr>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/showcase.png" alt="Vesti Sidebar Right" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub><b>沉浸式侧边栏 </b><br>在浏览网页时，随时呼出沉浸式阅读对话历史，记录灵感与摘要。</sub>
+        <sub><b>沉浸式伴随侧边栏</b><br>在浏览任意网页时随时呼出，无缝衔接当前上下文与历史对话，让灵感捕获如影随形。</sub>
       </td>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/showcase-2.png" alt="Vesti Chats List Left" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub><b>全局对话管理 </b><br>集中管理所有平台的 AI 对话历史，一键回溯。</sub>
+        <sub><b>全局对话全景枢纽</b><br>打破平台间的数据孤岛，集中收纳全网 AI 交互轨迹，以本地优先原则保障你的思维主权。</sub>
       </td>
     </tr>
     <tr>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/summary-generation-1.png" alt="ChatGPT Summary Capture" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub>🧠 <b>独立WEB视图知识看板，通过向量数据库实现跨平台对话记忆检索增强生成，捕获长时段中的个人思维轨迹</sub>
+        <sub><b>语义增强的独立知识看板</b><br>依托本地向量数据库实现跨平台 RAG 检索，精准追溯长时段内的每一次思考演进与认知转折。</sub>
       </td>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/summary-generation-2.png" alt="Claude Insights Generation" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub> <b>Modelscope推理API Multi-Agents智能生成即时结构化回顾，一键入库笔记</b><br>无缝跟随对话流，自动提取要点生成清晰摘要。</sub>
+        <sub><b>多智能体驱动的结构化洞察</b><br>后台自动提取复杂对话的关键脉络，生成多维度清晰摘要，一键将思维火花沉淀为永久策展笔记。</sub>
       </td>
     </tr>
   </table>
