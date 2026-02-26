@@ -6,6 +6,7 @@
   "author": "Vesti",
   "scripts": {
     "dev": "plasmo dev",
+    "prebuild": "pnpm -C ../packages/vesti-ui build",
     "build": "plasmo build",
     "package": "node -e \"console.error('Local packaging is disabled. Use CI workflow extension-package or run pnpm -C frontend package:safe.'); process.exit(1)\"",
     "package:ci": "pnpm run build && plasmo package",
