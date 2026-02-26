@@ -10,24 +10,24 @@
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/showcase.png" alt="Vesti Sidebar Right" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub><b>沉浸式侧边栏 (右侧)</b><br>在浏览网页时，随时呼出记录灵感与摘要。</sub>
+        <sub><b>沉浸式侧边栏 </b><br>在浏览网页时，随时呼出沉浸式阅读对话历史，记录灵感与摘要。</sub>
       </td>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/showcase-2.png" alt="Vesti Chats List Left" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub><b>全局对话管理 (左侧)</b><br>集中管理所有平台的 AI 对话历史，一键回溯。</sub>
+        <sub><b>全局对话管理 </b><br>集中管理所有平台的 AI 对话历史，一键回溯。</sub>
       </td>
     </tr>
     <tr>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/summary-generation-1.png" alt="ChatGPT Summary Capture" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub>🤖 <b>ChatGPT：即时结构化笔记</b><br>无缝跟随对话流，自动提取要点生成清晰摘要。</sub>
+        <sub>🧠 <b>独立WEB视图知识看板，通过向量数据库实现跨平台对话记忆检索增强生成，捕获长时段中的个人思维轨迹</sub>
       </td>
       <td width="50%" align="center" valign="top">
         <img src=".github/assets/summary-generation-2.png" alt="Claude Insights Generation" width="100%" style="border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <br>
-        <sub>🧠 <b>Claude：深度思维路径可视化</b><br>梳理长文脉络，呈现核心问题与思考演进过程。</sub>
+        <sub> <b>Modelscope推理API Multi-Agents智能生成即时结构化回顾，一键入库笔记</b><br>无缝跟随对话流，自动提取要点生成清晰摘要。</sub>
       </td>
     </tr>
   </table>
