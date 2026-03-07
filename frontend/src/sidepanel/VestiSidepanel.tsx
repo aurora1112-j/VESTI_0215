@@ -55,6 +55,11 @@ export function VestiSidepanel() {
     setCurrentPage(page);
   };
 
+  const handleNavigateToLibrary = () => {
+    const url = chrome.runtime.getURL("options.html?tab=library");
+    chrome.tabs.create({ url });
+  };
+
   const handleNavigateToData = () => {
     setCurrentPage("data");
   };
@@ -87,7 +92,11 @@ export function VestiSidepanel() {
           ) : null}
         </main>
 
-        <Dock currentPage={currentPage} onNavigate={handleNavigate} />
+        <Dock
+          currentPage={currentPage}
+          onNavigate={handleNavigate}
+          onNavigateToLibrary={handleNavigateToLibrary}
+        />
       </div>
     </div>
   );

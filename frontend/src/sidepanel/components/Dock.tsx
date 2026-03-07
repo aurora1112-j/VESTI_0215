@@ -40,18 +40,29 @@ const DOCK_ITEMS_BOTTOM: DockItem[] = [
 interface DockProps {
   currentPage: PageId;
   onNavigate: (page: PageId) => void;
+  onNavigateToLibrary: () => void;
 }
 
-export function Dock({ currentPage, onNavigate }: DockProps) {
+export function Dock({
+  currentPage,
+  onNavigate,
+  onNavigateToLibrary,
+}: DockProps) {
   return (
     <nav
       aria-label="Vesti navigation"
       className="flex w-[52px] flex-col items-center justify-between border-l border-border-subtle bg-bg-sidebar px-1 py-4"
     >
       <div className="flex flex-col items-center gap-2">
-        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle bg-bg-primary/70">
+        <button
+          type="button"
+          aria-label="Open Library Dashboard"
+          onClick={onNavigateToLibrary}
+          title="Open Library Dashboard"
+          className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle bg-bg-primary/70 transition-colors [transition-duration:140ms] hover:bg-accent-primary-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+        >
           <img src={LOGO_BASE64} alt="Vesti" width={20} height={20} />
-        </div>
+        </button>
         {DOCK_ITEMS_TOP.map((item) => (
           <DockButton
             key={item.id}
