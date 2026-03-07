@@ -1,4 +1,4 @@
-# Vesti v1.3 Phase3 Execution Log (Kimi + YUANBAO)
+﻿# Vesti v1.3 Phase3 Execution Log (Kimi + YUANBAO)
 
 Date: 2026-03-07  
 Owner: Engineering  
@@ -40,6 +40,10 @@ Status: In progress (rc.6)
    - Restricted selector and anchor candidate sets to `.user-content` + `.segment-container` only.
    - Added hard reject for `.chat-header` scope and explicit sanitization blacklist (`.chat-header`, `.chat-header-content`, `.chat-header-actions`).
    - Removed cross-container AI fallback so captured text can only come from in-turn `.markdown` leaves (Final-Only).
+8. Yuanbao `hyc-*` DOM realignment + Final+CoT merge
+   - Replaced legacy `.ds-message` assumptions with Yuanbao semantic roots (`.hyc-component-text .hyc-content-text`, `.hyc-component-deepsearch-cot__think__content__item-text .ybc-p`, `.hyc-common-markdown:not(.hyc-common-markdown-style-cot)`).
+   - Changed AI assembly to one message per turn: CoT paragraphs first, separator `---`, then final answer body.
+   - Excluded deepsearch document list/citation UI blocks from captured text and dropped orphan CoT without a following final block.
 ---
 
 ## 3. Validation Status

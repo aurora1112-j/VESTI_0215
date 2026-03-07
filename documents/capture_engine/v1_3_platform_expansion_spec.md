@@ -1,4 +1,4 @@
-# Vesti v1.3 Platform Expansion Spec
+﻿# Vesti v1.3 Platform Expansion Spec
 
 Version: v1.3  
 Status: Decision Complete (Phase 1/2 done, Phase 3 locked)  
@@ -98,6 +98,13 @@ Each parse cycle logs:
 - Final-only extraction for AI responses: collect `.markdown` leaves inside a turn, exclude `.toolcall-container` descendants, and never fallback across turn/container boundaries.
 - Sanitization blacklist includes `.chat-header`, `.chat-header-content`, `.chat-header-actions` to prevent title pollution from future DOM nesting changes.
 - Kimi content script may trigger one delayed startup capture to avoid `no_transient` on already-rendered pages.
+
+### 4.5 YUANBAO DOM adaptation guardrails
+- Candidate roots align with `hyc-*` semantic DOM only: user `.hyc-component-text .hyc-content-text`, CoT `.hyc-component-deepsearch-cot__think__content__item-text .ybc-p`, final `.hyc-common-markdown:not(.hyc-common-markdown-style-cot)`.
+- AI capture policy is Final+CoT merged into one AI message per turn, with CoT before final answer and `---` separator.
+- Deepsearch citation/document list UI remains excluded from message text (`doc title`, `docs number`, toggle/header controls).
+- Orphan CoT without subsequent final block is dropped to avoid half-turn pollution.
+- Yuanbao content script remains observer-only in this cycle (no delayed startup capture).
 ---
 
 ## 5. File and Module Mapping (Phase 3)
