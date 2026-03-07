@@ -1,8 +1,8 @@
-# Vesti v1.3 Phase3 Manual Sampling Checklist (Kimi + YUANBAO)
+# Vesti v1.3 Phase3 Manual Sampling Checklist (Kimi + Yuanbao)
 
 Date: 2026-03-07  
 Owner: QA + Engineering  
-Scope: Phase3 only (Kimi, YUANBAO) + legacy regression sanity
+Scope: Phase3 only (Kimi, Yuanbao) + legacy regression sanity
 
 ---
 
@@ -10,7 +10,7 @@ Scope: Phase3 only (Kimi, YUANBAO) + legacy regression sanity
 
 - Minimum cases completed:
   - Kimi: 6
-  - YUANBAO: 6
+  - Yuanbao: 6
   - Legacy regression sanity: 6
   - Total minimum: 18
 - Go threshold:
@@ -54,7 +54,7 @@ Per-case metadata must include:
 5. `V13P3-KIMI-MANUAL-01` manual + force archive, expected `mode_manual_hold` then `force_archive`
 6. `V13P3-KIMI-MANUAL-02` missing stable ID, expected force blocked (`missing_conversation_id`)
 
-### 3.2 YUANBAO (6)
+### 3.2 Yuanbao (6)
 
 7. `V13P3-YUANBAO-MIRROR-01` mirror, standard U-A-U-A, expected committed (`mode_mirror`)
 8. `V13P3-YUANBAO-MIRROR-02` mirror, streaming update, expected no duplicate amplification

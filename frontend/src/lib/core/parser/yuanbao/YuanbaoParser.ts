@@ -76,7 +76,7 @@ const SELECTORS = {
 };
 
 const TITLE_PLATFORM_SUFFIX_PATTERN =
-  /\s*[-\u2013\u2014]\s*(ChatGPT|Claude|Gemini|DeepSeek|Qwen|Doubao|Kimi|YUANBAO)\s*$/i;
+  /\s*[-\u2013\u2014]\s*(ChatGPT|Claude|Gemini|DeepSeek|Qwen|Doubao|Kimi|Yuanbao)\s*$/i;
 const SESSION_ID_QUERY_KEYS = [
   "conversation",
   "conversation_id",
@@ -163,7 +163,7 @@ export class YuanbaoParser implements IParser {
   detect(): Platform | null {
     const host = window.location.hostname;
     if (host.includes("yuanbao.tencent.com")) {
-      return "YUANBAO";
+      return "Yuanbao";
     }
     return null;
   }
@@ -181,13 +181,13 @@ export class YuanbaoParser implements IParser {
 
   getMessages(): ParsedMessage[] {
     const startedAt = performance.now();
-    const perfMode = astPerfModeController.getMode("YUANBAO");
+    const perfMode = astPerfModeController.getMode("Yuanbao");
     const selectorResult = this.extractUsingSelectorStrategy(perfMode);
     const anchorResult = this.extractUsingAnchorStrategy(perfMode);
     const chosen = this.chooseBestExtraction(selectorResult, anchorResult);
     const deduped = this.dedupeNearDuplicates(chosen.messages);
     const parseDurationMs = Math.round(performance.now() - startedAt);
-    const modeUpdate = astPerfModeController.record("YUANBAO", parseDurationMs);
+    const modeUpdate = astPerfModeController.record("Yuanbao", parseDurationMs);
 
     const stats: ParserStats = {
       source: chosen.source,
@@ -202,12 +202,12 @@ export class YuanbaoParser implements IParser {
       degraded_nodes_count: chosen.degradedNodesCount,
       ast_node_count: chosen.astNodeCount,
       message_count: deduped.length,
-      platform: "YUANBAO",
+      platform: "Yuanbao",
     };
 
     if (modeUpdate.switched) {
-      logger.warn("parser", "YUANBAO AST perf mode switched", {
-        platform: "YUANBAO",
+      logger.warn("parser", "Yuanbao AST perf mode switched", {
+        platform: "Yuanbao",
         from: modeUpdate.previousMode,
         to: modeUpdate.mode,
         parse_duration_ms: parseDurationMs,
@@ -342,7 +342,7 @@ export class YuanbaoParser implements IParser {
       merged.appendChild(finalSection);
 
       const ast = extractAstFromElement(merged, {
-        platform: "YUANBAO",
+        platform: "Yuanbao",
         perfMode,
       });
 
@@ -383,7 +383,7 @@ export class YuanbaoParser implements IParser {
     if (!textContent) return null;
 
     const ast = extractAstFromElement(sanitized, {
-      platform: "YUANBAO",
+      platform: "Yuanbao",
       perfMode,
     });
 
@@ -633,10 +633,10 @@ export class YuanbaoParser implements IParser {
   }
 
   private logStats(stats: ParserStats, messages: ParsedMessage[]): void {
-    logger.info("parser", "YUANBAO parse stats", stats);
+    logger.info("parser", "Yuanbao parse stats", stats);
 
     if (messages.length === 0) {
-      logger.warn("parser", "YUANBAO parser kept zero messages", {
+      logger.warn("parser", "Yuanbao parser kept zero messages", {
         source: stats.source,
         totalCandidates: stats.totalCandidates,
         droppedNoise: stats.droppedNoise,
@@ -647,7 +647,7 @@ export class YuanbaoParser implements IParser {
 
     const hasSingleRole = stats.roleDistribution.user === 0 || stats.roleDistribution.ai === 0;
     if (hasSingleRole) {
-      logger.warn("parser", "YUANBAO parser captured only one role", {
+      logger.warn("parser", "Yuanbao parser captured only one role", {
         source: stats.source,
         roleDistribution: stats.roleDistribution,
         samples: messages

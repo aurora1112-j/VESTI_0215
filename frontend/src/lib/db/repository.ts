@@ -22,6 +22,7 @@ import {
   buildExportMdV1,
   buildExportTxtV1,
 } from "../services/exportSerializers";
+import { SUPPORTED_PLATFORMS, normalizePlatform } from "../platform";
 import { db } from "./schema";
 import { enforceStorageWriteGuard, getStorageUsageSnapshot } from "./storageLimits";
 import type {
@@ -32,6 +33,46 @@ import type {
   TopicRecord,
   WeeklyReportRecordRecord,
 } from "./schema";
+
+type ExploreSourceRecord = {
+  id: number;
+  title: string;
+  platform: string;
+  similarity: number;
+};
+
+function normalizeExploreSources(
+  sources: ExploreSourceRecord[] | undefined
+): ExploreSourceRecord[] | undefined {
+  if (!sources) {
+    return undefined;
+  }
+
+  return sources.map((source) => {
+    const platform = normalizePlatform(source.platform);
+    if (!platform) {
+      return source;
+    }
+
+    return {
+      ...source,
+      platform,
+    };
+  });
+}
+
+function parseExploreSources(raw?: string): ExploreSourceRecord[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as ExploreSourceRecord[];
+    return normalizeExploreSources(parsed);
+  } catch {
+    return undefined;
+  }
+}
 
 function toConversation(record: ConversationRecord): Conversation {
   if (record.id === undefined) {
@@ -45,9 +86,11 @@ function toConversation(record: ConversationRecord): Conversation {
     typeof record.turn_count === "number" && Number.isFinite(record.turn_count)
       ? Math.max(0, Math.floor(record.turn_count))
       : Math.floor(messageCount / 2);
+  const platform = normalizePlatform((record as { platform?: unknown }).platform);
 
   return {
     ...(record as Conversation),
+    platform: platform ?? record.platform,
     turn_count: turnCount,
   };
 }
@@ -169,16 +212,9 @@ function dayKey(ts: number): string {
 }
 
 function initPlatformDistribution(): Record<Platform, number> {
-  return {
-    ChatGPT: 0,
-    Claude: 0,
-    Gemini: 0,
-    DeepSeek: 0,
-    Qwen: 0,
-    Doubao: 0,
-    Kimi: 0,
-    YUANBAO: 0,
-  };
+  return Object.fromEntries(
+    SUPPORTED_PLATFORMS.map((platform) => [platform, 0])
+  ) as Record<Platform, number>;
 }
 
 const MAX_CONVERSATION_TITLE_LENGTH = 120;
@@ -914,13 +950,14 @@ export async function addExploreMessage(
   message: Omit<ExploreMessage, "id" | "sessionId">
 ): Promise<ExploreMessage> {
   await enforceStorageWriteGuard();
+  const normalizedSources = normalizeExploreSources(message.sources as ExploreSourceRecord[] | undefined);
   
   const record: ExploreMessageRecord = {
     id: generateId("msg"),
     sessionId,
     role: message.role,
     content: message.content,
-    sources: message.sources ? JSON.stringify(message.sources) : undefined,
+    sources: normalizedSources ? JSON.stringify(normalizedSources) : undefined,
     timestamp: message.timestamp,
   };
   
@@ -953,7 +990,7 @@ export async function addExploreMessage(
     sessionId,
     role: message.role,
     content: message.content,
-    sources: message.sources,
+    sources: normalizedSources,
     timestamp: message.timestamp,
   };
 }
@@ -969,7 +1006,7 @@ export async function getExploreMessages(sessionId: string): Promise<ExploreMess
     sessionId: record.sessionId,
     role: record.role,
     content: record.content,
-    sources: record.sources ? JSON.parse(record.sources) : undefined,
+    sources: parseExploreSources(record.sources),
     timestamp: record.timestamp,
   }));
 }
@@ -993,7 +1030,7 @@ export async function getRecentExploreMessages(
       sessionId: record.sessionId,
       role: record.role,
       content: record.content,
-      sources: record.sources ? JSON.parse(record.sources) : undefined,
+      sources: parseExploreSources(record.sources),
       timestamp: record.timestamp,
     }));
 }
@@ -1073,7 +1110,7 @@ export async function getAllExploreMessages(): Promise<ExploreMessage[]> {
     sessionId: record.sessionId,
     role: record.role,
     content: record.content,
-    sources: record.sources ? JSON.parse(record.sources) : undefined,
+    sources: parseExploreSources(record.sources),
     timestamp: record.timestamp,
   }));
 }

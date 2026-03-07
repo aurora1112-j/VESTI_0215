@@ -42,7 +42,7 @@ export const PLATFORM_TONE: Record<Platform, PlatformToneClassSet> = {
     text: "text-kimi-text",
     border: "border-kimi-border",
   },
-  YUANBAO: {
+  Yuanbao: {
     bg: "bg-yuanbao-bg",
     text: "text-yuanbao-text",
     border: "border-yuanbao-border",

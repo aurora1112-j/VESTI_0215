@@ -27,26 +27,53 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ---
 
+## [1.2.0-rc.7] - 2026-03-07
+
+### Added
+- Added a shared platform normalization helper for runtime-facing `Yuanbao` identity handling with legacy `YUANBAO` compatibility.
+- Added a web dashboard `Appearance` section in the avatar settings drawer with an explicit dark-mode toggle.
+
+### Changed
+- Canonicalized platform naming from `YUANBAO` to `Yuanbao` across runtime types, storage reads/writes, sidepanel filters, and `@vesti/ui` platform metadata.
+- Migrated stored conversation platform values to `Yuanbao` and kept short-term legacy normalization for persisted inputs.
+- Restored web dashboard badges to the solid-fill platform style while keeping dock / Threads visuals on their existing token system.
+- Synced web dashboard theme state with dock appearance via shared `vesti_ui_settings.themeMode` updates.
+
+### Fixed
+- Realigned Kimi capture to the current DOM structure, excluded `chat-header` pollution, and restored cold-start transient availability.
+- Realigned Yuanbao capture to the current `hyc-*` DOM and merged CoT + final response into a single archived AI turn without doc-title noise.
+- Fixed Kimi web badge contrast so light mode uses dark text and dark mode uses white text.
+- Fixed web dashboard theme refresh so dock-initiated appearance changes propagate without reopening the page.
+
+### Docs
+- Updated Kimi / Yuanbao Phase 3 capture docs and execution notes.
+- Updated the UI refactor spec to document web-vs-dock badge decoupling and dashboard theme sync.
+
+### Chore
+- Prepared release metadata for `v1.2.0-rc.7`.
+
+---
+
 ## [1.2.0-rc.6] - 2026-03-07
 
 ### Added
-- Added Kimi and YUANBAO capture entrypoints (`frontend/src/contents/kimi.ts`, `frontend/src/contents/yuanbao.ts`) with transient status + force-archive handlers.
-- Added Kimi and YUANBAO parser modules with selector+anchor extraction, strict session-ID gating, parse stats logging, and v1.2 governance compatibility.
+- Added Kimi and Yuanbao capture entrypoints (`frontend/src/contents/kimi.ts`, `frontend/src/contents/yuanbao.ts`) with transient status + force-archive handlers.
+- Added Kimi and Yuanbao parser modules with selector+anchor extraction, strict session-ID gating, parse stats logging, and v1.2 governance compatibility.
 
 ### Changed
-- Expanded capture host routing for Kimi to include `www.kimi.com` + `kimi.com` (with transitional `kimi.moonshot.cn` compatibility) and YUANBAO `yuanbao.tencent.com` for `GET_ACTIVE_CAPTURE_STATUS` and `FORCE_ARCHIVE_TRANSIENT`.
-- Expanded platform enum/theme mapping to 8 platforms (ChatGPT/Claude/Gemini/DeepSeek/Qwen/Doubao/Kimi/YUANBAO).
-- Added sidepanel + capsule light/dark token mapping for Kimi/YUANBAO while preserving existing Threads layout structure.
-- Updated extension manifest host permissions and web-accessible matches for Kimi/YUANBAO domains.
+- Expanded capture host routing for Kimi to include `www.kimi.com` + `kimi.com` (with transitional `kimi.moonshot.cn` compatibility) and Yuanbao `yuanbao.tencent.com` for `GET_ACTIVE_CAPTURE_STATUS` and `FORCE_ARCHIVE_TRANSIENT`.
+- Expanded platform enum/theme mapping to 8 platforms (ChatGPT/Claude/Gemini/DeepSeek/Qwen/Doubao/Kimi/Yuanbao).
+- Added sidepanel + capsule light/dark token mapping for Kimi/Yuanbao while preserving existing Threads layout structure.
+- Updated extension manifest host permissions and web-accessible matches for Kimi/Yuanbao domains.
 
 ### Fixed
 - _None yet_
 
 ### Docs
-- Updated `documents/capture_engine/v1_3_platform_expansion_spec.md` for Phase 3 (Kimi + YUANBAO).
+- Updated `documents/capture_engine/v1_3_platform_expansion_spec.md` for Phase 3 (Kimi + Yuanbao).
 - Added `documents/capture_engine/v1_3_phase3_manual_sampling_checklist.md`.
 - Added `documents/capture_engine/v1_3_phase3_execution_log.md`.
-- Updated `documents/ui_refactor/v1_4_ui_refactor_component_system_spec.md` with 8-platform token contract and YUANBAO naming rule.
+- Updated `documents/ui_refactor/v1_4_ui_refactor_component_system_spec.md` with 8-platform token contract and Yuanbao naming rule.
 
 ### Chore
 - _None yet_
@@ -214,7 +241,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ---
 
-[Unreleased]: https://github.com/abraxas914/VESTI/compare/v1.2.0-rc.6...HEAD
+[Unreleased]: https://github.com/abraxas914/VESTI/compare/v1.2.0-rc.7...HEAD
+[1.2.0-rc.7]: https://github.com/abraxas914/VESTI/releases/tag/v1.2.0-rc.7
 [1.2.0-rc.6]: https://github.com/abraxas914/VESTI/releases/tag/v1.2.0-rc.6
 [1.2.0-rc.3]: https://github.com/abraxas914/VESTI/releases/tag/v1.2.0-rc.3
 [1.2.0-rc.2]: https://github.com/abraxas914/VESTI/releases/tag/v1.2.0-rc.2

@@ -1,4 +1,4 @@
-﻿# Vesti v1.3 Phase3 Execution Log (Kimi + YUANBAO)
+# Vesti v1.3 Phase3 Execution Log (Kimi + Yuanbao)
 
 Date: 2026-03-07  
 Owner: Engineering  
@@ -18,7 +18,7 @@ Status: In progress (rc.6)
 ## 2. Implemented in Phase3
 
 1. Platform scope
-   - Added Kimi + YUANBAO in `Platform` unions and distribution/mapping contracts.
+   - Added Kimi + Yuanbao in `Platform` unions and distribution/mapping contracts.
 2. Host routing
    - Added strict hosts (with Kimi transition compatibility):
      - `www.kimi.com` (primary)
@@ -30,7 +30,7 @@ Status: In progress (rc.6)
 4. Parser modules
    - Added `KimiParser` / `YuanbaoParser` with selector+anchor strategy, strict session ID extraction, parse stats logging, and v1.2 governance compatibility.
 5. UI + capsule mapping
-   - Added light/dark tokens and platform mappings for Kimi/YUANBAO.
+   - Added light/dark tokens and platform mappings for Kimi/Yuanbao.
    - Explicitly preserved Threads layout structure (mapping-only change).
 6. Kimi DOM realignment + warm start snapshot
    - Replaced generic `ds-message` assumptions with semantic Kimi anchors (`.user-content`, `.segment-container`).

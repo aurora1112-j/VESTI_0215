@@ -92,7 +92,7 @@ const SELECTORS = {
 };
 
 const TITLE_PLATFORM_SUFFIX_PATTERN =
-  /\s*[-\u2013\u2014]\s*(ChatGPT|Claude|Gemini|DeepSeek|Qwen|Doubao|Kimi|YUANBAO)\s*$/i;
+  /\s*[-\u2013\u2014]\s*(ChatGPT|Claude|Gemini|DeepSeek|Qwen|Doubao|Kimi|Yuanbao)\s*$/i;
 
 type MessageRole = "user" | "ai";
 

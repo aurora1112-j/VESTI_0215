@@ -55,6 +55,60 @@ export interface ExploreMessageRecord {
   timestamp: number;
 }
 
+function normalizePersistedPlatform(value: unknown): ConversationRecord["platform"] | undefined {
+  if (value === "Yuanbao" || value === "YUANBAO") {
+    return "Yuanbao";
+  }
+
+  switch (value) {
+    case "ChatGPT":
+    case "Claude":
+    case "Gemini":
+    case "DeepSeek":
+    case "Qwen":
+    case "Doubao":
+    case "Kimi":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeSerializedSources(raw?: string): string | undefined {
+  if (!raw) {
+    return raw;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return raw;
+    }
+
+    let changed = false;
+    const normalized = parsed.map((item) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+
+      const platform = normalizePersistedPlatform((item as { platform?: unknown }).platform);
+      if (!platform || platform === (item as { platform?: unknown }).platform) {
+        return item;
+      }
+
+      changed = true;
+      return {
+        ...(item as Record<string, unknown>),
+        platform,
+      };
+    });
+
+    return changed ? JSON.stringify(normalized) : raw;
+  } catch {
+    return raw;
+  }
+}
+
 export class MemoryHubDB extends Dexie {
   conversations!: Table<ConversationRecord, number>;
   messages!: Table<MessageRecord, number>;
@@ -243,6 +297,42 @@ export class MemoryHubDB extends Dexie {
         explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
       })
       .upgrade(() => undefined);
+    this.version(10)
+      .stores({
+        conversations:
+          "++id, platform, title, created_at, updated_at, uuid, source_created_at, turn_count, topic_id, is_starred, [platform+created_at], [platform+uuid], [topic_id+updated_at]",
+        messages:
+          "++id, conversation_id, role, created_at, [conversation_id+created_at]",
+        summaries: "++id, conversationId, createdAt",
+        weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
+        topics:
+          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+        vectors: "++id, conversation_id, text_hash",
+        notes: "++id, created_at, updated_at",
+        explore_sessions: "id, updatedAt, createdAt",
+        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("conversations")
+          .toCollection()
+          .modify((record: Partial<ConversationRecord>) => {
+            const platform = normalizePersistedPlatform(record.platform);
+            if (platform && platform !== record.platform) {
+              record.platform = platform;
+            }
+          });
+
+        await tx
+          .table("explore_messages")
+          .toCollection()
+          .modify((record: Partial<ExploreMessageRecord>) => {
+            const normalized = normalizeSerializedSources(record.sources);
+            if (normalized !== record.sources) {
+              record.sources = normalized;
+            }
+          });
+      });
   }
 }
 

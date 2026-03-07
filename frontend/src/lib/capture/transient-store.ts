@@ -1,4 +1,5 @@
 import type { ConversationDraft, ParsedMessage } from "../messaging/protocol";
+import { normalizePlatform } from "../platform";
 import type { CaptureDecisionMeta, Platform } from "../types";
 import { countAiTurns } from "./turn-metrics";
 
@@ -25,9 +26,10 @@ interface TransientCaptureState {
   updatedAt?: number;
 }
 
-function buildTransientKey(platform: Platform, sessionUUID: string): string {
+function buildTransientKey(platform: Platform | string, sessionUUID: string): string {
+  const canonicalPlatform = normalizePlatform(platform) ?? platform;
   const suffix = sessionUUID.trim() ? sessionUUID.trim() : "pending";
-  return `${platform}:${suffix}`;
+  return `${canonicalPlatform}:${suffix}`;
 }
 
 export function createTransientCaptureStore() {
@@ -64,13 +66,14 @@ export function createTransientCaptureStore() {
       }
 
       const { conversation, messages } = state.payload;
+      const platform = normalizePlatform(conversation.platform) ?? conversation.platform;
       const sessionUUID = conversation.uuid.trim() || undefined;
-      const transientKey = buildTransientKey(conversation.platform, conversation.uuid);
+      const transientKey = buildTransientKey(platform, conversation.uuid);
 
       return {
         available: true,
         reason: "ok",
-        platform: conversation.platform,
+        platform,
         sessionUUID,
         transientKey,
         messageCount: messages.length,

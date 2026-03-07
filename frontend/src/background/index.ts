@@ -173,7 +173,7 @@ function resolvePlatformFromUrl(url: string): Platform | undefined {
       return "Kimi";
     }
     if (host === "yuanbao.tencent.com") {
-      return "YUANBAO";
+      return "Yuanbao";
     }
   } catch {
     return undefined;

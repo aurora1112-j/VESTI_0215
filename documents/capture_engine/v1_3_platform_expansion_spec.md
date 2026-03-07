@@ -1,4 +1,4 @@
-﻿# Vesti v1.3 Platform Expansion Spec
+# Vesti v1.3 Platform Expansion Spec
 
 Version: v1.3  
 Status: Decision Complete (Phase 1/2 done, Phase 3 locked)  
@@ -13,7 +13,7 @@ v1.3 expands capture coverage from the legacy 6-platform baseline to 8 platforms
 Locked phase roadmap:
 1. Phase 1: Gemini + DeepSeek (done)
 2. Phase 2: Doubao + Qwen (done)
-3. Phase 3: Kimi + YUANBAO (this cycle)
+3. Phase 3: Kimi + Yuanbao (this cycle)
 
 Locked policy for all phases:
 - no stable platform session ID => `held/missing_conversation_id`
@@ -25,7 +25,7 @@ Locked policy for all phases:
 ## 2. Scope and Boundaries
 
 ### In scope
-- Add new capture hosts/content scripts/parsers for Kimi + YUANBAO.
+- Add new capture hosts/content scripts/parsers for Kimi + Yuanbao.
 - Extend `Platform` type and platform color mapping to 8 platforms.
 - Extend sidepanel + capsule badge/thread-tone mapping for new platforms.
 - Keep Threads page visual structure unchanged (only platform mapping expansion).
@@ -48,7 +48,7 @@ Locked policy for all phases:
 
 ### 3.2 Platform naming
 - `Kimi`
-- `YUANBAO` (uppercase, no Chinese alias in type/display contract)
+- `Yuanbao` (canonical English label, no Chinese alias in type/display contract)
 
 ### 3.3 Platform color contract (8 platforms)
 - ChatGPT `#10A37F`
@@ -58,7 +58,7 @@ Locked policy for all phases:
 - Qwen `#615CED`
 - Doubao `#1E6FFF`
 - Kimi `#181C28`
-- YUANBAO `#00C5A3`
+- Yuanbao `#00C5A3`
 
 ---
 
@@ -99,7 +99,7 @@ Each parse cycle logs:
 - Sanitization blacklist includes `.chat-header`, `.chat-header-content`, `.chat-header-actions` to prevent title pollution from future DOM nesting changes.
 - Kimi content script may trigger one delayed startup capture to avoid `no_transient` on already-rendered pages.
 
-### 4.5 YUANBAO DOM adaptation guardrails
+### 4.5 Yuanbao DOM adaptation guardrails
 - Candidate roots align with `hyc-*` semantic DOM only: user `.hyc-component-text .hyc-content-text`, CoT `.hyc-component-deepsearch-cot__think__content__item-text .ybc-p`, final `.hyc-common-markdown:not(.hyc-common-markdown-style-cot)`.
 - AI capture policy is Final+CoT merged into one AI message per turn, with CoT before final answer and `---` separator.
 - Deepsearch citation/document list UI remains excluded from message text (`doc title`, `docs number`, toggle/header controls).

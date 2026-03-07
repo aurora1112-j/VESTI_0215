@@ -408,7 +408,7 @@ function getPlatformBadgeClass(platform: Platform): string {
       return "ins-platform-badge-claude";
     case "Kimi":
       return "ins-platform-badge-kimi";
-    case "YUANBAO":
+    case "Yuanbao":
       return "ins-platform-badge-yuanbao";
     default:
       return "ins-platform-badge-chatgpt";
@@ -431,7 +431,7 @@ function getThreadThemeClass(platform: Platform): string {
       return "ins-thread-theme-doubao";
     case "Kimi":
       return "ins-thread-theme-kimi";
-    case "YUANBAO":
+    case "Yuanbao":
       return "ins-thread-theme-yuanbao";
     default:
       return "ins-thread-theme-chatgpt";
