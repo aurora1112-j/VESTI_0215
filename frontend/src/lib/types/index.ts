@@ -13,7 +13,7 @@ export type Platform =
   | "Qwen"
   | "Doubao"
   | "Kimi"
-  | "YUANBAO";
+  | "Yuanbao";
 
 export interface Topic {
   id: number;

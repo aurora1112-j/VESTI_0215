@@ -21,5 +21,5 @@ export const PLATFORM_OPTIONS: ReadonlyArray<Platform> = [
   "Qwen",
   "Doubao",
   "Kimi",
-  "YUANBAO",
+  "Yuanbao",
 ];

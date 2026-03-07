@@ -13,7 +13,7 @@ export const config: PlasmoCSConfig = {
 
 const parser = new YuanbaoParser();
 if (!parser.detect()) {
-  logger.info("content", "YUANBAO parser not detected on this page");
+  logger.info("content", "Yuanbao parser not detected on this page");
 } else {
   const transientStore = createTransientCaptureStore();
   const pipeline = new CapturePipeline(parser, async (payload) => {
@@ -81,5 +81,5 @@ if (!parser.detect()) {
     },
   );
 
-  logger.info("content", "YUANBAO capture started");
+logger.info("content", "Yuanbao capture started");
 }

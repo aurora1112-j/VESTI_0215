@@ -124,7 +124,7 @@ const PLATFORM_BY_HOST: Record<string, Platform> = {
   "www.kimi.com": "Kimi",
   "kimi.com": "Kimi",
   "kimi.moonshot.cn": "Kimi",
-  "yuanbao.tencent.com": "YUANBAO",
+  "yuanbao.tencent.com": "Yuanbao",
 };
 
 const PLATFORM_TONE: Record<UiThemeMode, Record<Platform, PlatformTone>> = {
@@ -164,7 +164,7 @@ const PLATFORM_TONE: Record<UiThemeMode, Record<Platform, PlatformTone>> = {
       text: "hsl(222 15% 28%)",
       border: "hsl(222 12% 74%)",
     },
-    YUANBAO: {
+    Yuanbao: {
       bg: "hsl(173 62% 93%)",
       text: "hsl(173 58% 26%)",
       border: "hsl(173 35% 75%)",
@@ -206,7 +206,7 @@ const PLATFORM_TONE: Record<UiThemeMode, Record<Platform, PlatformTone>> = {
       text: "hsl(222 18% 68%)",
       border: "hsl(222 14% 32%)",
     },
-    YUANBAO: {
+    Yuanbao: {
       bg: "hsl(173 30% 16%)",
       text: "hsl(173 52% 62%)",
       border: "hsl(173 28% 31%)",
