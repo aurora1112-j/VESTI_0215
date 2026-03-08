@@ -170,7 +170,7 @@ export type RequestMessage =
       target?: "offscreen";
       via?: "background";
       requestId?: string;
-      payload?: { threshold?: number };
+      payload?: { threshold?: number; conversationIds?: number[] };
     }
   | {
       type: "RENAME_FOLDER_TAG";
