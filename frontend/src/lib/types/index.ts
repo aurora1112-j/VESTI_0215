@@ -72,9 +72,51 @@ export interface RelatedConversation {
   similarity: number;
 }
 
+export type ExploreMode = "agent" | "classic";
+
+export type ExploreToolName =
+  | "query_planner"
+  | "search_rag"
+  | "summary_tool"
+  | "context_compiler"
+  | "answer_synthesizer";
+
+export type ExploreToolStatus = "completed" | "failed" | "skipped";
+
+export interface ExploreToolCall {
+  id: string;
+  name: ExploreToolName;
+  status: ExploreToolStatus;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  inputSummary?: string;
+  outputSummary?: string;
+  error?: string;
+}
+
+export interface ExploreContextCandidate {
+  conversationId: number;
+  title: string;
+  platform: Platform;
+  similarity: number;
+  summarySnippet?: string;
+  excerpt?: string;
+}
+
+export interface ExploreAgentMeta {
+  mode: ExploreMode;
+  toolCalls: ExploreToolCall[];
+  contextDraft?: string;
+  contextCandidates?: ExploreContextCandidate[];
+  selectedContextConversationIds?: number[];
+  totalDurationMs?: number;
+}
+
 export interface RagResponse {
   answer: string;
   sources: RelatedConversation[];
+  agent?: ExploreAgentMeta;
 }
 
 export interface Message {

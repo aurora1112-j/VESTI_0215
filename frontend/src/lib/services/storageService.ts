@@ -11,6 +11,7 @@ import type {
   Platform,
   RelatedConversation,
   RagResponse,
+  ExploreMode,
   StorageUsageSnapshot,
   SummaryRecord,
   WeeklyReportRecord,
@@ -249,13 +250,14 @@ export async function searchConversationIdsByText(
 export async function askKnowledgeBase(
   query: string,
   sessionId?: string,
-  limit?: number
+  limit?: number,
+  mode?: ExploreMode
 ): Promise<RagResponse & { sessionId: string }> {
   return sendRequest(
     {
       type: "ASK_KNOWLEDGE_BASE",
       target: "offscreen",
-      payload: { query, sessionId, limit },
+      payload: { query, sessionId, limit, mode },
     },
     LONG_RUNNING_TIMEOUT_MS
   ) as Promise<RagResponse & { sessionId: string }>;
@@ -308,6 +310,18 @@ export async function renameExploreSession(sessionId: string, title: string): Pr
     type: "RENAME_EXPLORE_SESSION",
     target: "offscreen",
     payload: { sessionId, title },
+  });
+}
+
+export async function updateExploreMessageContext(
+  messageId: string,
+  contextDraft: string,
+  selectedContextConversationIds: number[]
+): Promise<void> {
+  await sendRequest({
+    type: "UPDATE_EXPLORE_MESSAGE_CONTEXT",
+    target: "offscreen",
+    payload: { messageId, contextDraft, selectedContextConversationIds },
   });
 }
 

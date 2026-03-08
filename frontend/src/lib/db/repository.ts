@@ -2,6 +2,7 @@ import type {
   Conversation,
   ConversationSummaryV2,
   DataOverviewSnapshot,
+  ExploreAgentMeta,
   ExportFormat,
   ExportPayload,
   Message,
@@ -69,6 +70,71 @@ function parseExploreSources(raw?: string): ExploreSourceRecord[] | undefined {
   try {
     const parsed = JSON.parse(raw) as ExploreSourceRecord[];
     return normalizeExploreSources(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeExploreAgentMeta(
+  meta: ExploreAgentMeta | undefined
+): ExploreAgentMeta | undefined {
+  if (!meta) {
+    return undefined;
+  }
+
+  const normalizedCandidates = Array.isArray(meta.contextCandidates)
+    ? meta.contextCandidates
+        .filter((candidate) => candidate && typeof candidate === "object")
+        .map((candidate) => {
+          const platform = normalizePlatform(candidate.platform);
+          return {
+            ...candidate,
+            platform: platform ?? candidate.platform,
+          };
+        })
+    : undefined;
+
+  const selectedContextConversationIds = Array.isArray(
+    meta.selectedContextConversationIds
+  )
+    ? meta.selectedContextConversationIds.filter(
+        (id): id is number => typeof id === "number" && Number.isFinite(id)
+      )
+    : undefined;
+
+  const toolCalls = Array.isArray(meta.toolCalls)
+    ? meta.toolCalls.filter((toolCall) => toolCall && typeof toolCall === "object")
+    : [];
+
+  return {
+    ...meta,
+    toolCalls,
+    contextCandidates: normalizedCandidates,
+    selectedContextConversationIds,
+  };
+}
+
+function parseExploreAgentMeta(raw?: string): ExploreAgentMeta | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as ExploreAgentMeta;
+    return normalizeExploreAgentMeta(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeExploreAgentMeta(meta?: ExploreAgentMeta): string | undefined {
+  const normalized = normalizeExploreAgentMeta(meta);
+  if (!normalized) {
+    return undefined;
+  }
+
+  try {
+    return JSON.stringify(normalized);
   } catch {
     return undefined;
   }
@@ -877,6 +943,7 @@ export interface ExploreMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Array<{ id: number; title: string; platform: string; similarity: number }>;
+  agentMeta?: ExploreAgentMeta;
   timestamp: number;
 }
 
@@ -951,6 +1018,7 @@ export async function addExploreMessage(
 ): Promise<ExploreMessage> {
   await enforceStorageWriteGuard();
   const normalizedSources = normalizeExploreSources(message.sources as ExploreSourceRecord[] | undefined);
+  const serializedAgentMeta = serializeExploreAgentMeta(message.agentMeta);
   
   const record: ExploreMessageRecord = {
     id: generateId("msg"),
@@ -958,6 +1026,7 @@ export async function addExploreMessage(
     role: message.role,
     content: message.content,
     sources: normalizedSources ? JSON.stringify(normalizedSources) : undefined,
+    agentMeta: serializedAgentMeta,
     timestamp: message.timestamp,
   };
   
@@ -991,6 +1060,7 @@ export async function addExploreMessage(
     role: message.role,
     content: message.content,
     sources: normalizedSources,
+    agentMeta: parseExploreAgentMeta(serializedAgentMeta),
     timestamp: message.timestamp,
   };
 }
@@ -1007,6 +1077,7 @@ export async function getExploreMessages(sessionId: string): Promise<ExploreMess
     role: record.role,
     content: record.content,
     sources: parseExploreSources(record.sources),
+    agentMeta: parseExploreAgentMeta(record.agentMeta),
     timestamp: record.timestamp,
   }));
 }
@@ -1031,8 +1102,36 @@ export async function getRecentExploreMessages(
       role: record.role,
       content: record.content,
       sources: parseExploreSources(record.sources),
+      agentMeta: parseExploreAgentMeta(record.agentMeta),
       timestamp: record.timestamp,
     }));
+}
+
+export async function updateExploreMessageContext(
+  messageId: string,
+  contextDraft: string,
+  selectedContextConversationIds: number[]
+): Promise<void> {
+  await enforceStorageWriteGuard();
+
+  const record = await db.explore_messages.get(messageId);
+  if (!record) {
+    throw new Error("EXPLORE_MESSAGE_NOT_FOUND");
+  }
+
+  const existingMeta = parseExploreAgentMeta(record.agentMeta);
+  const nextMeta = normalizeExploreAgentMeta({
+    mode: existingMeta?.mode ?? "agent",
+    toolCalls: existingMeta?.toolCalls ?? [],
+    contextCandidates: existingMeta?.contextCandidates ?? [],
+    ...existingMeta,
+    contextDraft,
+    selectedContextConversationIds,
+  });
+
+  await db.explore_messages.update(messageId, {
+    agentMeta: serializeExploreAgentMeta(nextMeta),
+  });
 }
 
 // Cleanup functions
@@ -1111,6 +1210,7 @@ export async function getAllExploreMessages(): Promise<ExploreMessage[]> {
     role: record.role,
     content: record.content,
     sources: parseExploreSources(record.sources),
+    agentMeta: parseExploreAgentMeta(record.agentMeta),
     timestamp: record.timestamp,
   }));
 }

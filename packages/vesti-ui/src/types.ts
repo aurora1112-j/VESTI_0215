@@ -56,9 +56,51 @@ export interface RelatedConversation {
   similarity: number;
 }
 
+export type ExploreMode = "agent" | "classic";
+
+export type ExploreToolName =
+  | "query_planner"
+  | "search_rag"
+  | "summary_tool"
+  | "context_compiler"
+  | "answer_synthesizer";
+
+export type ExploreToolStatus = "completed" | "failed" | "skipped";
+
+export interface ExploreToolCall {
+  id: string;
+  name: ExploreToolName;
+  status: ExploreToolStatus;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  inputSummary?: string;
+  outputSummary?: string;
+  error?: string;
+}
+
+export interface ExploreContextCandidate {
+  conversationId: number;
+  title: string;
+  platform: Platform;
+  similarity: number;
+  summarySnippet?: string;
+  excerpt?: string;
+}
+
+export interface ExploreAgentMeta {
+  mode: ExploreMode;
+  toolCalls: ExploreToolCall[];
+  contextDraft?: string;
+  contextCandidates?: ExploreContextCandidate[];
+  selectedContextConversationIds?: number[];
+  totalDurationMs?: number;
+}
+
 export interface RagResponse {
   answer: string;
   sources: RelatedConversation[];
+  agent?: ExploreAgentMeta;
 }
 
 export interface Message {
@@ -104,6 +146,7 @@ export interface ExploreMessage {
   role: "user" | "assistant";
   content: string;
   sources?: RelatedConversation[];
+  agentMeta?: ExploreAgentMeta;
   timestamp: number;
 }
 
@@ -136,7 +179,12 @@ export type StorageApi = {
     to: string
   ) => Promise<{ updated: number }>;
   removeFolderTag?: (tag: string) => Promise<{ updated: number }>;
-  askKnowledgeBase?: (query: string, sessionId?: string, limit?: number) => Promise<RagResponse & { sessionId: string }>;
+  askKnowledgeBase?: (
+    query: string,
+    sessionId?: string,
+    limit?: number,
+    mode?: ExploreMode
+  ) => Promise<RagResponse & { sessionId: string }>;
   // Explore Session APIs
   createExploreSession?: (title: string) => Promise<string>;
   listExploreSessions?: (limit?: number) => Promise<ExploreSession[]>;
@@ -144,6 +192,11 @@ export type StorageApi = {
   getExploreMessages?: (sessionId: string) => Promise<ExploreMessage[]>;
   deleteExploreSession?: (sessionId: string) => Promise<void>;
   renameExploreSession?: (sessionId: string, title: string) => Promise<void>;
+  updateExploreMessageContext?: (
+    messageId: string,
+    contextDraft: string,
+    selectedContextConversationIds: number[]
+  ) => Promise<void>;
   getSummary?: (conversationId: number) => Promise<ChatSummaryData | null>;
   generateSummary?: (conversationId: number) => Promise<ChatSummaryData>;
   getNotes?: () => Promise<Note[]>;
