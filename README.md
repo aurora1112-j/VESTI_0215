@@ -635,3 +635,21 @@ Settings 页面负责"完成动作"，README 负责"解释原理"。
 <div align="center">
   <img src="https://img.shields.io/badge/心迹%20Vesti-让思维有迹可循-4B0082?style=for-the-badge&logo=sparkles&logoColor=FFD700&labelColor=20232A" alt="心迹 Vesti —— 让思维有迹可循">
 </div>
+
+---
+
+## Repository Archive
+
+The repository also contains a top-level `archive/` directory for historical prototypes and trial assets.
+
+- `archive/` stores repo-level legacy code and prototype projects
+- `documents/archive/` stores archived documentation only
+- active engineering work should continue to focus on `frontend/`, `packages/`, `vesti-web/`, and current canonical docs under `documents/`
+
+## 仓库归档区
+
+仓库根目录中的 `archive/` 用于存放历史原型与试验工程资产。
+
+- `archive/` 归档的是仓库级历史代码和原型工程
+- `documents/archive/` 只归档文档
+- 当前活跃工程仍应以 `frontend/`、`packages/`、`vesti-web/` 以及 `documents/` 下的 canonical 文档为准

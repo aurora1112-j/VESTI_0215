@@ -238,7 +238,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 ### Docs
 - Added `documents/engineering_data_management_v1_2.md`.
 - Updated `documents/prompt_engineering/insights_prompt_ui_engineering.md` to `v1.2-ui-pre.6`.
-- Added UI guardrail section in `Frontend_Polish/frontend-prompting-system.md`.
+- Added UI guardrail section in `archive/frontend_prototypes/frontend-prompting-system.md`.
 
 ### Release Artifact
 - `release/Vesti_MVP_v1.1.0-rc.4.zip`

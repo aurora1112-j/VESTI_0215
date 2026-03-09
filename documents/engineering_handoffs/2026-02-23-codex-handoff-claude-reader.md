@@ -88,7 +88,7 @@ Top-level directories in `d:\Python Code\Hackathon\vesti`:
 - `frontend` extension app (main active workspace)
 - `scripts` utility scripts
 - `skills` local repo skills (`parser-debugging`, `markdown-writing`, `ui-prototype-sidepanel`)
-- `release`, `vesti-release`, `Frontend_Polish`, `Backend_Trial`, `proxy-local`, `eval`, `.tmp`
+- `release`, `vesti-release`, `archive`, `proxy-local`, `eval`, `.tmp`
 
 For this task, primary focus is:
 - `frontend/src/lib/core/parser/claude/ClaudeParser.ts`
@@ -158,4 +158,5 @@ Status: implemented, accepted in manual UI review, committed and pushed.
 ### E) Current working tree state after push
 
 - Clean (no uncommitted local modifications at handoff update time).
+
 
