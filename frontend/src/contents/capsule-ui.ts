@@ -55,6 +55,8 @@ interface DragSession {
   startTop: number;
 }
 
+type CapsulePosition = Pick<CapsuleSettings, "anchor" | "offsetX" | "offsetY">;
+
 const CAPSULE_ROOT_ID = "vesti-capsule-root";
 const CAPSULE_Z_INDEX = 2147483646;
 const POLL_INTERVAL_MS = 3000;
@@ -64,6 +66,8 @@ const VIEWPORT_MARGIN = 8;
 const COLLAPSED_SIZE = 43.2;
 const LOGO_SIZE = 21.6;
 const UI_SETTINGS_STORAGE_KEY = "vesti_ui_settings";
+const CAPSULE_SETTINGS_STORAGE_KEY = "vesti_capsule_settings";
+const POSITION_SYNC_GRACE_MS = 2000;
 const CAPSULE_FONT_FACE_STYLE_ID = "vesti-capsule-font-face-style";
 const FONT_UI_400_URL = new URL(
   "../../public/fonts/Lexend-UI-400.woff2",
@@ -1270,6 +1274,14 @@ const mount = async () => {
   let failureCount = 0;
   let destroyed = false;
   let suppressCollapsedClick = false;
+  let positionRef: CapsulePosition = {
+    anchor: settings.anchor,
+    offsetX: settings.offsetX,
+    offsetY: settings.offsetY,
+  };
+  let lastDragAt = 0;
+  let persistInFlight = false;
+  let pendingSettingsPatch: Partial<CapsuleSettings> | null = null;
 
   const dragSession: DragSession = {
     active: false,
@@ -1309,10 +1321,15 @@ const mount = async () => {
 
   const applyAnchoredPosition = () => {
     const next = clampOffsetsToViewport(
-      settings.anchor,
-      settings.offsetX,
-      settings.offsetY
+      positionRef.anchor,
+      positionRef.offsetX,
+      positionRef.offsetY
     );
+    positionRef = {
+      anchor: next.anchor,
+      offsetX: next.offsetX,
+      offsetY: next.offsetY,
+    };
     settings = {
       ...settings,
       anchor: next.anchor,
@@ -1321,15 +1338,15 @@ const mount = async () => {
     };
 
     shell.style.top = "auto";
-    shell.style.bottom = `${settings.offsetY}px`;
+    shell.style.bottom = `${next.offsetY}px`;
 
-    if (settings.anchor === "bottom_right") {
+    if (next.anchor === "bottom_right") {
       shell.style.left = "auto";
-      shell.style.right = `${settings.offsetX}px`;
+      shell.style.right = `${next.offsetX}px`;
       return;
     }
 
-    shell.style.left = `${settings.offsetX}px`;
+    shell.style.left = `${next.offsetX}px`;
     shell.style.right = "auto";
   };
 
@@ -1351,16 +1368,35 @@ const mount = async () => {
     }
   };
 
-  const persistSettingsPatch = async (patch: Partial<CapsuleSettings>) => {
-    try {
-      settings = await updateCapsuleSettingsForHost(hostname, patch);
-    } catch (error) {
-      logger.warn("content", "Failed to persist capsule settings", {
-        host: hostname,
-        patch,
-        error: (error as Error).message,
-      });
-    }
+  const persistSettingsPatch = (patch: Partial<CapsuleSettings>) => {
+    pendingSettingsPatch = {
+      ...(pendingSettingsPatch ?? {}),
+      ...patch,
+    };
+    if (persistInFlight) return;
+    persistInFlight = true;
+    void (async () => {
+      while (pendingSettingsPatch) {
+        const patchToWrite = pendingSettingsPatch;
+        pendingSettingsPatch = null;
+        try {
+          const nextSettings = await updateCapsuleSettingsForHost(hostname, patchToWrite);
+          settings = {
+            ...nextSettings,
+            anchor: positionRef.anchor,
+            offsetX: positionRef.offsetX,
+            offsetY: positionRef.offsetY,
+          };
+        } catch (error) {
+          logger.warn("content", "Failed to persist capsule settings", {
+            host: hostname,
+            patch: patchToWrite,
+            error: (error as Error).message,
+          });
+        }
+      }
+      persistInFlight = false;
+    })();
   };
 
   const deriveUiState = (): CapsuleRuntimeState => {
@@ -1469,7 +1505,7 @@ const mount = async () => {
     renderCapsule();
     syncPosition();
     if (persist) {
-      void persistSettingsPatch({ defaultView: next });
+      persistSettingsPatch({ defaultView: next });
     }
   };
 
@@ -1663,14 +1699,14 @@ const mount = async () => {
           : rect.left;
       const offsetYRaw = window.innerHeight - rect.bottom;
       const next = clampOffsetsToViewport(anchor, offsetXRaw, offsetYRaw);
-      settings = {
-        ...settings,
+      positionRef = {
         anchor: next.anchor,
         offsetX: next.offsetX,
         offsetY: next.offsetY,
       };
+      lastDragAt = Date.now();
       applyAnchoredPosition();
-      void persistSettingsPatch({
+      persistSettingsPatch({
         anchor: next.anchor,
         offsetX: next.offsetX,
         offsetY: next.offsetY,
@@ -1699,18 +1735,46 @@ const mount = async () => {
     areaName: string
   ) => {
     if (destroyed || areaName !== "local") return;
-    const uiThemeChange = changes[UI_SETTINGS_STORAGE_KEY];
-    if (!uiThemeChange) return;
 
-    const nextTheme = parseThemeModeFromStorageValue(uiThemeChange.newValue);
-    if (nextTheme === themeMode) return;
-    themeMode = nextTheme;
-    renderCapsule();
-    syncPosition();
-    logger.info("content", "Capsule theme updated", {
-      host: hostname,
-      themeMode,
-    });
+    const uiThemeChange = changes[UI_SETTINGS_STORAGE_KEY];
+    if (uiThemeChange) {
+      const nextTheme = parseThemeModeFromStorageValue(uiThemeChange.newValue);
+      if (nextTheme !== themeMode) {
+        themeMode = nextTheme;
+        renderCapsule();
+        syncPosition();
+        logger.info("content", "Capsule theme updated", {
+          host: hostname,
+          themeMode,
+        });
+      }
+    }
+
+    const capsuleChange = changes[CAPSULE_SETTINGS_STORAGE_KEY];
+    if (!capsuleChange) return;
+
+    void (async () => {
+      if (destroyed) return;
+      if (dragSession.dragging) return;
+      if (Date.now() - lastDragAt < POSITION_SYNC_GRACE_MS) return;
+      try {
+        const nextSettings = await getCapsuleSettingsForHost(hostname);
+        if (destroyed) return;
+        settings = nextSettings;
+        positionRef = {
+          anchor: nextSettings.anchor,
+          offsetX: nextSettings.offsetX,
+          offsetY: nextSettings.offsetY,
+        };
+        renderCapsule();
+        syncPosition();
+      } catch (error) {
+        logger.warn("content", "Failed to sync capsule settings", {
+          host: hostname,
+          error: (error as Error).message,
+        });
+      }
+    })();
   };
 
   const onResize = () => {
@@ -1829,3 +1893,36 @@ if (document.readyState === "loading") {
 } else {
   void mount();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
