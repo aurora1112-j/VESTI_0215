@@ -1261,9 +1261,14 @@ const mount = async () => {
     shell.appendChild(panel);
   }
 
-  let viewMode: CapsuleViewMode = isPrimaryRolloutHost
-    ? settings.defaultView
-    : "collapsed";
+  const quietDefaultView: CapsuleViewMode = "collapsed";
+  const quietPosition: CapsulePosition = {
+    anchor: DEFAULT_CAPSULE_SETTINGS.anchor,
+    offsetX: DEFAULT_CAPSULE_SETTINGS.offsetX,
+    offsetY: DEFAULT_CAPSULE_SETTINGS.offsetY,
+  };
+
+  let viewMode: CapsuleViewMode = quietDefaultView;
   let runtimeStatus: ActiveCaptureStatus | null = null;
   let runtimeError: string | null = null;
   let uiState: CapsuleRuntimeState = "idle";
@@ -1274,11 +1279,7 @@ const mount = async () => {
   let failureCount = 0;
   let destroyed = false;
   let suppressCollapsedClick = false;
-  let positionRef: CapsulePosition = {
-    anchor: settings.anchor,
-    offsetX: settings.offsetX,
-    offsetY: settings.offsetY,
-  };
+  let positionRef: CapsulePosition = { ...quietPosition };
   let lastDragAt = 0;
   let persistInFlight = false;
   let pendingSettingsPatch: Partial<CapsuleSettings> | null = null;
@@ -1398,6 +1399,24 @@ const mount = async () => {
       persistInFlight = false;
     })();
   };
+
+
+  if (isPrimaryRolloutHost) {
+    const needsQuietDefaults =
+      settings.defaultView !== quietDefaultView ||
+      settings.anchor !== quietPosition.anchor ||
+      settings.offsetX !== quietPosition.offsetX ||
+      settings.offsetY !== quietPosition.offsetY;
+
+    if (needsQuietDefaults) {
+      persistSettingsPatch({
+        defaultView: quietDefaultView,
+        anchor: quietPosition.anchor,
+        offsetX: quietPosition.offsetX,
+        offsetY: quietPosition.offsetY,
+      });
+    }
+  }
 
   const deriveUiState = (): CapsuleRuntimeState => {
     if (inFlightArchive) return "archiving";
