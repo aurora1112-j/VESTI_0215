@@ -158,8 +158,8 @@ function renderHighlightedText(
     }
     const isActive = segment.occurrenceIndex === context.currentIndex;
     const className = isActive
-      ? "rounded-xs bg-accent-primary px-0.5 text-text-primary"
-      : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary";
+      ? "rounded-xs bg-accent-primary px-0.5 text-text-inverse ring-1 ring-border-focus"
+      : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus";
     return (
       <mark
         key={`${keyPrefix}-hl-${index}`}

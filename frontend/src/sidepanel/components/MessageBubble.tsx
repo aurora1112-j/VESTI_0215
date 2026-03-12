@@ -62,8 +62,8 @@ export function MessageBubble({
       }
       const isActive = segment.occurrenceIndex === activeIndex;
       const className = isActive
-        ? "rounded-xs bg-accent-primary px-0.5 text-text-primary"
-        : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary";
+        ? "rounded-xs bg-accent-primary px-0.5 text-text-inverse ring-1 ring-border-focus"
+        : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus";
       return (
         <mark
           key={`hl-${nodeKey}-${index}`}

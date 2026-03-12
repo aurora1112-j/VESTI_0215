@@ -179,7 +179,7 @@ export function ConversationCard({
       segment.highlight ? (
         <mark
           key={`hl-${index}`}
-          className="rounded-xs bg-accent-primary-light px-0.5 text-text-primary"
+          className="rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus"
         >
           {segment.text}
         </mark>
