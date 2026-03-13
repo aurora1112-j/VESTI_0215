@@ -27,6 +27,7 @@ import { resolveTurnCount } from "~lib/capture/turn-metrics";
 import type { Conversation } from "~lib/types";
 import { updateConversationAndSync } from "~lib/services/syncActions";
 import { PlatformTag } from "./PlatformTag";
+import { splitWithHighlight } from "../lib/highlight";
 
 const TOOLTIP_DELAY_MS = 200;
 const COPY_FEEDBACK_MS = 1500;
@@ -133,6 +134,8 @@ interface ConversationCardProps {
   topicOptions?: { id: number; label: string }[];
   onConversationUpdated?: (conversation: Conversation) => void;
   matchedInMessagesOnly?: boolean;
+  searchQuery?: string;
+  messageExcerpt?: string | null;
   // Batch selection support
   isBatchMode?: boolean;
   isSelected?: boolean;
@@ -149,6 +152,8 @@ export function ConversationCard({
   topicOptions = [],
   onConversationUpdated,
   matchedInMessagesOnly = false,
+  searchQuery = "",
+  messageExcerpt = null,
   isBatchMode = false,
   isSelected = false,
   onToggleSelect,
@@ -167,6 +172,29 @@ export function ConversationCard({
     conversation.turn_count,
     conversation.message_count
   );
+  const snippetText =
+    matchedInMessagesOnly && messageExcerpt
+      ? messageExcerpt
+      : conversation.snippet;
+
+  const renderHighlightedText = (text: string) => {
+    const segments = splitWithHighlight(text, searchQuery);
+    if (segments.length === 1 && !segments[0].highlight) {
+      return segments[0].text;
+    }
+    return segments.map((segment, index) =>
+      segment.highlight ? (
+        <mark
+          key={`hl-${index}`}
+          className="rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus"
+        >
+          {segment.text}
+        </mark>
+      ) : (
+        <span key={`tx-${index}`}>{segment.text}</span>
+      )
+    );
+  };
 
   useEffect(() => {
     return () => {
@@ -329,6 +357,7 @@ export function ConversationCard({
     <div
       role="button"
       tabIndex={0}
+      data-conversation-id={conversation.id}
       onClick={handleCardClick}
       onFocus={() => setIsHovered(true)}
       onBlur={(event) => {
@@ -430,7 +459,7 @@ export function ConversationCard({
           />
         ) : (
           <h3 className="min-w-0 flex-1 truncate text-vesti-base font-medium tracking-tight text-text-primary">
-            {conversation.title}
+            {renderHighlightedText(conversation.title)}
           </h3>
         )}
 
@@ -490,20 +519,15 @@ export function ConversationCard({
       >
         <div className="overflow-hidden">
           <p className="mt-1.5 line-clamp-2 text-vesti-sm leading-[1.5] text-text-secondary">
-            {conversation.snippet}
+            {renderHighlightedText(snippetText)}
           </p>
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <span className="flex items-center gap-1 text-vesti-xs text-text-tertiary">
                 <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.75} />
-                {conversation.message_count} messages · {turnCount} turns
+                {conversation.message_count} messages 路 {turnCount} turns
               </span>
-              {matchedInMessagesOnly ? (
-                <span className="shrink-0 rounded-full border border-border-subtle bg-bg-primary px-2 py-0.5 text-[10px] font-medium text-text-tertiary">
-                  Matched in messages
-                </span>
-              ) : null}
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -542,3 +566,5 @@ export function ConversationCard({
     </div>
   );
 }
+
+

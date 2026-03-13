@@ -1,9 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Copy, Check, ChevronDown } from "lucide-react";
 import type { Message, Platform } from "~lib/types";
-import type { AstNode, AstRoot } from "~lib/types/ast";
+import type { AstRoot } from "~lib/types/ast";
 import { AstMessageRenderer } from "./AstMessageRenderer";
 import { PLATFORM_TONE } from "./platformTone";
+import {
+  buildFallbackSegments,
+  buildHighlightSegments,
+  resolveMessageRenderPlan,
+  type MessageRenderPlan,
+  type OccurrenceIndexMap,
+} from "../lib/readerSearch";
 
 const COLLAPSE_THRESHOLD_PX = 110;
 const COLLAPSED_MAX_HEIGHT_PX = 86;
@@ -18,55 +25,58 @@ const FENCE_LANGUAGE_NOISE_TOKENS = new Set([
   "plaintext",
   "text",
 ]);
-const GEMINI_USER_PREFIX_PATTERN = /^[\s\u200B\uFEFF]*you said(?:\s*[:\-])?\s*/i;
-const MIN_AST_COVERAGE_RATIO = 0.55;
-const MIN_TEXT_LENGTH_FOR_AST_CHECK = 120;
-const CLAUDE_RICH_AST_COVERAGE_FLOOR = 0.22;
 
 interface MessageBubbleProps {
   message: Message;
   platform: Platform;
+  renderPlan?: MessageRenderPlan | null;
+  occurrenceIndexMap?: OccurrenceIndexMap | null;
+  currentIndex?: number | null;
 }
 
-export function MessageBubble({ message, platform }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  platform,
+  renderPlan,
+  occurrenceIndexMap,
+  currentIndex,
+}: MessageBubbleProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [canCollapse, setCanCollapse] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const copyTimerRef = useRef<number | null>(null);
+  const plan = renderPlan ?? resolveMessageRenderPlan(message, platform);
+  const shouldUseAst = plan.mode === "ast" && plan.renderAst;
+  const indexMap = occurrenceIndexMap ?? {};
+  const activeIndex = typeof currentIndex === "number" ? currentIndex : null;
 
-  const renderAst = useMemo(() => {
-    if (!message.content_ast || message.content_ast.type !== "root") {
-      return null;
+  const renderHighlightSegments = (text: string, nodeKey: string) => {
+    const segments = buildHighlightSegments(text, indexMap[nodeKey]);
+    if (segments.length === 1 && segments[0].occurrenceIndex === null) {
+      return segments[0].text;
     }
-    return sanitizeAstForRender(message.content_ast, message.role, platform);
-  }, [message.content_ast, message.role, platform]);
-
-  const sourceTextLen = useMemo(
-    () => normalizeForCoverage(message.content_text).length,
-    [message.content_text],
-  );
-  const astTextLen = useMemo(
-    () => (renderAst ? normalizeForCoverage(extractAstPlainText(renderAst)).length : 0),
-    [renderAst],
-  );
-  const astStats = useMemo(
-    () => (renderAst ? inspectAst(renderAst) : null),
-    [renderAst],
-  );
-  const astCoverageRatio =
-    sourceTextLen > 0 ? astTextLen / sourceTextLen : 1;
+    return segments.map((segment, index) => {
+      if (segment.occurrenceIndex === null) {
+        return <span key={`tx-${nodeKey}-${index}`}>{segment.text}</span>;
+      }
+      const isActive = segment.occurrenceIndex === activeIndex;
+      const className = isActive
+        ? "rounded-xs bg-accent-primary px-0.5 text-text-inverse ring-1 ring-border-focus"
+        : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus";
+      return (
+        <mark
+          key={`hl-${nodeKey}-${index}`}
+          data-occurrence-index={segment.occurrenceIndex}
+          className={className}
+        >
+          {segment.text}
+        </mark>
+      );
+    });
+  };
 
   const isAi = message.role === "ai";
-  const hasRenderableAst =
-    message.content_ast_version === "ast_v1" &&
-    !!renderAst &&
-    renderAst.type === "root" &&
-    renderAst.children.length > 0;
-  const shouldUseAst =
-    hasRenderableAst &&
-    (sourceTextLen < MIN_TEXT_LENGTH_FOR_AST_CHECK ||
-      astCoverageRatio >= resolveCoverageFloor(platform, astStats));
   const shouldCollapse = canCollapse && !isExpanded;
 
   useLayoutEffect(() => {
@@ -103,7 +113,7 @@ export function MessageBubble({ message, platform }: MessageBubbleProps) {
       }
       observer?.disconnect();
     };
-  }, [message.id, message.content_text, renderAst, shouldUseAst]);
+  }, [message.id, message.content_text, plan.mode, plan.renderAst]);
 
   useEffect(() => {
     if (!canCollapse) {
@@ -166,11 +176,16 @@ export function MessageBubble({ message, platform }: MessageBubbleProps) {
           ref={bodyRef}
           className={`reader-turn-body ${isAi ? "reader-turn-body-model" : "reader-turn-body-user"}`}
         >
-          {shouldUseAst ? (
-            <AstMessageRenderer root={renderAst as AstRoot} />
+          {shouldUseAst && plan.renderAst ? (
+            <AstMessageRenderer
+              root={plan.renderAst as AstRoot}
+              messageId={message.id}
+              occurrenceIndexMap={indexMap}
+              currentIndex={activeIndex}
+            />
           ) : (
             <div className="reader-fallback-content whitespace-pre-wrap">
-              {renderContent(message.content_text)}
+              {renderFallbackContent(message.content_text, message.id, renderHighlightSegments)}
             </div>
           )}
         </div>
@@ -198,156 +213,29 @@ export function MessageBubble({ message, platform }: MessageBubbleProps) {
   );
 }
 
-function normalizeForCoverage(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-interface AstRenderStats {
-  blockNodes: number;
-  hasList: boolean;
-  hasTable: boolean;
-  hasCodeBlock: boolean;
-  hasMath: boolean;
-  hasBlockquote: boolean;
-}
-
-function inspectAst(root: AstRoot): AstRenderStats {
-  const stats: AstRenderStats = {
-    blockNodes: 0,
-    hasList: false,
-    hasTable: false,
-    hasCodeBlock: false,
-    hasMath: false,
-    hasBlockquote: false,
-  };
-
-  const walk = (node: AstNode): void => {
-    switch (node.type) {
-      case "p":
-      case "h1":
-      case "h2":
-      case "h3":
-      case "blockquote":
-      case "code_block":
-      case "table":
-      case "ul":
-      case "ol":
-      case "li":
-        stats.blockNodes += 1;
-        break;
-      default:
-        break;
+function renderFallbackContent(
+  text: string,
+  messageId: number,
+  renderHighlightedText: (text: string, nodeKey: string) => React.ReactNode
+): React.ReactNode {
+  const segments = buildFallbackSegments(text, messageId);
+  return segments.map((segment, index) => {
+    if (segment.type === "code_block") {
+      const { code, language } = parseFallbackFencedCode(segment.text);
+      return <FallbackCodeBlockView key={`code-${index}`} code={code} language={language} />;
     }
-
-    if (node.type === "ul" || node.type === "ol") stats.hasList = true;
-    if (node.type === "table") stats.hasTable = true;
-    if (node.type === "code_block") stats.hasCodeBlock = true;
-    if (node.type === "math") stats.hasMath = true;
-    if (node.type === "blockquote") stats.hasBlockquote = true;
-
-    if (
-      node.type === "fragment" ||
-      node.type === "p" ||
-      node.type === "h1" ||
-      node.type === "h2" ||
-      node.type === "h3" ||
-      node.type === "ul" ||
-      node.type === "ol" ||
-      node.type === "li" ||
-      node.type === "strong" ||
-      node.type === "em" ||
-      node.type === "blockquote"
-    ) {
-      node.children.forEach(walk);
-    }
-  };
-
-  root.children.forEach(walk);
-  return stats;
-}
-
-function resolveCoverageFloor(
-  platform: Platform,
-  stats: AstRenderStats | null,
-): number {
-  if (!stats) {
-    return MIN_AST_COVERAGE_RATIO;
-  }
-
-  if (stats.hasBlockquote) {
-    return CLAUDE_RICH_AST_COVERAGE_FLOOR;
-  }
-
-  const richClaudeAst =
-    platform === "Claude" &&
-    (
-      stats.hasTable ||
-      stats.hasList ||
-      stats.hasCodeBlock ||
-      (stats.hasMath && stats.blockNodes >= 2) ||
-      stats.blockNodes >= 4
-    );
-
-  return richClaudeAst ? CLAUDE_RICH_AST_COVERAGE_FLOOR : MIN_AST_COVERAGE_RATIO;
-}
-
-function extractAstPlainText(root: AstRoot): string {
-  return root.children.map(extractAstNodeText).join(" ");
-}
-
-function extractAstNodeText(node: AstNode): string {
-  switch (node.type) {
-    case "text":
-      return node.text;
-    case "fragment":
-    case "p":
-    case "h1":
-    case "h2":
-    case "h3":
-    case "ul":
-    case "ol":
-    case "li":
-    case "strong":
-    case "em":
-    case "blockquote":
-      return node.children.map(extractAstNodeText).join(" ");
-    case "br":
-      return "\n";
-    case "code_inline":
-      return node.text;
-    case "code_block":
-      return node.code;
-    case "table": {
-      const headerText = node.headers.join(" ");
-      const rowText = node.rows.map((row) => row.join(" ")).join(" ");
-      return `${headerText} ${rowText}`;
-    }
-    case "math":
-      return node.tex;
-    case "attachment":
-      return node.name;
-    default: {
-      const exhaustiveGuard: never = node;
-      return exhaustiveGuard;
-    }
-  }
-}
-
-function renderContent(text: string): React.ReactNode {
-  const parts = text.split(/(```[\s\S]*?```|\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("```") && part.endsWith("```")) {
-      const { code, language } = parseFallbackFencedCode(part);
-      return <FallbackCodeBlockView key={i} code={code} language={language} />;
-    }
-    if (part.startsWith("**") && part.endsWith("**")) {
+    if (segment.type === "bold") {
       return (
-        <strong key={i}>
-          {part.slice(2, -2)}
+        <strong key={`bold-${index}`}>
+          {renderHighlightedText(segment.text, segment.nodeKey)}
         </strong>
       );
     }
-    return <span key={i}>{part}</span>;
+    return (
+      <span key={`text-${index}`}>
+        {renderHighlightedText(segment.text, segment.nodeKey)}
+      </span>
+    );
   });
 }
 
@@ -439,72 +327,3 @@ function normalizeFenceLanguage(value: string): string | null {
   return token;
 }
 
-function sanitizeAstForRender(
-  root: AstRoot,
-  role: Message["role"],
-  platform: Platform,
-): AstRoot {
-  if (role !== "user" || platform !== "Gemini") {
-    return root;
-  }
-
-  const cloned = JSON.parse(JSON.stringify(root)) as AstRoot;
-  stripLeadingGeminiPrefix(cloned.children);
-  return cloned;
-}
-
-function stripLeadingGeminiPrefix(nodes: AstNode[]): boolean {
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index];
-    if (!node) continue;
-
-    if (node.type === "text") {
-      const stripped = node.text.replace(GEMINI_USER_PREFIX_PATTERN, "");
-      if (stripped !== node.text) {
-        if (stripped.trim().length === 0) {
-          nodes.splice(index, 1);
-        } else {
-          node.text = stripped;
-        }
-        return true;
-      }
-
-      if (node.text.trim().length === 0) {
-        nodes.splice(index, 1);
-        index -= 1;
-        continue;
-      }
-      return false;
-    }
-
-    if (node.type === "br") {
-      continue;
-    }
-
-    if (
-      node.type === "fragment" ||
-      node.type === "p" ||
-      node.type === "h1" ||
-      node.type === "h2" ||
-      node.type === "h3" ||
-      node.type === "ul" ||
-      node.type === "ol" ||
-      node.type === "li" ||
-      node.type === "strong" ||
-      node.type === "em" ||
-      node.type === "blockquote"
-    ) {
-      const changed = stripLeadingGeminiPrefix(node.children);
-      if (node.children.length === 0) {
-        nodes.splice(index, 1);
-        index -= 1;
-        continue;
-      }
-      return changed;
-    }
-
-    return false;
-  }
-
-  return false;
-}

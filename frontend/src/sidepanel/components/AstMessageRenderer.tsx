@@ -3,14 +3,24 @@ import katex from "katex";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import type { AstNode, AstRoot } from "~lib/types/ast";
 import "katex/dist/katex.min.css";
+import {
+  buildAstNodeKey,
+  buildHighlightSegments,
+  formatAstPathSegment,
+  sanitizeRootForRender,
+  type OccurrenceIndexMap,
+} from "../lib/readerSearch";
 
 const COPY_FEEDBACK_MS = 1400;
 const LANGUAGE_TOKEN_PATTERN = /^[a-z0-9+#.-]{1,24}$/i;
 const LANGUAGE_NOISE_TOKENS = new Set(["copy", "copied", "code", "plain", "plaintext", "text"]);
-const BLOCKQUOTE_ATTRIBUTION_PATTERN = /^\s*[—-]\s*\S+/;
+const BLOCKQUOTE_ATTRIBUTION_PATTERN = /^\s*[-]\s*\S+/;
 
 interface AstMessageRendererProps {
   root: AstRoot;
+  messageId: number;
+  occurrenceIndexMap?: OccurrenceIndexMap | null;
+  currentIndex?: number | null;
 }
 
 interface MathNodeViewProps {
@@ -28,6 +38,17 @@ interface TableNodeViewProps {
   rows: string[][];
 }
 
+interface NodeEntry {
+  node: AstNode;
+  index: number;
+}
+
+interface RenderContext {
+  messageId: number;
+  occurrenceIndexMap: OccurrenceIndexMap;
+  currentIndex: number | null;
+}
+
 function MathNodeView({ tex, display }: MathNodeViewProps) {
   const html = useMemo(() => {
     try {
@@ -41,11 +62,7 @@ function MathNodeView({ tex, display }: MathNodeViewProps) {
   }, [display, tex]);
 
   if (!html) {
-    return (
-      <span className="reader-ast-math-fallback">
-        {tex}
-      </span>
-    );
+    return <span className="reader-ast-math-fallback">{tex}</span>;
   }
 
   const className = display ? "reader-ast-math-block" : "reader-ast-math-inline";
@@ -94,7 +111,7 @@ function TableNodeView({ headers, rows }: TableNodeViewProps) {
       ? headers
       : Array.from({ length: columnCount }, (_, index) => `Column ${index + 1}`);
   const normalizedRows = rows.map((row) =>
-    Array.from({ length: normalizedHeaders.length }, (_, index) => row[index] ?? ""),
+    Array.from({ length: normalizedHeaders.length }, (_, index) => row[index] ?? "")
   );
 
   return (
@@ -121,8 +138,54 @@ function TableNodeView({ headers, rows }: TableNodeViewProps) {
   );
 }
 
-function renderNodes(nodes: AstNode[], keyPrefix: string): ReactNode[] {
-  return nodes.map((node, index) => renderNode(node, `${keyPrefix}-${index}`));
+function toEntries(nodes: AstNode[], offset: number = 0): NodeEntry[] {
+  return nodes.map((node, index) => ({ node, index: index + offset }));
+}
+
+function renderHighlightedText(
+  text: string,
+  nodeKey: string,
+  context: RenderContext,
+  keyPrefix: string
+): ReactNode {
+  const segments = buildHighlightSegments(text, context.occurrenceIndexMap[nodeKey]);
+  if (segments.length === 1 && segments[0].occurrenceIndex === null) {
+    return segments[0].text;
+  }
+  return segments.map((segment, index) => {
+    if (segment.occurrenceIndex === null) {
+      return <span key={`${keyPrefix}-tx-${index}`}>{segment.text}</span>;
+    }
+    const isActive = segment.occurrenceIndex === context.currentIndex;
+    const className = isActive
+      ? "rounded-xs bg-accent-primary px-0.5 text-text-inverse ring-1 ring-border-focus"
+      : "rounded-xs bg-accent-primary-light px-0.5 text-text-primary ring-1 ring-border-focus";
+    return (
+      <mark
+        key={`${keyPrefix}-hl-${index}`}
+        data-occurrence-index={segment.occurrenceIndex}
+        className={className}
+      >
+        {segment.text}
+      </mark>
+    );
+  });
+}
+
+function renderNodes(
+  entries: NodeEntry[],
+  keyPrefix: string,
+  path: string[],
+  context: RenderContext
+): ReactNode[] {
+  return entries.map(({ node, index }) =>
+    renderNode(
+      node,
+      `${keyPrefix}-${index}`,
+      [...path, formatAstPathSegment(node, index)],
+      context
+    )
+  );
 }
 
 function normalizeLanguageToken(value: string | null | undefined): string | null {
@@ -147,53 +210,6 @@ function extractLanguageLeakToken(node: AstNode): string | null {
   }
   const text = astNodeToPlainText(node).trim();
   return normalizeLanguageToken(text);
-}
-
-function sanitizeLanguageLeakage(nodes: AstNode[]): AstNode[] {
-  const sanitizedChildren = nodes.map((node) => {
-    if (
-      node.type === "fragment" ||
-      node.type === "p" ||
-      node.type === "h1" ||
-      node.type === "h2" ||
-      node.type === "h3" ||
-      node.type === "ul" ||
-      node.type === "ol" ||
-      node.type === "li" ||
-      node.type === "strong" ||
-      node.type === "em" ||
-      node.type === "blockquote"
-    ) {
-      return {
-        ...node,
-        children: sanitizeLanguageLeakage(node.children),
-      };
-    }
-    return node;
-  });
-
-  const result: AstNode[] = [];
-  for (let i = 0; i < sanitizedChildren.length; i += 1) {
-    const current = sanitizedChildren[i];
-    const next = sanitizedChildren[i + 1];
-    if (next?.type === "code_block") {
-      const codeLanguage = normalizeLanguageToken(next.language ?? null);
-      const leakToken = current ? extractLanguageLeakToken(current) : null;
-      if (codeLanguage && leakToken && codeLanguage === leakToken) {
-        continue;
-      }
-    }
-    result.push(current);
-  }
-
-  return result;
-}
-
-function sanitizeRootForRender(root: AstRoot): AstRoot {
-  return {
-    ...root,
-    children: sanitizeLanguageLeakage(root.children),
-  };
 }
 
 function astNodeToPlainText(node: AstNode): string {
@@ -272,20 +288,21 @@ function isBlockquoteAttributionText(value: string): boolean {
 }
 
 function splitBlockquoteChildrenForCitation(children: AstNode[]): {
-  bodyChildren: AstNode[];
-  citationChildren: AstNode[] | null;
+  bodyEntries: NodeEntry[];
+  citationEntries: NodeEntry[] | null;
 } {
   if (children.length === 0) {
-    return { bodyChildren: children, citationChildren: null };
+    return { bodyEntries: [], citationEntries: null };
   }
 
-  const lastNode = children[children.length - 1];
+  const lastIndex = children.length - 1;
+  const lastNode = children[lastIndex];
   if (lastNode?.type === "p") {
     const paragraphText = astNodeToPlainText(lastNode);
     if (isBlockquoteAttributionText(paragraphText)) {
       return {
-        bodyChildren: children.slice(0, -1),
-        citationChildren: lastNode.children,
+        bodyEntries: toEntries(children.slice(0, lastIndex), 0),
+        citationEntries: toEntries([lastNode], lastIndex),
       };
     }
   }
@@ -303,30 +320,45 @@ function splitBlockquoteChildrenForCitation(children: AstNode[]): {
     const tailText = inlineTail.map(astNodeToPlainText).join(" ");
     if (isBlockquoteAttributionText(tailText)) {
       return {
-        bodyChildren: children.slice(0, inlineStart),
-        citationChildren: inlineTail,
+        bodyEntries: toEntries(children.slice(0, inlineStart), 0),
+        citationEntries: toEntries(inlineTail, inlineStart),
       };
     }
   }
 
   return {
-    bodyChildren: children,
-    citationChildren: null,
+    bodyEntries: toEntries(children, 0),
+    citationEntries: null,
   };
 }
 
-function renderNode(node: AstNode, key: string): ReactNode {
+function renderNode(
+  node: AstNode,
+  key: string,
+  path: string[],
+  context: RenderContext
+): ReactNode {
   switch (node.type) {
-    case "text":
-      return <Fragment key={key}>{node.text}</Fragment>;
+    case "text": {
+      const nodeKey = buildAstNodeKey(context.messageId, path);
+      return (
+        <Fragment key={key}>
+          {renderHighlightedText(node.text, nodeKey, context, key)}
+        </Fragment>
+      );
+    }
     case "fragment":
-      return <Fragment key={key}>{renderNodes(node.children, key)}</Fragment>;
+      return (
+        <Fragment key={key}>
+          {renderNodes(toEntries(node.children), key, path, context)}
+        </Fragment>
+      );
     case "br":
       return <br key={key} />;
     case "p":
       return (
         <p key={key}>
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </p>
       );
     case "h1":
@@ -335,28 +367,30 @@ function renderNode(node: AstNode, key: string): ReactNode {
       const HeadingTag = node.type;
       return (
         <HeadingTag key={key}>
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </HeadingTag>
       );
     }
     case "strong":
       return (
         <strong key={key}>
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </strong>
       );
     case "em":
       return (
         <em key={key}>
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </em>
       );
-    case "code_inline":
+    case "code_inline": {
+      const nodeKey = buildAstNodeKey(context.messageId, path);
       return (
         <code key={key} className="reader-ast-inline-code">
-          {node.text}
+          {renderHighlightedText(node.text, nodeKey, context, key)}
         </code>
       );
+    }
     case "code_block":
       return (
         <CodeBlockView
@@ -384,29 +418,31 @@ function renderNode(node: AstNode, key: string): ReactNode {
     case "ul":
       return (
         <ul key={key} className="reader-ast-list reader-ast-list-ul">
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </ul>
       );
     case "ol":
       return (
         <ol key={key} className="reader-ast-list reader-ast-list-ol">
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </ol>
       );
     case "li":
       return (
         <li key={key} className="reader-ast-list-item">
-          {renderNodes(node.children, key)}
+          {renderNodes(toEntries(node.children), key, path, context)}
         </li>
       );
     case "blockquote": {
-      const { bodyChildren, citationChildren } = splitBlockquoteChildrenForCitation(node.children);
+      const { bodyEntries, citationEntries } = splitBlockquoteChildrenForCitation(
+        node.children
+      );
       return (
         <blockquote key={key} className="reader-ast-blockquote">
-          {renderNodes(bodyChildren, `${key}-body`)}
-          {citationChildren ? (
+          {renderNodes(bodyEntries, `${key}-body`, path, context)}
+          {citationEntries ? (
             <cite className="reader-ast-blockquote-cite">
-              {renderNodes(citationChildren, `${key}-cite`)}
+              {renderNodes(citationEntries, `${key}-cite`, path, context)}
             </cite>
           ) : null}
         </blockquote>
@@ -421,11 +457,22 @@ function renderNode(node: AstNode, key: string): ReactNode {
   }
 }
 
-export function AstMessageRenderer({ root }: AstMessageRendererProps) {
+export function AstMessageRenderer({
+  root,
+  messageId,
+  occurrenceIndexMap,
+  currentIndex,
+}: AstMessageRendererProps) {
   const sanitizedRoot = useMemo(() => sanitizeRootForRender(root), [root]);
+  const context: RenderContext = {
+    messageId,
+    occurrenceIndexMap: occurrenceIndexMap ?? {},
+    currentIndex: typeof currentIndex === "number" ? currentIndex : null,
+  };
   return (
     <div className="reader-ast-content">
-      {renderNodes(sanitizedRoot.children, "ast")}
+      {renderNodes(toEntries(sanitizedRoot.children), "ast", [], context)}
     </div>
   );
 }
+

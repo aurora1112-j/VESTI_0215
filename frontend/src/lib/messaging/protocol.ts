@@ -2,6 +2,7 @@ import type {
   ActiveCaptureStatus,
   CaptureDecisionMeta,
   Conversation,
+  ConversationMatchSummary,
   DataOverviewSnapshot,
   Message,
   DashboardStats,
@@ -20,6 +21,7 @@ import type {
   ExploreMode,
   ExploreAskOptions,
   Note,
+  SearchConversationMatchesQuery,
 } from "../types";
 import type { ExploreSession, ExploreMessage } from "../db/repository";
 import type { AstRoot, AstVersion } from "../types/ast";
@@ -296,6 +298,13 @@ export type RequestMessage =
       payload: { query: string };
     }
   | {
+      type: "SEARCH_CONVERSATION_MATCHES_BY_TEXT";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: SearchConversationMatchesQuery;
+    }
+  | {
       type: "DELETE_CONVERSATION";
       target?: "offscreen";
       via?: "background";
@@ -441,6 +450,7 @@ export type ResponseDataMap = {
   UPDATE_NOTE: { note: Note };
   DELETE_NOTE: { deleted: boolean };
   SEARCH_CONVERSATION_IDS_BY_TEXT: number[];
+  SEARCH_CONVERSATION_MATCHES_BY_TEXT: ConversationMatchSummary[];
   DELETE_CONVERSATION: { deleted: boolean };
   UPDATE_CONVERSATION_TITLE: { updated: boolean; conversation: Conversation };
   GET_DASHBOARD_STATS: DashboardStats;

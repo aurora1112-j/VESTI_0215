@@ -1,4 +1,4 @@
-﻿import { Search } from "lucide-react";
+﻿import { SearchLineIcon } from "./ThreadSearchIcons";
 
 interface SearchInputProps {
   value: string;
@@ -13,10 +13,7 @@ export function SearchInput({
 }: SearchInputProps) {
   return (
     <div className="relative flex items-center">
-      <Search
-        className="pointer-events-none absolute left-3 h-4 w-4 text-text-tertiary"
-        strokeWidth={1.75}
-      />
+      <SearchLineIcon className="pointer-events-none absolute left-3 h-4 w-4 text-text-tertiary" />
       <input
         type="text"
         value={value}
@@ -27,3 +24,4 @@ export function SearchInput({
     </div>
   );
 }
+

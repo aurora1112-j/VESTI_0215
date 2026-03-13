@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { Conversation, PageId } from "~lib/types";
 import type { InsightPipelineProgressPayload } from "~lib/messaging/protocol";
 import { isInsightPipelineProgressMessage } from "~lib/messaging/protocol";
@@ -8,6 +8,12 @@ import { InsightsPage } from "./pages/InsightsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ReaderView } from "./containers/ReaderView";
 import { DataPage } from "./pages/DataPage";
+import {
+  createInitialThreadsState,
+  getReaderQuery,
+  resolveFirstMatchedIdForConversation,
+  threadsReducer,
+} from "./lib/threadsSearchReducer";
 
 const DASHBOARD_NAV_REQUEST_KEY = "vesti_dashboard_open_tab";
 
@@ -15,6 +21,11 @@ export function VestiSidepanel() {
   const [currentPage, setCurrentPage] = useState<PageId>("timeline");
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
+  const [threadsState, dispatch] = useReducer(
+    threadsReducer,
+    undefined,
+    () => createInitialThreadsState()
+  );
   const [refreshToken, setRefreshToken] = useState(0);
   const [pipelineProgressEvent, setPipelineProgressEvent] =
     useState<InsightPipelineProgressPayload | null>(null);
@@ -46,10 +57,20 @@ export function VestiSidepanel() {
   }, []);
 
   const handleSelectConversation = (conversation: Conversation) => {
+    const firstMatchedMessageId = resolveFirstMatchedIdForConversation(
+      threadsState.session,
+      conversation.id
+    );
+    dispatch({
+      type: "OPEN_READER",
+      conversationId: conversation.id,
+      firstMatchedMessageId,
+    });
     setSelectedConversation(conversation);
   };
 
   const handleBack = () => {
+    dispatch({ type: "BACK_TO_LIST" });
     setSelectedConversation(null);
   };
 
@@ -91,18 +112,38 @@ export function VestiSidepanel() {
     setCurrentPage("data");
   };
 
+  const isReaderMode =
+    threadsState.mode === "reader_loading_messages" ||
+    threadsState.mode === "reader_building_index" ||
+    threadsState.mode === "reader_ready";
+  const readerFirstMatchedMessageId = isReaderMode
+    ? threadsState.firstMatchedMessageId
+    : null;
+  const readerSearchModel =
+    threadsState.mode === "reader_ready" ? threadsState.searchModel : null;
+  const readerQuery = getReaderQuery(threadsState.session);
+  const shouldShowReader =
+    currentPage === "timeline" && isReaderMode && selectedConversation;
+
   return (
     <div className="flex h-screen w-full bg-bg-tertiary">
       <div className="flex h-full flex-1 overflow-hidden bg-bg-primary">
         <main className="min-w-0 flex-1">
-          {currentPage === "timeline" && selectedConversation ? (
+          {shouldShowReader ? (
             <ReaderView
               conversation={selectedConversation}
               onBack={handleBack}
               refreshToken={refreshToken}
+              mode={threadsState.mode}
+              searchQuery={readerQuery}
+              firstMatchedMessageId={readerFirstMatchedMessageId}
+              searchModel={readerSearchModel}
+              dispatch={dispatch}
             />
           ) : currentPage === "timeline" ? (
             <TimelinePage
+              session={threadsState.session}
+              dispatch={dispatch}
               onSelectConversation={handleSelectConversation}
               refreshToken={refreshToken}
             />
@@ -130,3 +171,4 @@ export function VestiSidepanel() {
 }
 
 export default VestiSidepanel;
+

@@ -35,3 +35,4 @@ eval/reports/raw/
 
 eval/reports/latest.json
 eval/reports/diff-vs-baseline.md
+.pnpm-store/

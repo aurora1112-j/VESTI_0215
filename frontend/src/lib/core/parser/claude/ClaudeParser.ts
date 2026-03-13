@@ -47,16 +47,20 @@ const SELECTORS = {
   ],
   roleAncestorHints: ["[data-author]", "[data-message-author-role]", "[data-testid]"],
   messageContent: [
+    ".standard-markdown",
+    ".progressive-markdown",
+    "[class*='font-claude-response-body']",
     "[data-testid*='message-content']",
     "[data-testid='user-message']",
     ".markdown",
     ".prose",
-    "[class*='font-claude-response-body']",
     "div[class*='whitespace-pre-wrap']",
     "div[class*='font-claude-message']",
     "div[class*='font-user-message']",
   ],
   aiContentLeaves: [
+    ".standard-markdown",
+    ".progressive-markdown",
     "[class*='font-claude-response-body']",
     "[data-testid*='assistant-message'] .markdown",
     "[data-testid*='assistant-message'] .prose",
@@ -85,8 +89,36 @@ const SELECTORS = {
     /^edit$/i,
     /^copy$/i,
     /^message copied$/i,
-    /^thought for\s+\d+s/i,
+    /^thought for\s+\d+s(?:\s+show more)?(?:\s+done)?\s*$/i,
+    /^searching for\b.*$/i,
+    /^result$/i,
+    /^done$/i,
+    /^taking longer than usual\..*$/i,
+    /^trying again shortly.*$/i,
+    /^attempt \d+$/i,
     /^claude can make mistakes\.?/i,
+  ],
+  removableContentSelectors: [
+    "form",
+    "footer",
+    "nav",
+    "button",
+    "svg",
+    "[role='navigation']",
+    "[role='button']",
+    "[role='status']",
+    "[aria-live]",
+    "[data-testid*='composer']",
+    "[data-testid*='action-bar']",
+    "[data-testid*='copy']",
+    "[data-testid*='retry']",
+    "[data-testid*='share']",
+    "[class*='action-bar']",
+    "[class*='toolbar']",
+    "[class*='group/status']",
+    "[class*='group/row']",
+    ".sr-only",
+    "[contenteditable='true']",
   ],
   sourceTimes: ["main time[datetime]", "article time[datetime]"],
 };
@@ -129,6 +161,13 @@ interface ParsedNodeResult {
   degradedNodesCount: number;
   astNodeCount: number;
 }
+
+interface ContentSnapshot {
+  contentEl: Element | null;
+  sanitizedContent: Element;
+  textContent: string;
+}
+
 
 export class ClaudeParser implements IParser {
   detect(): Platform | null {
@@ -254,18 +293,15 @@ export class ClaudeParser implements IParser {
       }
 
       const role: MessageRole = this.hasUserMarker(block) ? "user" : "ai";
-      const textContent = this.extractMessageText(block, role);
-      if (!textContent) {
+      const snapshot = this.getContentSnapshot(block, role);
+      if (!snapshot.textContent) {
         droppedNoise += 1;
         continue;
       }
 
-      const contentEl = this.resolveContentElement(block, role);
-
       const parsed = this.buildParsedNode(
         role,
-        textContent,
-        contentEl,
+        snapshot,
         block,
         perfMode,
       );
@@ -520,17 +556,14 @@ export class ClaudeParser implements IParser {
     const role = this.inferRole(node);
     if (!role) return null;
 
-    const textContent = this.extractMessageText(node, role);
-    if (!textContent) {
+    const snapshot = this.getContentSnapshot(node, role);
+    if (!snapshot.textContent) {
       return null;
     }
 
-    const contentEl = this.resolveContentElement(node, role);
-
     return this.buildParsedNode(
       role,
-      textContent,
-      contentEl,
+      snapshot,
       node,
       perfMode,
     );
@@ -538,12 +571,12 @@ export class ClaudeParser implements IParser {
 
   private buildParsedNode(
     role: MessageRole,
-    textContent: string,
-    contentEl: Element | null,
+    snapshot: ContentSnapshot,
     node: Element,
     perfMode: AstPerfMode,
   ): ParsedNodeResult {
-    const ast = extractAstFromElement(contentEl ?? node, {
+    const astSource = snapshot.sanitizedContent ?? snapshot.contentEl ?? node;
+    const ast = extractAstFromElement(astSource, {
       platform: "Claude",
       perfMode,
     });
@@ -551,11 +584,11 @@ export class ClaudeParser implements IParser {
     return {
       message: {
         role,
-        textContent,
+        textContent: snapshot.textContent,
         contentAst: ast.root,
         contentAstVersion: ast.root ? "ast_v1" : null,
         degradedNodesCount: ast.degradedNodesCount,
-        htmlContent: contentEl ? contentEl.innerHTML : undefined,
+        htmlContent: astSource ? astSource.innerHTML : undefined,
       },
       degradedNodesCount: ast.degradedNodesCount,
       astNodeCount: ast.astNodeCount,
@@ -570,6 +603,15 @@ export class ClaudeParser implements IParser {
       );
     }
 
+    const preferred = queryFirstWithin(node, [
+      ".standard-markdown",
+      ".progressive-markdown",
+      "[class*='font-claude-response-body']",
+    ]);
+    if (preferred) {
+      return preferred;
+    }
+
     const aiLeafNodes = queryAllWithinUnique(node, SELECTORS.aiContentLeaves);
     if (aiLeafNodes.length > 1) {
       return this.findSharedContentContainer(aiLeafNodes, node) ?? node;
@@ -578,7 +620,7 @@ export class ClaudeParser implements IParser {
       return aiLeafNodes[0];
     }
 
-    return queryFirstWithin(node, SELECTORS.messageContent);
+    return queryFirstWithin(node, SELECTORS.messageContent) ?? node;
   }
 
   private findSharedContentContainer(nodes: Element[], boundary: Element): Element | null {
@@ -603,11 +645,44 @@ export class ClaudeParser implements IParser {
     return boundary;
   }
 
-  private extractMessageText(node: Element, role: MessageRole): string {
-    const contentNode = this.resolveContentElement(node, role);
+  private isNoiseText(text: string): boolean {
+    return SELECTORS.noiseTextPatterns.some((pattern) => pattern.test(text));
+  }
 
-    const rawText = safeTextContent(contentNode ?? node);
-    return this.cleanExtractedText(rawText);
+  private extractVisibleText(element: Element): string {
+    if (element instanceof HTMLElement) {
+      const visible = element.innerText;
+      if (visible && visible.trim()) {
+        return visible;
+      }
+    }
+
+    return safeTextContent(element);
+  }
+
+  private sanitizeContentElement(source: Element): Element {
+    const clone = source.cloneNode(true) as Element;
+    const selector = SELECTORS.removableContentSelectors.join(", ");
+    clone.querySelectorAll(selector).forEach((node) => node.remove());
+    return clone;
+  }
+
+  private getContentSnapshot(node: Element, role: MessageRole): ContentSnapshot {
+    const contentEl = this.resolveContentElement(node, role);
+    const baseEl = contentEl ?? node;
+    const sanitizedContent = this.sanitizeContentElement(baseEl);
+    const rawText = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
+    const textContent = this.isNoiseText(rawText) ? "" : rawText;
+
+    return {
+      contentEl,
+      sanitizedContent,
+      textContent,
+    };
+  }
+
+  private extractMessageText(node: Element, role: MessageRole): string {
+    return this.getContentSnapshot(node, role).textContent;
   }
 
   private inferRole(node: Element): MessageRole | null {
@@ -765,3 +840,15 @@ export class ClaudeParser implements IParser {
     }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+

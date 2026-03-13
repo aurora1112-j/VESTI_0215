@@ -1,21 +1,24 @@
-import { Search, SlidersHorizontal, ListChecks } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { Conversation, DashboardStats, Platform } from "~lib/types";
+﻿import { SlidersHorizontal, ListChecks } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import type {
+  Conversation,
+  ConversationMatchSummary,
+  DashboardStats,
+} from "~lib/types";
 import { getDashboardStats } from "~lib/services/storageService";
 import { PLATFORM_TONE } from "../components/platformTone";
 import { ConversationList } from "../containers/ConversationList";
-import {
-  DATE_PRESET_OPTIONS,
-  PLATFORM_OPTIONS,
-  type DatePreset,
-  type HeaderMode,
-} from "../types/timelineFilters";
+import { SearchLineIcon } from "../components/ThreadSearchIcons";
+import { DATE_PRESET_OPTIONS, PLATFORM_OPTIONS } from "../types/timelineFilters";
+import type { ThreadsEvent, ThreadsSearchSession } from "../types/threadsSearch";
 import { useBatchSelection } from "../hooks/useBatchSelection";
 import { BatchActionBar } from "../components/BatchActionBar";
 import { ExportDialog, type ExportConfig, type ExportResult } from "../components/ExportDialog";
 import { exportConversations } from "../utils/exportConversations";
 
 interface TimelinePageProps {
+  session: ThreadsSearchSession;
+  dispatch: (event: ThreadsEvent) => void;
   onSelectConversation: (conversation: Conversation) => void;
   refreshToken: number;
 }
@@ -30,11 +33,20 @@ function toggleSetMember<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePageProps) {
-  const [headerMode, setHeaderMode] = useState<HeaderMode>("default");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [datePreset, setDatePreset] = useState<DatePreset>("all_time");
-  const [selectedPlatforms, setSelectedPlatforms] = useState<Set<Platform>>(new Set());
+export function TimelinePage({
+  session,
+  dispatch,
+  onSelectConversation,
+  refreshToken,
+}: TimelinePageProps) {
+  const {
+    headerMode,
+    query,
+    datePreset,
+    selectedPlatforms,
+    resultSummaryMap,
+    anchorConversationId,
+  } = session;
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
@@ -55,6 +67,19 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
 
   const todayCount = stats?.todayCount ?? 0;
   const platformDistribution = stats?.platformDistribution ?? null;
+  const handleAnchorConsumed = useCallback(() => {
+    dispatch({ type: "ANCHOR_CONSUMED" });
+  }, [dispatch]);
+  const handleResultSummaryMapChange = useCallback(
+    (next: Record<number, ConversationMatchSummary>) => {
+      dispatch({
+        type: "BODY_SEARCH_RESOLVED",
+        summaries: Object.values(next),
+        hasResults: Object.keys(next).length > 0,
+      });
+    },
+    [dispatch]
+  );
 
   // Batch selection
   const {
@@ -78,16 +103,19 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
   };
 
   const handleOpenSearch = () => {
-    setHeaderMode("search");
+    dispatch({ type: "HEADER_MODE_CHANGED", headerMode: "search" });
   };
 
   const handleToggleFilter = () => {
-    setHeaderMode((prev) => (prev === "filter" ? "default" : "filter"));
+    dispatch({
+      type: "HEADER_MODE_CHANGED",
+      headerMode: headerMode === "filter" ? "default" : "filter",
+    });
   };
 
   const handleCancelSearch = () => {
-    setSearchQuery("");
-    setHeaderMode("default");
+    dispatch({ type: "QUERY_CLEARED" });
+    dispatch({ type: "HEADER_MODE_CHANGED", headerMode: "default" });
   };
 
   return (
@@ -95,12 +123,15 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
       {headerMode === "search" ? (
         <header className="vesti-page-header gap-2">
           <div className="threads-search-surface flex h-8 flex-1 items-center gap-2 rounded-lg px-3">
-            <Search className="h-3.5 w-3.5 shrink-0 text-text-secondary" strokeWidth={1.8} />
+            <SearchLineIcon className="h-3.5 w-3.5 shrink-0 text-text-secondary" />
             <input
               type="text"
               autoFocus
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              value={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                dispatch({ type: "QUERY_CHANGED", query: nextQuery });
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();
@@ -135,7 +166,7 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
               onClick={handleOpenSearch}
               className="flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-secondary hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
             >
-              <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <SearchLineIcon className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
@@ -185,7 +216,13 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
                   <button
                     key={preset.id}
                     type="button"
-                    onClick={() => setDatePreset(preset.id)}
+                    onClick={() =>
+                      dispatch({
+                        type: "FILTER_CHANGED",
+                        datePreset: preset.id,
+                        selectedPlatforms,
+                      })
+                    }
                     className={`rounded-full border px-3 py-1 text-vesti-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
                       isActive
                         ? "border-border-default bg-bg-primary text-text-primary"
@@ -210,14 +247,18 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
                 const hasData =
                   platformDistribution === null
                     ? true
-                    : (platformDistribution[platform] ?? 0) > 0;
+                    : platformDistribution[platform] > 0;
 
                 return (
                   <button
                     key={platform}
                     type="button"
                     onClick={() => {
-                      setSelectedPlatforms((prev) => toggleSetMember(prev, platform));
+                      dispatch({
+                        type: "FILTER_CHANGED",
+                        datePreset,
+                        selectedPlatforms: toggleSetMember(selectedPlatforms, platform),
+                      });
                     }}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-vesti-xs font-semibold tracking-[0.02em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
                       isActive
@@ -237,11 +278,16 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <ConversationList
-          searchQuery={searchQuery}
+          searchQuery={query}
           datePreset={datePreset}
           selectedPlatforms={selectedPlatforms}
           onSelect={onSelectConversation}
           refreshToken={refreshToken}
+          resultSummaryMap={resultSummaryMap}
+          anchorConversationId={anchorConversationId}
+          onAnchorConsumed={handleAnchorConsumed}
+          onResultSummaryMapChange={handleResultSummaryMapChange}
+          onBodySearchStarted={() => dispatch({ type: "BODY_SEARCH_STARTED" })}
           // Batch selection
           isBatchMode={isBatchMode}
           selectedIds={selectedIds}
@@ -272,3 +318,4 @@ export function TimelinePage({ onSelectConversation, refreshToken }: TimelinePag
     </div>
   );
 }
+
