@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Conversation,
   ConversationMatchSummary,
@@ -35,6 +35,7 @@ interface ConversationListProps {
   isBatchMode?: boolean;
   selectedIds?: Set<number>;
   onToggleSelection?: (id: number) => void;
+  onSelectFromMenu?: (id: number) => void;
   onConversationsLoaded?: (conversations: Conversation[]) => void;
 }
 
@@ -154,6 +155,7 @@ export function ConversationList({
   isBatchMode = false,
   selectedIds = new Set(),
   onToggleSelection,
+  onSelectFromMenu,
   onConversationsLoaded,
 }: ConversationListProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -562,6 +564,7 @@ export function ConversationList({
                 isBatchMode={isBatchMode}
                 isSelected={selectedIds.has(item.conversation.id)}
                 onToggleSelect={() => onToggleSelection?.(item.conversation.id)}
+                onSelectFromMenu={() => onSelectFromMenu?.(item.conversation.id)}
               />
             ))}
           </div>
@@ -570,4 +573,8 @@ export function ConversationList({
     </div>
   );
 }
+
+
+
+
 

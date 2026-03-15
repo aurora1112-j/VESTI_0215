@@ -20,7 +20,7 @@ export function BatchActionBar({
   const isAllSelected = selectedCount === totalCount && totalCount > 0;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-border-subtle bg-bg-primary px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+    <div className="absolute bottom-0 left-0 right-0 z-20 border-t border-border-subtle bg-bg-primary px-3 py-[7px] shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -34,7 +34,7 @@ export function BatchActionBar({
             )}
             {isAllSelected ? "Deselect All" : "Select All"}
           </button>
-          <span className="rounded-md bg-bg-secondary px-2 py-0.5 text-xs font-medium text-text-tertiary">
+          <span className="rounded-md bg-bg-secondary px-[7px] py-0.5 text-xs font-medium text-text-tertiary">
             {selectedCount}
           </span>
         </div>
@@ -43,7 +43,7 @@ export function BatchActionBar({
           <button
             onClick={onExport}
             disabled={selectedCount === 0}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-accent-primary px-3 text-xs font-medium text-white transition-colors hover:bg-accent-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-accent-primary px-3 py-[5px] text-xs font-medium text-white transition-colors hover:bg-accent-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
             Export

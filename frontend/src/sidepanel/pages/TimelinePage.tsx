@@ -1,4 +1,4 @@
-﻿import { SlidersHorizontal, ListChecks } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type {
   Conversation,
@@ -9,7 +9,10 @@ import { getDashboardStats } from "~lib/services/storageService";
 import { PLATFORM_TONE } from "../components/platformTone";
 import { ConversationList } from "../containers/ConversationList";
 import { SearchLineIcon } from "../components/ThreadSearchIcons";
-import { DATE_PRESET_OPTIONS, PLATFORM_OPTIONS } from "../types/timelineFilters";
+import {
+  DATE_PRESET_OPTIONS,
+  PLATFORM_OPTIONS,
+} from "../types/timelineFilters";
 import type { ThreadsEvent, ThreadsSearchSession } from "../types/threadsSearch";
 import { useBatchSelection } from "../hooks/useBatchSelection";
 import { BatchActionBar } from "../components/BatchActionBar";
@@ -118,6 +121,15 @@ export function TimelinePage({
     dispatch({ type: "HEADER_MODE_CHANGED", headerMode: "default" });
   };
 
+  const handleSelectFromMenu = (id: number) => {
+    if (!isBatchMode) {
+      enterBatchMode();
+    }
+    if (!selectedIds.has(id)) {
+      toggleSelection(id);
+    }
+  };
+
   return (
     <div className={`flex h-full flex-col bg-bg-app ${isBatchMode ? "pb-[60px]" : ""}`}>
       {headerMode === "search" ? (
@@ -152,14 +164,14 @@ export function TimelinePage({
         </header>
       ) : (
         <header className="vesti-page-header justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <h1 className="vesti-page-title text-text-primary">Threads</h1>
-            <span className="inline-flex items-center gap-1.5 text-vesti-xs font-medium text-success/90">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-vesti-xs font-medium text-success/90">
               <span className="h-1.5 w-1.5 rounded-full bg-success" />
               {todayCount} captured today
             </span>
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
               aria-label="Search conversations"
@@ -180,25 +192,7 @@ export function TimelinePage({
             >
               <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
             </button>
-            {/* Select button - toggle batch mode like filter */}
-            <button
-              type="button"
-              aria-label={isBatchMode ? "Exit selection" : "Select conversations"}
-              onClick={() => {
-                if (isBatchMode) {
-                  exitBatchMode();
-                } else {
-                  enterBatchMode();
-                }
-              }}
-              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus ${
-                isBatchMode
-                  ? "bg-bg-secondary text-accent-primary"
-                  : "text-text-tertiary hover:bg-bg-secondary hover:text-text-secondary"
-              }`}
-            >
-              <ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />
-            </button>
+
           </div>
         </header>
       )}
@@ -292,6 +286,7 @@ export function TimelinePage({
           isBatchMode={isBatchMode}
           selectedIds={selectedIds}
           onToggleSelection={toggleSelection}
+          onSelectFromMenu={handleSelectFromMenu}
           onConversationsLoaded={setConversations}
         />
 
@@ -318,4 +313,3 @@ export function TimelinePage({
     </div>
   );
 }
-

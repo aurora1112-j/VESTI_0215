@@ -68,6 +68,10 @@ Threads child flow (mandatory):
 22. Insights top header has no extra gray divider line under the title.
 23. Threads top header does not render duplicated brand logo/wordmark (Dock logo remains unchanged).
 24. Threads search button opens inline search input; `Cancel` and `Esc` both exit search mode.
+25. Threads UI baseline regression guard (not a redesign): selection UI defaults to 18px checkbox and no `Click to select` helper text.
+26. Threads header layout baseline: status text is single-line (no wrap), all header elements are vertically centered, and left/right groups keep reasonable spacing.
+27. Thread card footer metadata baseline: no stray `路` character; use a mid-dot separator (e.g., `·`) and keep metadata on one line without wrapping.
+28. BatchActionBar density baseline: padding `7px`, font size `12px`, count badge horizontal padding `7px`, action button vertical padding `5px`.
 
 ---
 

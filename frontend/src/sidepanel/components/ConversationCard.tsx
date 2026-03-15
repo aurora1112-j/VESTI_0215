@@ -9,9 +9,11 @@
 } from "react";
 import {
   Check,
+  CheckSquare,
   Copy,
   ExternalLink,
   FolderOpen,
+  MoreHorizontal,
   MessageSquare,
   Pencil,
   Star,
@@ -21,6 +23,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { resolveTurnCount } from "~lib/capture/turn-metrics";
@@ -140,6 +146,7 @@ interface ConversationCardProps {
   isBatchMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  onSelectFromMenu?: () => void;
 }
 
 export function ConversationCard({
@@ -157,6 +164,7 @@ export function ConversationCard({
   isBatchMode = false,
   isSelected = false,
   onToggleSelect,
+  onSelectFromMenu,
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -195,6 +203,8 @@ export function ConversationCard({
       )
     );
   };
+
+  const canRename = Boolean(onRenameTitle) && !isSavingTitle;
 
   useEffect(() => {
     return () => {
@@ -381,25 +391,25 @@ export function ConversationCard({
             : "bg-surface-card"
       }`}
     >
-      {/* Batch selection checkbox */}
-      {isBatchMode && (
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {isSelected ? (
-              <div className="flex h-4 w-4 items-center justify-center rounded bg-accent-primary">
-                <Check className="h-3 w-3 text-white" strokeWidth={2} />
-              </div>
-            ) : (
-              <div className="h-4 w-4 rounded border border-text-tertiary/40" />
-            )}
-            <span className={`text-xs ${isSelected ? "text-accent-primary font-medium" : "text-text-tertiary"}`}>
-              {isSelected ? "Selected" : "Click to select"}
-            </span>
-          </div>
-        </div>
-      )}
       <div className="flex items-center justify-between">
-        <PlatformTag platform={conversation.platform} />
+        <div className="flex min-w-0 items-center gap-2">
+          {isBatchMode && (
+            <button
+              type="button"
+              aria-label={isSelected ? "Deselect conversation" : "Select conversation"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleSelect?.();
+              }}
+              className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full ${
+                isSelected ? "bg-accent-primary" : "border border-text-tertiary/40"
+              }`}
+            >
+              {isSelected && <Check className="h-3 w-3 text-white" strokeWidth={2} />}
+            </button>
+          )}
+          <PlatformTag platform={conversation.platform} />
+        </div>
         <div className="flex items-center gap-1">
           <ActionIconButton
             label={conversation.is_starred ? "Unstar" : "Star"}
@@ -421,7 +431,6 @@ export function ConversationCard({
           </span>
         </div>
       </div>
-
       <div className="mt-1.5 flex items-start gap-1">
         {isEditingTitle ? (
           <input
@@ -464,52 +473,78 @@ export function ConversationCard({
         )}
 
         {!isEditingTitle && (
-          <div className="flex items-center gap-0.5 shrink-0">
-            <ActionIconButton
-              label="Rename title"
-              onClick={handleStartTitleEdit}
-              disabled={!onRenameTitle || isSavingTitle}
-              icon={<Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />}
-            />
+          <div className="flex shrink-0 items-center gap-0.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Assign group"
+                  aria-label="More actions"
                   onClick={(event) => event.stopPropagation()}
-                  className="flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] text-text-tertiary opacity-60 transition-all duration-150 hover:bg-accent-primary-light hover:text-accent-primary hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                  className="flex h-6 w-6 items-center justify-center rounded-sm text-text-tertiary opacity-60 transition-all duration-150 hover:bg-accent-primary-light hover:text-accent-primary hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
                 >
-                  <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44 max-h-64 overflow-y-auto">
+              <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto">
                 <DropdownMenuItem
-                  onClick={(event) => {
+                  disabled={!canRename}
+                  onSelect={(event) => {
                     event.stopPropagation();
-                    handleTopicChange({
-                      target: { value: "" },
-                    } as ChangeEvent<HTMLSelectElement>);
+                    if (!canRename) return;
+                    handleStartTitleEdit();
                   }}
                 >
-                  <span className="text-text-tertiary">No group</span>
+                  <Pencil className="h-4 w-4" strokeWidth={1.6} />
+                  Rename
                 </DropdownMenuItem>
-                {topicOptions.map((topic) => (
-                  <DropdownMenuItem
-                    key={topic.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleTopicChange({
-                        target: { value: String(topic.id) },
-                      } as ChangeEvent<HTMLSelectElement>);
-                    }}
-                  >
-                    {topic.label}
-                  </DropdownMenuItem>
-                ))}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FolderOpen className="h-4 w-4" strokeWidth={1.6} />
+                    Add to project
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-48 max-h-64 overflow-y-auto">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.stopPropagation();
+                        handleTopicChange({
+                          target: { value: "" },
+                        } as ChangeEvent<HTMLSelectElement>);
+                      }}
+                    >
+                      <span className="text-text-tertiary">No group</span>
+                    </DropdownMenuItem>
+                    {topicOptions.map((topic) => (
+                      <DropdownMenuItem
+                        key={topic.id}
+                        onSelect={(event) => {
+                          event.stopPropagation();
+                          handleTopicChange({
+                            target: { value: String(topic.id) },
+                          } as ChangeEvent<HTMLSelectElement>);
+                        }}
+                      >
+                        {topic.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!onSelectFromMenu}
+                  onSelect={(event) => {
+                    event.stopPropagation();
+                    onSelectFromMenu?.();
+                  }}
+                  className="text-accent-primary focus:bg-accent-primary-light focus:text-accent-primary data-[highlighted]:bg-accent-primary-light data-[highlighted]:text-accent-primary"
+                >
+                  <CheckSquare className="h-4 w-4" strokeWidth={1.6} />
+                  Select
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         )}
+
       </div>
 
       <div
@@ -524,9 +559,9 @@ export function ConversationCard({
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="flex items-center gap-1 text-vesti-xs text-text-tertiary">
+              <span className="flex items-center gap-1 whitespace-nowrap text-vesti-xs text-text-tertiary">
                 <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.75} />
-                {conversation.message_count} messages 路 {turnCount} turns
+                {conversation.message_count} messages · {turnCount} turns
               </span>
             </div>
 
@@ -566,5 +601,4 @@ export function ConversationCard({
     </div>
   );
 }
-
 
