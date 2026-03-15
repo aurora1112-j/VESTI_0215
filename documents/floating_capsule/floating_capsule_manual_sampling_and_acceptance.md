@@ -39,7 +39,7 @@ For each `platform x mode`, validate:
 3. Unsupported tab fallback (`idle`).
 4. Pause -> Resume state transition.
 5. Archive success feedback -> auto-collapse.
-6. Drag position persisted after refresh.
+6. Refresh resets to quiet default (collapsed + right edge).
 7. Composer overlap avoidance on small viewport.
 8. Host CSS stress (zoom/font override) with Shadow DOM stability.
 

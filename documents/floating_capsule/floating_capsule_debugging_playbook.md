@@ -89,6 +89,8 @@ Mandatory relation:
 
 ## 4. Fault matrix
 
+Note: Quiet start behavior on full reload intentionally resets capsule to collapsed + right edge. Do not treat this as a persistent positioning failure; validate persistence within the same page session.
+
 | Symptom | Likely cause | Verify first | Fix target |
 | --- | --- | --- | --- |
 | Capsule not visible | mount/root inject failure | DOM has `vesti-capsule-root`? | injection timing / mount guard |
