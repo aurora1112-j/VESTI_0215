@@ -1,5 +1,5 @@
 import { SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Conversation,
   ConversationMatchSummary,
@@ -107,6 +107,8 @@ export function TimelinePage({
     message: string;
     tone: "default" | "error";
   } | null>(null);
+  const suppressNextReaderOpenRef = useRef(false);
+  const suppressNextReaderOpenTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +123,14 @@ export function TimelinePage({
       cancelled = true;
     };
   }, [refreshToken]);
+
+  useEffect(() => {
+    return () => {
+      if (suppressNextReaderOpenTimerRef.current !== null) {
+        window.clearTimeout(suppressNextReaderOpenTimerRef.current);
+      }
+    };
+  }, []);
 
   const todayCount = stats?.todayCount ?? 0;
   const platformDistribution = stats?.platformDistribution ?? null;
@@ -277,9 +287,43 @@ export function TimelinePage({
     dispatch({ type: "HEADER_MODE_CHANGED", headerMode: "default" });
   };
 
+  const armSuppressNextReaderOpen = useCallback(() => {
+    suppressNextReaderOpenRef.current = true;
+    if (suppressNextReaderOpenTimerRef.current !== null) {
+      window.clearTimeout(suppressNextReaderOpenTimerRef.current);
+    }
+    suppressNextReaderOpenTimerRef.current = window.setTimeout(() => {
+      suppressNextReaderOpenRef.current = false;
+      suppressNextReaderOpenTimerRef.current = null;
+    }, 0);
+  }, []);
+
+  const consumeSuppressNextReaderOpen = useCallback(() => {
+    if (!suppressNextReaderOpenRef.current) {
+      return false;
+    }
+    suppressNextReaderOpenRef.current = false;
+    if (suppressNextReaderOpenTimerRef.current !== null) {
+      window.clearTimeout(suppressNextReaderOpenTimerRef.current);
+      suppressNextReaderOpenTimerRef.current = null;
+    }
+    return true;
+  }, []);
+
+  const handleConversationSelect = useCallback(
+    (conversation: Conversation) => {
+      if (consumeSuppressNextReaderOpen()) {
+        return;
+      }
+      onSelectConversation(conversation);
+    },
+    [consumeSuppressNextReaderOpen, onSelectConversation]
+  );
+
   const handleSelectFromMenu = (id: number) => {
     setDeleteConfirmValue("");
     setBatchFeedback(null);
+    armSuppressNextReaderOpen();
     enterBatchMode(id);
   };
 
@@ -432,7 +476,7 @@ export function TimelinePage({
           searchQuery={query}
           datePreset={datePreset}
           selectedPlatforms={selectedPlatforms}
-          onSelect={onSelectConversation}
+          onSelect={handleConversationSelect}
           refreshToken={refreshToken}
           resultSummaryMap={resultSummaryMap}
           anchorConversationId={anchorConversationId}

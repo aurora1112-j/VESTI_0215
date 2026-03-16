@@ -3,7 +3,6 @@
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -178,10 +177,13 @@ export function ConversationCard({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(conversation.title);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const skipBlurSaveRef = useRef(false);
   const saveInFlightRef = useRef(false);
+  const suppressCardActivationRef = useRef(false);
+  const suppressCardActivationTimerRef = useRef<number | null>(null);
   const hasSourceUrl = conversation.url.trim().length > 0;
   const turnCount = resolveTurnCount(
     conversation.turn_count,
@@ -217,6 +219,9 @@ export function ConversationCard({
     return () => {
       if (copyFeedbackTimerRef.current !== null) {
         window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+      if (suppressCardActivationTimerRef.current !== null) {
+        window.clearTimeout(suppressCardActivationTimerRef.current);
       }
     };
   }, []);
@@ -342,7 +347,37 @@ export function ConversationCard({
     }
   };
 
+  const armSuppressCardActivation = useCallback(() => {
+    suppressCardActivationRef.current = true;
+    if (suppressCardActivationTimerRef.current !== null) {
+      window.clearTimeout(suppressCardActivationTimerRef.current);
+    }
+    suppressCardActivationTimerRef.current = window.setTimeout(() => {
+      suppressCardActivationRef.current = false;
+      suppressCardActivationTimerRef.current = null;
+    }, 0);
+  }, []);
+
+  const consumeSuppressCardActivation = useCallback(() => {
+    if (!suppressCardActivationRef.current) {
+      return false;
+    }
+    suppressCardActivationRef.current = false;
+    if (suppressCardActivationTimerRef.current !== null) {
+      window.clearTimeout(suppressCardActivationTimerRef.current);
+      suppressCardActivationTimerRef.current = null;
+    }
+    return true;
+  }, []);
+
+  const closeOverflowMenu = useCallback(() => {
+    setIsOverflowOpen(false);
+  }, []);
+
   const handleCardClick = () => {
+    if (consumeSuppressCardActivation()) {
+      return;
+    }
     if (isBatchMode) {
       onToggleSelect?.();
     } else {
@@ -350,9 +385,16 @@ export function ConversationCard({
     }
   };
 
-  const handleTopicChange = async (event: ChangeEvent<HTMLSelectElement>) => {
-    event.stopPropagation();
-    const value = event.target.value;
+  const handleOverflowAction = useCallback(
+    async (action: () => void | Promise<void>) => {
+      armSuppressCardActivation();
+      closeOverflowMenu();
+      await action();
+    },
+    [armSuppressCardActivation, closeOverflowMenu]
+  );
+
+  const handleTopicAssignment = async (value: string) => {
     const nextTopicId = value ? Number(value) : null;
 
     try {
@@ -389,6 +431,13 @@ export function ConversationCard({
         }
       }}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+        if (consumeSuppressCardActivation()) {
+          event.preventDefault();
+          return;
+        }
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           handleCardClick();
@@ -485,12 +534,19 @@ export function ConversationCard({
 
         {!isEditingTitle && !isBatchMode && (
           <div className="flex shrink-0 items-center gap-0.5">
-            <DropdownMenu>
+            <DropdownMenu open={isOverflowOpen} onOpenChange={setIsOverflowOpen}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   aria-label="More actions"
-                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => {
+                    armSuppressCardActivation();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    armSuppressCardActivation();
+                    event.stopPropagation();
+                  }}
                   className="flex h-6 w-6 items-center justify-center rounded-sm text-text-tertiary opacity-60 transition-all duration-150 hover:bg-accent-primary-light hover:text-accent-primary hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus data-[state=open]:bg-bg-secondary data-[state=open]:text-text-primary data-[state=open]:opacity-100"
                 >
                   <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
@@ -499,32 +555,55 @@ export function ConversationCard({
               <DropdownMenuContent
                 align="end"
                 className={THREADS_OVERFLOW_CONTENT_CLASS}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                }}
               >
                 <DropdownMenuItem
                   disabled={!canRename}
                   className={THREADS_OVERFLOW_ITEM_CLASS}
-                  onSelect={(event) => {
+                  onPointerDown={(event) => {
+                    armSuppressCardActivation();
+                    event.stopPropagation();
+                  }}
+                  onSelect={async (event) => {
                     event.stopPropagation();
                     if (!canRename) return;
-                    handleStartTitleEdit();
+                    await handleOverflowAction(() => {
+                      handleStartTitleEdit();
+                    });
                   }}
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.6} />
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className={THREADS_OVERFLOW_SUBTRIGGER_CLASS}>
+                  <DropdownMenuSubTrigger
+                    className={THREADS_OVERFLOW_SUBTRIGGER_CLASS}
+                    onPointerDown={(event) => {
+                      armSuppressCardActivation();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      armSuppressCardActivation();
+                      event.stopPropagation();
+                    }}
+                  >
                     <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.6} />
                     Add to project
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className={THREADS_OVERFLOW_CONTENT_CLASS}>
                     <DropdownMenuItem
                       className={THREADS_OVERFLOW_ITEM_CLASS}
-                      onSelect={(event) => {
+                      onPointerDown={(event) => {
+                        armSuppressCardActivation();
                         event.stopPropagation();
-                        handleTopicChange({
-                          target: { value: "" },
-                        } as ChangeEvent<HTMLSelectElement>);
+                      }}
+                      onSelect={async (event) => {
+                        event.stopPropagation();
+                        await handleOverflowAction(async () => {
+                          await handleTopicAssignment("");
+                        });
                       }}
                     >
                       <span className="text-text-tertiary">No group</span>
@@ -533,11 +612,15 @@ export function ConversationCard({
                       <DropdownMenuItem
                         key={topic.id}
                         className={THREADS_OVERFLOW_ITEM_CLASS}
-                        onSelect={(event) => {
+                        onPointerDown={(event) => {
+                          armSuppressCardActivation();
                           event.stopPropagation();
-                          handleTopicChange({
-                            target: { value: String(topic.id) },
-                          } as ChangeEvent<HTMLSelectElement>);
+                        }}
+                        onSelect={async (event) => {
+                          event.stopPropagation();
+                          await handleOverflowAction(async () => {
+                            await handleTopicAssignment(String(topic.id));
+                          });
                         }}
                       >
                         {topic.label}
@@ -548,9 +631,15 @@ export function ConversationCard({
                 <DropdownMenuSeparator className={THREADS_OVERFLOW_SEPARATOR_CLASS} />
                 <DropdownMenuItem
                   disabled={!onSelectFromMenu}
-                  onSelect={(event) => {
+                  onPointerDown={(event) => {
+                    armSuppressCardActivation();
                     event.stopPropagation();
-                    onSelectFromMenu?.();
+                  }}
+                  onSelect={async (event) => {
+                    event.stopPropagation();
+                    await handleOverflowAction(() => {
+                      onSelectFromMenu?.();
+                    });
                   }}
                   className={`${THREADS_OVERFLOW_ITEM_CLASS} focus:!bg-accent-primary-light data-[highlighted]:!bg-accent-primary-light`}
                 >
