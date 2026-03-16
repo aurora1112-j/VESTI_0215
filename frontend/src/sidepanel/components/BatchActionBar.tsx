@@ -79,12 +79,21 @@ export function BatchActionBar({
   const deleteBusy = actionKey === "delete";
   const showingExportPanel = mode === "export_panel";
   const showingDeletePanel = mode === "delete_panel";
+  const feedbackClassName =
+    feedback?.tone === "error"
+      ? "is-error"
+      : "";
+  const toolbarActionBaseClassName =
+    "inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:cursor-not-allowed disabled:opacity-45";
+  const toolbarNeutralActionClassName = `${toolbarActionBaseClassName} text-text-secondary hover:bg-bg-secondary hover:text-text-primary`;
+  const toolbarDeleteActionClassName = `${toolbarActionBaseClassName} text-danger hover:bg-bg-secondary`;
+  const toolbarSelectActionClassName = `${toolbarNeutralActionClassName} px-1.5`;
 
   return (
     <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-3">
-      {showingExportPanel && (
-        <div className="mb-2 rounded-xl border border-border-subtle bg-bg-primary/95 p-3 shadow-paper backdrop-blur-sm">
-          <div className="mb-2 flex items-start justify-between gap-3">
+      {showingExportPanel ? (
+        <div className="rounded-xl border border-border-subtle bg-bg-primary/95 p-3 shadow-paper backdrop-blur-sm">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[12px] font-semibold text-text-primary">
                 Export {selectedCount} selected thread{selectedCount === 1 ? "" : "s"}
@@ -129,11 +138,13 @@ export function BatchActionBar({
               );
             })}
           </div>
-        </div>
-      )}
 
-      {showingDeletePanel && (
-        <div className="mb-2 rounded-xl border border-border-subtle bg-bg-primary/95 p-3 shadow-paper backdrop-blur-sm">
+          {feedback && (
+            <p className={`mt-3 data-feedback-row ${feedbackClassName}`}>{feedback.message}</p>
+          )}
+        </div>
+      ) : showingDeletePanel ? (
+        <div className="rounded-xl border border-border-subtle bg-bg-primary/95 p-3 shadow-paper backdrop-blur-sm">
           <div className="data-danger-zone">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -202,69 +213,77 @@ export function BatchActionBar({
               </button>
             </div>
           </div>
-        </div>
-      )}
 
-      <div className="rounded-xl border border-border-subtle bg-bg-primary/95 px-3 py-[7px] shadow-[0_-4px_20px_rgba(0,0,0,0.08)] backdrop-blur-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={isAllSelected ? onClearSelection : onSelectAll}
-              className="flex items-center gap-1.5 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
-            >
-              {isAllSelected ? (
-                <CheckSquare className="h-4 w-4 text-accent-primary" strokeWidth={1.5} />
-              ) : (
-                <Square className="h-4 w-4" strokeWidth={1.5} />
-              )}
-              {isAllSelected ? "Deselect All" : "Select All"}
-            </button>
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="rounded-md bg-bg-secondary px-[7px] py-0.5 text-xs font-medium text-text-tertiary">
-                {selectedCount}
-              </span>
-              <span className="truncate text-[11px] text-text-tertiary">
-                of {totalCount} in current results
-              </span>
+          {feedback && (
+            <p className={`mt-3 data-feedback-row ${feedbackClassName}`}>{feedback.message}</p>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="rounded-xl border border-border-subtle bg-bg-primary/95 px-2 py-2 shadow-paper backdrop-blur-sm">
+            <div className="flex items-center gap-0">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={isAllSelected ? onClearSelection : onSelectAll}
+                  className={`${toolbarSelectActionClassName} min-w-0`}
+                >
+                  {isAllSelected ? (
+                    <CheckSquare className="h-4 w-4 text-accent-primary" strokeWidth={1.5} />
+                  ) : (
+                    <Square className="h-4 w-4" strokeWidth={1.5} />
+                  )}
+                  {isAllSelected ? "Deselect All" : "Select All"}
+                </button>
+                <p className="min-w-0 truncate text-[11px] leading-4 text-text-tertiary">
+                  <span className="font-semibold text-text-secondary">{selectedCount}</span>{" "}
+                  selected &middot; {totalCount} in current results
+                </p>
+              </div>
+
+              <div className="flex-1" />
+
+              <div className="ml-2 flex shrink-0 items-center gap-2 pl-2">
+                <span
+                  aria-hidden="true"
+                  className="h-3.5 w-px rounded-full bg-border-subtle"
+                />
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={onToggleExportPanel}
+                    disabled={!hasSelection || Boolean(actionKey)}
+                    className={toolbarNeutralActionClassName}
+                  >
+                    <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onToggleDeletePanel}
+                    disabled={!hasSelection || Boolean(actionKey)}
+                    className={toolbarDeleteActionClassName}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onExit}
+                    disabled={Boolean(actionKey)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <X className="h-4 w-4" strokeWidth={1.5} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={onToggleExportPanel}
-              disabled={!hasSelection || Boolean(actionKey)}
-              className="data-export-btn"
-            >
-              <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-              Export
-            </button>
-            <button
-              type="button"
-              onClick={onToggleDeletePanel}
-              disabled={!hasSelection || Boolean(actionKey)}
-              className="data-danger-btn"
-            >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={onExit}
-              disabled={Boolean(actionKey)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-bg-secondary hover:text-text-secondary disabled:opacity-45"
-            >
-              <X className="h-4 w-4" strokeWidth={1.5} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {feedback && (
-        <p className={`mt-2 data-feedback-row ${feedback.tone === "error" ? "is-error" : ""}`}>
-          {feedback.message}
-        </p>
+          {feedback && (
+            <p className={`mt-2 data-feedback-row ${feedbackClassName}`}>{feedback.message}</p>
+          )}
+        </>
       )}
     </div>
   );
