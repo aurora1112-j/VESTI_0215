@@ -11,7 +11,7 @@
 ## 0. Revision Notes
 
 1. Synced with `v1.7.0-rc.x` docs freeze: `conversation_summary.v3` and `weekly_lite.v2` as defaults, with one-cycle legacy coexistence.
-2. Synced with Demo routing: Node proxy dual-model fallback (`DS14 -> Qwen3-14B`, one retry).
+2. Synced with Demo routing: Node proxy dual-model fallback (`Kimi-K2.5 -> Step-3.5-Flash`, one retry), with DS/Qwen retained only as legacy compatibility IDs.
 3. Synced with output resilience: empty `json_mode` content degrades to `prompt_json`, then `fallback_text`.
 4. Warm Paper theme is mandatory: restore sepia-like paper palette, keep typography upgrades.
 5. Settings toggle/input/button are refined to match warm shell semantics and interaction quality.
@@ -221,13 +221,13 @@ Assignment:
 
 1. Endpoint: `POST /api/chat` (Node runtime).
 2. Embedding endpoint: `POST /api/embeddings` (DashScope OpenAI-compatible upstream).
-3. Model path: `DS14 -> Qwen3-14B` with at most one retry.
+3. Model path: `Kimi-K2.5 -> Step-3.5-Flash` with at most one retry.
 4. Retry trigger only on network/timeout/429/5xx.
 5. Diagnostics: `x-request-id`, `x-proxy-model-used`, `x-proxy-attempt`.
 
 ### 9.3 Frontend route constraints
 
-1. Demo defaults to DS14; legacy demo model IDs lazily normalize.
+1. Demo defaults to Kimi-K2.5; legacy DS/Qwen model IDs remain supported but no longer define the stable default.
 2. Settings must show primary/backup route, `proxyBaseUrl`, and gateway lock (`modelscope.cn`).
 3. BYOK remains direct-to-ModelScope.
 

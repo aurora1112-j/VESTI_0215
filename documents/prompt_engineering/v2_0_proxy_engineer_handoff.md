@@ -70,9 +70,9 @@ Recommended:
 - `VESTI_EMBEDDING_MODEL=text-embedding-v2`
 - `VESTI_EMBED_BATCH_MAX=32`
 - `VESTI_EMBED_TEXT_MAX_CHARS=8000`
-- `VESTI_UPSTREAM_TIMEOUT_MS=20000`
-- `VESTI_CHAT_PRIMARY_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
-- `VESTI_CHAT_BACKUP_MODEL=Qwen/Qwen3-14B`
+- `VESTI_UPSTREAM_TIMEOUT_MS=30000`
+- `VESTI_CHAT_PRIMARY_MODEL=moonshotai/Kimi-K2.5`
+- `VESTI_CHAT_BACKUP_MODEL=stepfun-ai/Step-3.5-Flash`
 
 ## 4) Runtime configuration for QA/integration
 
@@ -93,7 +93,9 @@ Resolved routes:
 - keeps existing stable behavior:
   - primary model + one fallback model
   - retry only on network/timeout/429/5xx
-- adds origin + token guard
+  - active stable line is `moonshotai/Kimi-K2.5 -> stepfun-ai/Step-3.5-Flash`
+  - legacy DS/Qwen requests still force `enable_thinking=false`
+- adds origin + token guard in the local proxy implementation
 
 ### `/api/embeddings`
 
@@ -129,7 +131,7 @@ No user action required.
 ## 8) Integration checklist for the web-view engineer
 
 1. Reuse the same `proxyBaseUrl` and service token contract.
-2. Send `x-vesti-service-token` header on both chat + embeddings calls.
+2. Send `x-vesti-service-token` header on both chat + embeddings calls when your deployment enforces it.
 3. Keep embeddings payload OpenAI-compatible (`input` string/string[]).
 4. Handle structured proxy error payload (`error.code`, `error.message`, `error.requestId`).
 5. Log `requestId` in client telemetry for cross-side debugging.
@@ -137,5 +139,6 @@ No user action required.
 ## 9) Known limits
 
 1. Local proxy uses in-memory process state (no distributed rate limiter).
-2. CORS allowlist uses string/wildcard matching; production gateway can replace with stricter policy.
-3. `embeddingService.ts` is delivered but not yet wired into a UI command path in this branch.
+2. Chat timeout baseline is now `30000ms` to fit the heavier Kimi primary route.
+3. CORS allowlist uses string/wildcard matching; production gateway can replace with stricter policy.
+4. `embeddingService.ts` is delivered but not yet wired into a UI command path in this branch.

@@ -40,8 +40,11 @@ Set `proxyServiceToken` in Vesti settings to match `VESTI_SERVICE_TOKEN`.
 
 ## Notes
 
-- `/api/chat` keeps the existing stability model:
-  - primary + single fallback model
+- `/api/chat` now ships with the Kimi/Step stable line:
+  - primary: `moonshotai/Kimi-K2.5`
+  - backup: `stepfun-ai/Step-3.5-Flash`
   - retry only on network/timeout/429/5xx
+  - default upstream timeout: `30000ms`
+  - legacy DS/Qwen models remain allowed, but only legacy requests force `enable_thinking=false`
 - `/api/embeddings` forwards to DashScope OpenAI-compatible embeddings endpoint.
 - logs include `requestId`, route, model, upstream status, and latency.

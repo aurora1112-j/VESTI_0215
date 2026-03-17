@@ -11,6 +11,7 @@ import {
   getProxyRouteUrl,
 } from "./llmConfig";
 import { parseJsonObjectFromText } from "./insightSchemas";
+import { getLlmModelProfile } from "./llmModelProfile";
 
 const SYSTEM_PROMPT = "You are a careful technical summarization assistant.";
 const STRICT_JSON_SYSTEM_PROMPT =
@@ -18,15 +19,34 @@ const STRICT_JSON_SYSTEM_PROMPT =
 
 export type ModelScopeMode = "plain_text" | "json_mode" | "prompt_json";
 export type InferenceRoute = "proxy" | "modelscope";
+export type LlmDiagnosticCode =
+  | "proxy_upstream_auth_invalid"
+  | "proxy_server_missing_upstream_key"
+  | "proxy_service_token_invalid"
+  | "proxy_origin_forbidden"
+  | "modelscope_byok_auth_invalid"
+  | "llm_request_failed_generic";
 export type StreamExecutionStage =
   | "stable_non_stream"
   | "candidate_stream"
   | "fallback_non_stream";
 
+export interface LlmDiagnostic {
+  code: LlmDiagnosticCode;
+  route: InferenceRoute;
+  status: number | null;
+  requestId: string | null;
+  rawMessage: string;
+  userMessage: string;
+  technicalSummary: string;
+}
+
 interface StreamDecision {
   stage: StreamExecutionStage;
   reason: string;
 }
+
+const ENABLE_CANDIDATE_REASONING_STREAM_ROLLOUT = false;
 
 export interface CallModelScopeOptions {
   responseFormat?: "json_object";
@@ -59,6 +79,22 @@ type ModelScopeResponse = {
     delta?: { content?: unknown; reasoning_content?: unknown };
   }>;
 };
+
+interface ParsedLlmErrorPayload {
+  rawText: string;
+  message: string;
+  requestId: string | null;
+}
+
+export class LlmRequestError extends Error {
+  readonly diagnostic: LlmDiagnostic;
+
+  constructor(diagnostic: LlmDiagnostic) {
+    super(`${diagnostic.userMessage} ${diagnostic.technicalSummary}`.trim());
+    this.name = "LlmRequestError";
+    this.diagnostic = diagnostic;
+  }
+}
 
 function ensureModelScopeConfig(config: LlmConfig): void {
   if (!config.baseUrl) {
@@ -96,7 +132,7 @@ function toText(content: unknown): string {
         return "";
       })
       .filter(Boolean);
-    return parts.join("");
+    return parts.join(" 锟斤拷 ");
   }
   return "";
 }
@@ -153,12 +189,162 @@ function recoverJsonContentFromReasoning(data: ModelScopeResponse): string {
   }
 }
 
-async function parseError(response: Response): Promise<string> {
-  try {
-    return await response.text();
-  } catch {
-    return "";
+function collapseErrorText(value: string | null | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function routeLabel(route: InferenceRoute): string {
+  return route === "proxy" ? "Proxy chat" : "ModelScope direct";
+}
+
+function buildTechnicalSummary(
+  route: InferenceRoute,
+  status: number | null,
+  requestId: string | null
+): string {
+  const parts = [`Route: ${routeLabel(route)}`];
+  if (typeof status === "number") {
+    parts.push(`HTTP ${status}`);
   }
+  parts.push(`Request: ${requestId || "unknown"}`);
+  return parts.join(" 锟斤拷 ");
+}
+
+function extractRequestIdFromPayload(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as {
+    request_id?: unknown;
+    requestId?: unknown;
+    error?: { request_id?: unknown; requestId?: unknown };
+  };
+  if (typeof candidate.error?.request_id === "string") return candidate.error.request_id;
+  if (typeof candidate.error?.requestId === "string") return candidate.error.requestId;
+  if (typeof candidate.request_id === "string") return candidate.request_id;
+  if (typeof candidate.requestId === "string") return candidate.requestId;
+  return null;
+}
+
+function extractMessageFromPayload(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const candidate = value as {
+    message?: unknown;
+    detail?: unknown;
+    error?: string | { message?: unknown };
+  };
+  if (typeof candidate.message === "string") return candidate.message;
+  if (typeof candidate.detail === "string") return candidate.detail;
+  if (typeof candidate.error === "string") return candidate.error;
+  if (candidate.error && typeof candidate.error === "object") {
+    const nestedMessage = candidate.error.message;
+    if (typeof nestedMessage === "string") return nestedMessage;
+  }
+  return "";
+}
+
+async function parseErrorPayload(response: Response): Promise<ParsedLlmErrorPayload> {
+  try {
+    const rawText = await response.text();
+    const collapsed = collapseErrorText(rawText);
+    const requestIdFromHeader = response.headers.get("x-request-id");
+
+    if (!collapsed) {
+      return {
+        rawText: "",
+        message: "",
+        requestId: requestIdFromHeader,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(rawText) as unknown;
+      return {
+        rawText,
+        message: collapseErrorText(extractMessageFromPayload(parsed)) || collapsed,
+        requestId: requestIdFromHeader || extractRequestIdFromPayload(parsed),
+      };
+    } catch {
+      return {
+        rawText,
+        message: collapsed,
+        requestId: requestIdFromHeader,
+      };
+    }
+  } catch {
+    return {
+      rawText: "",
+      message: "",
+      requestId: response.headers.get("x-request-id"),
+    };
+  }
+}
+
+function normalizeLlmDiagnostic(
+  route: InferenceRoute,
+  status: number,
+  payload: ParsedLlmErrorPayload
+): LlmDiagnostic {
+  const haystack = `${payload.message} ${payload.rawText}`;
+  const isProxy = route === "proxy";
+  let code: LlmDiagnosticCode = "llm_request_failed_generic";
+  let userMessage = isProxy
+    ? "Proxy chat request failed before a valid LLM response was returned."
+    : "Direct ModelScope request failed before a valid LLM response was returned.";
+
+  if (
+    isProxy &&
+    status === 500 &&
+    /(SERVER_CONFIG_ERROR_MISSING_API_KEY|MISSING_API_KEY)/i.test(haystack)
+  ) {
+    code = "proxy_server_missing_upstream_key";
+    userMessage =
+      "Proxy chat is reachable, but its upstream ModelScope credential is not configured.";
+  } else if (
+    isProxy &&
+    status === 401 &&
+    /(SERVICE_TOKEN|x-vesti-service-token|service token)/i.test(haystack)
+  ) {
+    code = "proxy_service_token_invalid";
+    userMessage = "Proxy rejected the service-token check before chat could run.";
+  } else if (isProxy && status === 403 && /(origin|forbidden)/i.test(haystack)) {
+    code = "proxy_origin_forbidden";
+    userMessage = "Proxy rejected this extension origin before chat could run.";
+  } else if (
+    isProxy &&
+    status === 401 &&
+    /(valid ModelScope token|Authentication failed|Incorrect API key provided)/i.test(haystack)
+  ) {
+    code = "proxy_upstream_auth_invalid";
+    userMessage =
+      "Proxy chat reached the upstream model route, but ModelScope authentication failed.";
+  } else if (!isProxy && status === 401) {
+    code = "modelscope_byok_auth_invalid";
+    userMessage = "Direct ModelScope chat authentication failed for the configured BYOK key.";
+  }
+
+  return {
+    code,
+    route,
+    status,
+    requestId: payload.requestId,
+    rawMessage: payload.rawText || payload.message,
+    userMessage,
+    technicalSummary: buildTechnicalSummary(route, status, payload.requestId),
+  };
+}
+
+function createLlmRequestError(
+  route: InferenceRoute,
+  status: number,
+  payload: ParsedLlmErrorPayload
+): LlmRequestError {
+  return new LlmRequestError(normalizeLlmDiagnostic(route, status, payload));
+}
+
+export function getLlmDiagnostic(error: unknown): LlmDiagnostic | null {
+  if (error instanceof LlmRequestError) {
+    return error.diagnostic;
+  }
+  return null;
 }
 
 function buildPayload(
@@ -170,27 +356,37 @@ function buildPayload(
     reason: "not_requested",
   }
 ): Record<string, unknown> {
+  const modelProfile = getLlmModelProfile(getEffectiveModelId(config));
+
   if (streamDecision.stage === "fallback_non_stream") {
     logger.warn("llm", "Stream requested but downgraded to stable non-stream path", {
       streamMode: config.streamMode,
       reasoningPolicy: config.reasoningPolicy,
       streamReason: streamDecision.reason,
+      modelId: getEffectiveModelId(config),
+      modelFamily: modelProfile.modelFamily,
     });
   }
 
   const payload: Record<string, unknown> = {
     model: getEffectiveModelId(config),
-    enable_thinking: false,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
     messages,
   };
 
+  if (modelProfile.thinkingParamPolicy === "force_false") {
+    payload.enable_thinking = false;
+  }
+
   // P1.5 hook: reserved for future stream/reasoning branch. Stable path keeps non-stream.
   if (streamDecision.stage === "candidate_stream") {
-    payload.stream = false;
+    payload.stream = ENABLE_CANDIDATE_REASONING_STREAM_ROLLOUT;
     logger.info("llm", "Stream candidate path captured by P1.5 hook", {
       streamReason: streamDecision.reason,
+      modelId: getEffectiveModelId(config),
+      modelFamily: modelProfile.modelFamily,
+      streamEnabled: ENABLE_CANDIDATE_REASONING_STREAM_ROLLOUT,
     });
   }
 
@@ -268,82 +464,37 @@ async function callProvider(
     messages: ModelScopeMessage[],
     responseFormat?: "json_object"
   ) => requester(config, messages, responseFormat, streamDecision);
+  const modelProfile = getLlmModelProfile(getEffectiveModelId(config));
 
   const baseMessages: ModelScopeMessage[] = [
     { role: "system", content: baseSystemPrompt },
     { role: "user", content: prompt },
   ];
 
-  if (options.responseFormat === "json_object") {
-    let shouldPromptJsonFallback = false;
-    const jsonResponse = await request(baseMessages, "json_object");
-    if (jsonResponse.ok) {
-      const data = (await jsonResponse.json()) as ModelScopeResponse;
-      const jsonModeContent = extractContent(data);
-      if (jsonModeContent.trim()) {
-        return {
-          content: jsonModeContent,
-          mode: "json_mode",
-          streamStage: streamDecision.stage,
-          streamReason: streamDecision.reason,
-          contentSource: "content",
-        };
-      }
+  const promptJsonMessages: ModelScopeMessage[] = [
+    { role: "system", content: `${baseSystemPrompt}
+${STRICT_JSON_SYSTEM_PROMPT}` },
+    { role: "user", content: prompt },
+  ];
 
-      const recoveredJson = recoverJsonContentFromReasoning(data);
-      if (recoveredJson) {
-        logger.info("llm", `${route} JSON recovered from reasoning_content`, {
-          summary_json_recovered_from_reasoning: true,
-        });
-        return {
-          content: recoveredJson,
-          mode: "json_mode",
-          streamStage: streamDecision.stage,
-          streamReason: streamDecision.reason,
-          contentSource: "reasoning_content",
-        };
-      }
-
-      shouldPromptJsonFallback = true;
-      logger.warn("llm", `${route} JSON mode returned empty content, fallback to prompt_json`, {
-        hasReasoningContent: hasReasoningContent(data),
-        summary_json_recovered_from_reasoning: false,
-      });
-    } else {
-      const jsonErrorText = await parseError(jsonResponse);
-      const shouldFallback =
-        [400, 404, 415, 422].includes(jsonResponse.status) ||
-        /response_format|json_object|unsupported/i.test(jsonErrorText);
-
-      if (!shouldFallback) {
-        logger.error(
-          "llm",
-          `${route} JSON request failed: ${jsonResponse.status}`,
-          new Error(jsonErrorText)
-        );
-        throw new Error(`LLM_REQUEST_FAILED:${jsonResponse.status}`);
-      }
-
-      shouldPromptJsonFallback = true;
-      logger.warn("llm", `${route} JSON mode unsupported, fallback to prompt_json`, {
-        status: jsonResponse.status,
-      });
+  const recoverJsonIfAllowed = (data: ModelScopeResponse): string => {
+    if (modelProfile.reasoningContentPolicy !== "json_recovery_only") {
+      return "";
     }
+    return recoverJsonContentFromReasoning(data);
+  };
 
-    if (shouldPromptJsonFallback) {
-      const promptJsonMessages: ModelScopeMessage[] = [
-        { role: "system", content: `${baseSystemPrompt}\n${STRICT_JSON_SYSTEM_PROMPT}` },
-        { role: "user", content: prompt },
-      ];
+  if (options.responseFormat === "json_object") {
+    const attemptPromptJson = async (): Promise<ModelScopeCallResult | null> => {
       const promptJsonResponse = await request(promptJsonMessages);
       if (!promptJsonResponse.ok) {
-        const promptJsonErrorText = await parseError(promptJsonResponse);
+        const promptJsonErrorPayload = await parseErrorPayload(promptJsonResponse);
         logger.error(
           "llm",
           `${route} prompt_json request failed: ${promptJsonResponse.status}`,
-          new Error(promptJsonErrorText)
+          new Error(promptJsonErrorPayload.rawText || promptJsonErrorPayload.message)
         );
-        throw new Error(`LLM_REQUEST_FAILED:${promptJsonResponse.status}`);
+        throw createLlmRequestError(route, promptJsonResponse.status, promptJsonErrorPayload);
       }
 
       const promptJsonData = (await promptJsonResponse.json()) as ModelScopeResponse;
@@ -358,10 +509,12 @@ async function callProvider(
         };
       }
 
-      const recoveredPromptJson = recoverJsonContentFromReasoning(promptJsonData);
+      const recoveredPromptJson = recoverJsonIfAllowed(promptJsonData);
       if (recoveredPromptJson) {
         logger.info("llm", `${route} prompt_json recovered from reasoning_content`, {
           summary_json_recovered_from_reasoning: true,
+          modelId: getEffectiveModelId(config),
+          modelFamily: modelProfile.modelFamily,
         });
         return {
           content: recoveredPromptJson,
@@ -375,22 +528,104 @@ async function callProvider(
       logger.warn("llm", `${route} prompt_json returned empty content`, {
         hasReasoningContent: hasReasoningContent(promptJsonData),
         summary_json_recovered_from_reasoning: false,
+        modelId: getEffectiveModelId(config),
+        modelFamily: modelProfile.modelFamily,
       });
-      return {
-        content: promptJsonContent,
-        mode: "prompt_json",
-        streamStage: streamDecision.stage,
-        streamReason: streamDecision.reason,
-        contentSource: "content",
-      };
+      return null;
+    };
+
+    const attemptJsonMode = async (): Promise<ModelScopeCallResult | null> => {
+      const jsonResponse = await request(baseMessages, "json_object");
+      if (jsonResponse.ok) {
+        const data = (await jsonResponse.json()) as ModelScopeResponse;
+        const jsonModeContent = extractContent(data);
+        if (jsonModeContent.trim()) {
+          return {
+            content: jsonModeContent,
+            mode: "json_mode",
+            streamStage: streamDecision.stage,
+            streamReason: streamDecision.reason,
+            contentSource: "content",
+          };
+        }
+
+        const recoveredJson = recoverJsonIfAllowed(data);
+        if (recoveredJson) {
+          logger.info("llm", `${route} JSON recovered from reasoning_content`, {
+            summary_json_recovered_from_reasoning: true,
+            modelId: getEffectiveModelId(config),
+            modelFamily: modelProfile.modelFamily,
+          });
+          return {
+            content: recoveredJson,
+            mode: "json_mode",
+            streamStage: streamDecision.stage,
+            streamReason: streamDecision.reason,
+            contentSource: "reasoning_content",
+          };
+        }
+
+        logger.warn("llm", `${route} JSON mode returned empty content`, {
+          hasReasoningContent: hasReasoningContent(data),
+          summary_json_recovered_from_reasoning: false,
+          modelId: getEffectiveModelId(config),
+          modelFamily: modelProfile.modelFamily,
+        });
+        return null;
+      }
+
+      const jsonErrorPayload = await parseErrorPayload(jsonResponse);
+      const shouldFallback =
+        [400, 404, 415, 422].includes(jsonResponse.status) ||
+        /response_format|json_object|unsupported/i.test(
+          jsonErrorPayload.message || jsonErrorPayload.rawText
+        );
+
+      if (!shouldFallback) {
+        logger.error(
+          "llm",
+          `${route} JSON request failed: ${jsonResponse.status}`,
+          new Error(jsonErrorPayload.rawText || jsonErrorPayload.message)
+        );
+        throw createLlmRequestError(route, jsonResponse.status, jsonErrorPayload);
+      }
+
+      logger.warn("llm", `${route} JSON mode unsupported, fallback to alternate JSON path`, {
+        status: jsonResponse.status,
+        modelId: getEffectiveModelId(config),
+        modelFamily: modelProfile.modelFamily,
+      });
+      return null;
+    };
+
+    const attemptOrder =
+      modelProfile.responseFormatStrategy === "prompt_json_first"
+        ? [attemptPromptJson, attemptJsonMode]
+        : [attemptJsonMode, attemptPromptJson];
+
+    for (const attempt of attemptOrder) {
+      const result = await attempt();
+      if (result) {
+        return result;
+      }
     }
+
+    logger.warn("llm", `${route} JSON paths yielded no structured output, fallback to plain_text`, {
+      modelId: getEffectiveModelId(config),
+      modelFamily: modelProfile.modelFamily,
+      responseFormatStrategy: modelProfile.responseFormatStrategy,
+    });
   }
 
   const response = await request(baseMessages);
   if (!response.ok) {
-    const errorText = await parseError(response);
-    logger.error("llm", `${route} request failed: ${response.status}`, new Error(errorText));
-    throw new Error(`LLM_REQUEST_FAILED:${response.status}`);
+    const errorPayload = await parseErrorPayload(response);
+    logger.error(
+      "llm",
+      `${route} request failed: ${response.status}`,
+      new Error(errorPayload.rawText || errorPayload.message)
+    );
+    throw createLlmRequestError(route, response.status, errorPayload);
   }
 
   const data = (await response.json()) as ModelScopeResponse;
@@ -407,6 +642,8 @@ function resolveStreamDecision(
   config: LlmConfig,
   streamRequested: boolean
 ): StreamDecision {
+  const modelProfile = getLlmModelProfile(getEffectiveModelId(config));
+
   if (!streamRequested) {
     return { stage: "stable_non_stream", reason: "not_requested" };
   }
@@ -419,8 +656,15 @@ function resolveStreamDecision(
     return { stage: "fallback_non_stream", reason: "reasoning_policy_off" };
   }
 
-  // RC2 keeps stream disabled by default and routes candidates through stable path.
-  return { stage: "candidate_stream", reason: "reserved_for_future_rollout" };
+  if (modelProfile.streamProfile !== "candidate_reasoning_stream") {
+    return { stage: "fallback_non_stream", reason: "model_profile_non_stream" };
+  }
+
+  if (!ENABLE_CANDIDATE_REASONING_STREAM_ROLLOUT) {
+    return { stage: "candidate_stream", reason: "candidate_profile_gate_closed" };
+  }
+
+  return { stage: "candidate_stream", reason: "future_stream_rollout" };
 }
 
 function normalizeThinkHandlingPolicy(
@@ -569,3 +813,4 @@ export function buildWeeklySourceHash(
     .join("|");
   return `${rangeStart}-${rangeEnd}-${payload}`;
 }
+

@@ -3,16 +3,24 @@ import type {
   LlmConfig,
   ThinkHandlingPolicy,
 } from "../types";
+import {
+  KIMI_K2_5_MODEL,
+  LEGACY_DS14_MODEL,
+  LEGACY_QWEN14_MODEL,
+  STEP_3_5_FLASH_MODEL,
+} from "./llmModelProfile";
 
 export const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1/";
 export const DEFAULT_PROXY_BASE_URL = "https://vesti-proxy.vercel.app/api";
 export const DEFAULT_PROXY_URL = `${DEFAULT_PROXY_BASE_URL}/chat`;
 export const DEFAULT_PROXY_EMBEDDINGS_URL = `${DEFAULT_PROXY_BASE_URL}/embeddings`;
-export const DEFAULT_STABLE_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B";
-export const DEFAULT_BACKUP_MODEL = "Qwen/Qwen3-14B";
+export const DEFAULT_STABLE_MODEL = KIMI_K2_5_MODEL;
+export const DEFAULT_BACKUP_MODEL = STEP_3_5_FLASH_MODEL;
 export const BYOK_MODEL_WHITELIST = [
   DEFAULT_STABLE_MODEL,
   DEFAULT_BACKUP_MODEL,
+  LEGACY_DS14_MODEL,
+  LEGACY_QWEN14_MODEL,
   "deepseek-ai/DeepSeek-V3",
   "deepseek-ai/DeepSeek-R1",
   "Qwen/Qwen3-8B",
@@ -21,11 +29,10 @@ export const BYOK_MODEL_WHITELIST = [
 ] as const;
 
 // Reserved for future export-compression routing enablement after real API validation.
-export const FUTURE_MODELSCOPE_EXPORT_MODEL_CANDIDATES = [
-  "moonshotai/Kimi-K2.5",
+export const FUTURE_MODELSCOPE_EXPORT_MODEL_CANDIDATES: readonly string[] = [];
+export const FUTURE_MOONSHOT_DIRECT_EXPORT_MODEL_CANDIDATES = [
+  KIMI_K2_5_MODEL,
 ] as const;
-export const FUTURE_MOONSHOT_DIRECT_EXPORT_MODEL_CANDIDATES: readonly string[] =
-  [];
 
 export type ProxyRoute = "chat" | "embeddings";
 

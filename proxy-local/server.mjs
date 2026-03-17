@@ -11,9 +11,18 @@ const ALLOWED_ORIGIN_RULES = (process.env.VESTI_ALLOWED_ORIGINS || "")
 
 const CHAT_PRIMARY_MODEL =
   (process.env.VESTI_CHAT_PRIMARY_MODEL || "").trim() ||
-  "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B";
+  "moonshotai/Kimi-K2.5";
 const CHAT_BACKUP_MODEL =
-  (process.env.VESTI_CHAT_BACKUP_MODEL || "").trim() || "Qwen/Qwen3-14B";
+  (process.env.VESTI_CHAT_BACKUP_MODEL || "").trim() || "stepfun-ai/Step-3.5-Flash";
+const LEGACY_CHAT_MODELS = new Set([
+  "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+  "Qwen/Qwen3-14B",
+]);
+const ALLOWED_CHAT_MODELS = new Set([
+  CHAT_PRIMARY_MODEL,
+  CHAT_BACKUP_MODEL,
+  ...LEGACY_CHAT_MODELS,
+]);
 
 const EMBEDDING_MODEL =
   (process.env.VESTI_EMBEDDING_MODEL || "").trim() || "text-embedding-v2";
@@ -26,7 +35,7 @@ const EMBED_TEXT_MAX_CHARS = Number.parseInt(
   10
 );
 const UPSTREAM_TIMEOUT_MS = Number.parseInt(
-  process.env.VESTI_UPSTREAM_TIMEOUT_MS || "20000",
+  process.env.VESTI_UPSTREAM_TIMEOUT_MS || "30000",
   10
 );
 
@@ -142,7 +151,7 @@ function clampMaxTokens(value) {
 function sanitizeChatPayload(body) {
   const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
   const model =
-    requestedModel === CHAT_PRIMARY_MODEL || requestedModel === CHAT_BACKUP_MODEL
+    ALLOWED_CHAT_MODELS.has(requestedModel)
       ? requestedModel
       : CHAT_PRIMARY_MODEL;
 
@@ -163,7 +172,6 @@ function sanitizeChatPayload(body) {
 
   const payload = {
     model,
-    enable_thinking: false,
     temperature:
       typeof body.temperature === "number" && Number.isFinite(body.temperature)
         ? body.temperature
@@ -178,6 +186,10 @@ function sanitizeChatPayload(body) {
     body.response_format.type === "json_object"
   ) {
     payload.response_format = { type: "json_object" };
+  }
+
+  if (LEGACY_CHAT_MODELS.has(model)) {
+    payload.enable_thinking = false;
   }
 
   return payload;

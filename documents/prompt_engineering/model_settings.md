@@ -1,7 +1,7 @@
-# Vesti Model Access RFC (v1.2-rc.4)
+# Vesti Model Access RFC (v1.2-rc.5)
 
-- Document version: v1.2-rc.4
-- Updated on: 2026-02-14
+- Document version: v1.2-rc.5
+- Updated on: 2026-03-17
 - Scope: Vesti Settings / Insights (Summary + Weekly Lite)
 - Audience: Frontend / Extension / Backend / QA / DevOps
 - Positioning: v1.1 stable delivery + v1.2 research baseline
@@ -11,11 +11,11 @@
 
 ## Revision Notes (This Update)
 
-1. v1.1 stable baseline model is fixed to `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`.
+1. v1.1 stable baseline model is fixed to `moonshotai/Kimi-K2.5`.
 2. Demo proxy route is fixed to Node runtime `POST /api/chat` with max-duration configuration.
-3. Proxy fallback is single retry to `Qwen/Qwen3-14B`, only on network/timeout/429/5xx.
+3. Proxy fallback is single retry to `stepfun-ai/Step-3.5-Flash`, only on network/timeout/429/5xx.
 4. Diagnostic headers are standardized: `x-request-id`, `x-proxy-model-used`, `x-proxy-attempt`.
-5. App fallback chain remains `json_mode -> prompt_json -> fallback_text`, and empty `json_mode` content degrades to `prompt_json`.
+5. App fallback chain is now model-profile aware: legacy DS/Qwen stays `json_mode -> prompt_json -> fallback_text`, while Kimi/Step prefers `prompt_json -> json_mode -> fallback_text`.
 6. Weekly scope remains `Weekly Lite` (7-day recap only, no long-horizon claims).
 7. Settings remains `app_shell` semantics and must stay sans-first even under Warm Paper theme.
 8. Proxy contract adds `POST /api/embeddings` (DashScope OpenAI-compatible upstream).
@@ -29,11 +29,11 @@
 
 - Demo route has passed pressure tests with fallback observed and no deterministic Edge timeout pattern.
 - BYOK route remains direct to ModelScope and does not pass user keys through proxy.
-- Release priority is stable generation and debuggable behavior, not maximum model novelty.
+- Release priority is stable generation and debuggable behavior, with stream/reasoning still held behind an internal gate.
 
 ### 0.2 Goals
 
-1. Keep v1.1 stable route predictable for demo delivery.
+1. Keep v1.1 stable route predictable for demo delivery while moving the default proxy lineup to Kimi/Step.
 2. Keep Hybrid Access architecture and BYOK trust boundary intact.
 3. Keep Weekly in Lite mode until data maturity supports broader claims.
 4. Keep UI behavior aligned with the canonical Warm Paper + semantic-layer spec.
@@ -71,10 +71,14 @@
 
 ### 2.1 Baseline model policy
 
-- Primary model: `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
-- Backup model: `Qwen/Qwen3-14B`
-- Non-stream baseline: `enable_thinking=false`
-- Stable fallback chain: `json_mode -> prompt_json -> fallback_text`
+- Primary model: `moonshotai/Kimi-K2.5`
+- Backup model: `stepfun-ai/Step-3.5-Flash`
+- Non-stream baseline:
+  - Kimi/Step omit `enable_thinking`
+  - legacy DS/Qwen still force `enable_thinking=false`
+- Stable fallback chain:
+  - Kimi/Step: `prompt_json -> json_mode -> fallback_text`
+  - legacy DS/Qwen: `json_mode -> prompt_json -> fallback_text`
 
 ### 2.2 Weekly Lite boundary
 
@@ -97,13 +101,13 @@
 
 1. Runtime: Node function on Vercel (no Edge dependency).
 2. Function max duration is controlled via deployment config.
-3. Upstream timeout is guarded by `AbortController` (current target: ~22s).
+3. Upstream timeout is guarded by `AbortController` (current target: 30s).
 
 ### 3.2 Request sanitization and payload policy
 
-1. Allowed models are restricted to primary/backup set.
+1. Allowed models are restricted to primary/backup set plus legacy DS/Qwen compatibility IDs.
 2. `max_tokens` is server-side clamped to `<= 800`.
-3. `enable_thinking` is forced to `false` in proxy route.
+3. `enable_thinking` is forced to `false` only for legacy DS/Qwen requests; Kimi/Step omit the field.
 4. Message role whitelist is `system | user | assistant`.
 5. `response_format: { type: "json_object" }` is forwarded only when valid.
 
@@ -150,8 +154,8 @@ Non-retryable:
 
 ### 4.1 Default settings
 
-- `DEFAULT_STABLE_MODEL = deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
-- `DEFAULT_BACKUP_MODEL = Qwen/Qwen3-14B`
+- `DEFAULT_STABLE_MODEL = moonshotai/Kimi-K2.5`
+- `DEFAULT_BACKUP_MODEL = stepfun-ai/Step-3.5-Flash`
 - `DEFAULT_PROXY_BASE_URL = https://vesti-proxy.vercel.app/api`
 - `chat route = ${proxyBaseUrl}/chat`
 - `embeddings route = ${proxyBaseUrl}/embeddings`
@@ -159,8 +163,8 @@ Non-retryable:
 
 ### 4.2 Demo normalize behavior
 
-1. Demo mode lazily normalizes model selection to DS14.
-2. Legacy demo model IDs auto-converge to DS14.
+1. Demo mode lazily normalizes model selection to the active stable primary model.
+2. Legacy DS/Qwen IDs remain supported but no longer define the default stable track.
 3. Gateway lock remains visible (`modelscope.cn`).
 
 ### 4.3 Settings UI expectations
@@ -206,14 +210,14 @@ Non-retryable:
 ### 7.1 Acceptance criteria (rc.4)
 
 1. `/api/chat` passes OPTIONS + POST CORS checks.
-2. Long payload pressure run meets success >= 95%, P95 < 20s.
+2. Long payload pressure run meets success >= 95%, P95 < 30s.
 3. Demo Summary and Weekly Lite generate without Edge-timeout failure pattern.
 4. BYOK direct mode remains functional and key-isolated.
 
 ### 7.2 Rollback strategy
 
 1. Keep Node runtime; tighten `max_tokens`/timeout if instability appears.
-2. Emergency pin to primary-only model by disabling fallback branch.
+2. Emergency pin to primary-only model by disabling the Step fallback branch.
 3. Severe proxy instability: switch internal verification to BYOK route.
 
 ---
@@ -221,7 +225,7 @@ Non-retryable:
 ## Assumptions and Defaults
 
 1. Platform path stays Vercel Node runtime in this release window.
-2. Model lineup is fixed to DS14 primary + Qwen3-14B backup.
+2. Model lineup is fixed to Kimi primary + Step backup, with DS/Qwen retained only as legacy compatibility IDs.
 3. Automatic retry is capped at one fallback attempt.
 4. Weekly stays `Weekly Lite` until data maturity.
 5. UI semantics follow `insights_prompt_ui_engineering.md` as canonical source.
