@@ -1,7 +1,6 @@
 import "~style.css";
 
 import { useCallback, useEffect, useState } from "react";
-import { VestiDashboard as VestiDashboardShell } from "@vesti/ui";
 import type { UiThemeMode } from "~lib/types";
 import {
   applyUiTheme,
@@ -18,6 +17,11 @@ import {
   getRelatedConversations,
   getAllEdges,
   getMessages,
+  getAnnotationsByConversation,
+  saveAnnotation,
+  deleteAnnotation,
+  exportAnnotationToNote,
+  exportAnnotationToNotion,
   updateConversation,
   updateConversationTitle,
   deleteConversation,
@@ -42,6 +46,7 @@ import {
   exportData,
   clearAllData,
 } from "~lib/services/storageService";
+import { VestiDashboard as VestiDashboardShell } from "~vendor/vesti-ui";
 
 type ThemeSyncStatus = "idle" | "syncing" | "error";
 
@@ -130,6 +135,11 @@ export default function VestiDashboardPage() {
         getRelatedConversations,
         getAllEdges,
         getMessages,
+        getAnnotationsByConversation,
+        saveAnnotation,
+        deleteAnnotation,
+        exportAnnotationToNote,
+        exportAnnotationToNotion,
         updateConversation,
         updateConversationTitle,
         deleteConversation,

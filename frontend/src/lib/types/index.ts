@@ -198,6 +198,25 @@ export interface RagResponse {
   agent?: ExploreAgentMeta;
 }
 
+export interface ExploreSession {
+  id: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ExploreMessage {
+  id: string;
+  sessionId: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: RelatedConversation[];
+  agentMeta?: ExploreAgentMeta;
+  timestamp: number;
+}
+
 export interface Message {
   id: number;
   conversation_id: number;
@@ -207,6 +226,15 @@ export interface Message {
   content_ast_version?: AstVersion | null;
   degraded_nodes_count?: number;
   created_at: number;
+}
+
+export interface Annotation {
+  id: number;
+  conversation_id: number;
+  message_id: number;
+  content_text: string;
+  created_at: number;
+  days_after: number;
 }
 
 export interface Note {
@@ -330,6 +358,24 @@ export type UiThemeMode = "light" | "dark";
 
 export interface UiSettings {
   themeMode: UiThemeMode;
+}
+
+export type NotionAuthMode = "disconnected" | "oauth_public" | "legacy_manual";
+
+export interface NotionSettings {
+  authMode: NotionAuthMode;
+  accessToken: string;
+  workspaceId: string;
+  workspaceName: string;
+  selectedDatabaseId: string;
+  selectedDatabaseTitle: string;
+  updatedAt: number;
+}
+
+export interface NotionDatabaseOption {
+  id: string;
+  title: string;
+  url?: string;
 }
 
 export type UiSemanticLayer = "app_shell" | "artifact_content";

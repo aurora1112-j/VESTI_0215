@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
@@ -11,6 +18,8 @@ import {
   Check,
   ArrowRight,
   Clock,
+  MessageSquare,
+  MessageSquarePlus,
   MoreHorizontal,
   Pencil,
   RefreshCw,
@@ -19,6 +28,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type {
+  Annotation,
   Conversation,
   Topic,
   StorageApi,
@@ -33,6 +43,10 @@ import { getPlatformBadgeStyle, getPlatformLabel } from "../constants/platform";
 import { StructuredSummaryCard } from "../components/StructuredSummaryCard";
 import { SummaryPipelineProgress } from "../components/SummaryPipelineProgress";
 import type { PipelineStageState } from "../components/SummaryPipelineProgress";
+import {
+  getNotionSettings,
+  isNotionExportConfigured,
+} from "../notion-integration";
 
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
@@ -54,6 +68,11 @@ export function LibraryTab({
   const { topics, conversations, refresh } = useLibraryData();
   const getRelatedConversations = storage.getRelatedConversations;
   const getMessages = storage.getMessages;
+  const getAnnotationsByConversation = storage.getAnnotationsByConversation;
+  const saveAnnotation = storage.saveAnnotation;
+  const deleteAnnotation = storage.deleteAnnotation;
+  const exportAnnotationToNote = storage.exportAnnotationToNote;
+  const exportAnnotationToNotion = storage.exportAnnotationToNotion;
   const updateConversation = storage.updateConversation;
   const updateConversationTitle = storage.updateConversationTitle;
   const deleteConversation = storage.deleteConversation;
@@ -70,7 +89,27 @@ export function LibraryTab({
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
-  const [isConversationExpanded, setIsConversationExpanded] = useState(false);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotationDrafts, setAnnotationDrafts] = useState<Record<number, string>>({});
+  const [annotationSaving, setAnnotationSaving] = useState<Record<number, boolean>>({});
+  const [annotationActionBusy, setAnnotationActionBusy] = useState<Record<string, boolean>>({});
+  const [activeAnnotationMessageId, setActiveAnnotationMessageId] = useState<number | null>(null);
+  const [annotationPendingDeleteId, setAnnotationPendingDeleteId] = useState<number | null>(null);
+  const [annotationNotice, setAnnotationNotice] = useState<{
+    tone: "error" | "success";
+    message: string;
+    annotationId?: number;
+  } | null>(null);
+  const [isAnnotationDrawerOverlay, setIsAnnotationDrawerOverlay] = useState(false);
+  const [isAnnotationTriggerAlwaysVisible, setIsAnnotationTriggerAlwaysVisible] =
+    useState(false);
+  const [annotationPopoverStyle, setAnnotationPopoverStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const [isConversationExpanded, setIsConversationExpanded] = useState(true);
   const [, setAnalysisData] = useState<{
     summary?: string;
     keyInsights?: string[];
@@ -99,7 +138,14 @@ export function LibraryTab({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const renameNoteInputRef = useRef<HTMLInputElement>(null);
+  const annotationTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const annotationSurfaceRef = useRef<HTMLDivElement>(null);
+  const annotationDismissInFlightRef = useRef(false);
+  const annotationTriggerRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const conversationPreviewScrollRef = useRef<HTMLDivElement>(null);
   const FOLDER_META_KEY = "vesti_folder_meta";
+  const NOTION_SETTINGS_KEY = "vesti_notion_settings";
+  const [hasNotionExportConfig, setHasNotionExportConfig] = useState(false);
 
   function getInitialStages(): PipelineStageState[] {
     return [
@@ -193,6 +239,36 @@ export function LibraryTab({
   }, []);
 
   useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+      setHasNotionExportConfig(false);
+      return;
+    }
+
+    const syncNotionConfig = () => {
+      void getNotionSettings()
+        .then((settings) => {
+          setHasNotionExportConfig(isNotionExportConfigured(settings));
+        })
+        .catch(() => {
+          setHasNotionExportConfig(false);
+        });
+    };
+
+    syncNotionConfig();
+    const listener = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string
+    ) => {
+      if (areaName !== "local" || !changes[NOTION_SETTINGS_KEY]) return;
+      syncNotionConfig();
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => {
+      chrome.storage.onChanged.removeListener(listener);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!openConversationMenuId && !openFolderMenuName) return;
     const handleClick = () => {
       setOpenConversationMenuId(null);
@@ -244,7 +320,7 @@ export function LibraryTab({
   }, [selectedConversationId, storage]);
 
   useEffect(() => {
-    setIsConversationExpanded(false);
+    setIsConversationExpanded(true);
     setSummaryExpanded(false);
   }, [selectedConversationId]);
 
@@ -335,6 +411,132 @@ export function LibraryTab({
     };
   }, [selectedConversationId, getMessages]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAnnotations = async () => {
+      if (!selectedConversationId || !getAnnotationsByConversation) {
+        setAnnotations([]);
+        setAnnotationDrafts({});
+        setActiveAnnotationMessageId(null);
+        setAnnotationPendingDeleteId(null);
+        setAnnotationNotice(null);
+        return;
+      }
+
+      try {
+        const data = await getAnnotationsByConversation(selectedConversationId);
+        if (!cancelled) {
+          setAnnotations(data);
+          setAnnotationDrafts({});
+          setAnnotationActionBusy({});
+          setAnnotationPendingDeleteId(null);
+          setAnnotationNotice(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("[library] Failed to load annotations", error);
+          setAnnotations([]);
+          setAnnotationDrafts({});
+          setAnnotationActionBusy({});
+          setActiveAnnotationMessageId(null);
+          setAnnotationPendingDeleteId(null);
+          setAnnotationNotice(null);
+        }
+      }
+    };
+
+    void loadAnnotations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConversationId, getAnnotationsByConversation]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 1279px)");
+    const syncOverlayMode = () => setIsAnnotationDrawerOverlay(mediaQuery.matches);
+
+    syncOverlayMode();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncOverlayMode);
+      return () => mediaQuery.removeEventListener("change", syncOverlayMode);
+    }
+
+    mediaQuery.addListener(syncOverlayMode);
+    return () => mediaQuery.removeListener(syncOverlayMode);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(hover: none), (pointer: coarse)");
+    const syncTriggerVisibility = () => setIsAnnotationTriggerAlwaysVisible(mediaQuery.matches);
+
+    syncTriggerVisibility();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncTriggerVisibility);
+      return () => mediaQuery.removeEventListener("change", syncTriggerVisibility);
+    }
+
+    mediaQuery.addListener(syncTriggerVisibility);
+    return () => mediaQuery.removeListener(syncTriggerVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (
+      activeAnnotationMessageId !== null &&
+      !messages.some((message) => message.id === activeAnnotationMessageId)
+    ) {
+      setActiveAnnotationMessageId(null);
+      setAnnotationPendingDeleteId(null);
+      setAnnotationNotice(null);
+    }
+  }, [messages, activeAnnotationMessageId]);
+
+  useEffect(() => {
+    if (!activeAnnotationMessageId || !annotationTextareaRef.current) return;
+    annotationTextareaRef.current.focus();
+    annotationTextareaRef.current.setSelectionRange(
+      annotationTextareaRef.current.value.length,
+      annotationTextareaRef.current.value.length
+    );
+  }, [activeAnnotationMessageId]);
+
+  useEffect(() => {
+    const element = annotationTextareaRef.current;
+    if (!element) return;
+    element.style.height = "0px";
+    element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+  }, [annotationDrafts, activeAnnotationMessageId, isAnnotationDrawerOverlay]);
+
+  useEffect(() => {
+    if (activeAnnotationMessageId === null || isAnnotationDrawerOverlay) {
+      setAnnotationPopoverStyle(null);
+      return;
+    }
+
+    const trigger = annotationTriggerRefs.current.get(activeAnnotationMessageId);
+    const container = conversationPreviewScrollRef.current;
+    if (!trigger || !container) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const width = Math.min(360, Math.max(240, container.clientWidth - 24));
+    const top = triggerRect.bottom - containerRect.top + container.scrollTop + 8;
+    const left = Math.min(
+      Math.max(triggerRect.right - containerRect.left - width, 12),
+      Math.max(12, container.clientWidth - width - 12)
+    );
+
+    setAnnotationPopoverStyle({
+      top,
+      left,
+      width,
+      maxHeight: Math.min(360, Math.max(180, container.clientHeight - 24)),
+    });
+  }, [activeAnnotationMessageId, isAnnotationDrawerOverlay, isConversationExpanded]);
+
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
@@ -366,6 +568,31 @@ export function LibraryTab({
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId);
   const selectedNote = notes.find((n) => n.id === selectedNoteId);
+  const activeAnnotationMessage =
+    activeAnnotationMessageId !== null
+      ? messages.find((message) => message.id === activeAnnotationMessageId) ?? null
+      : null;
+  const activeAnnotationDraft =
+    activeAnnotationMessageId !== null ? annotationDrafts[activeAnnotationMessageId] ?? "" : "";
+  const annotationsByMessage = useMemo(() => {
+    const map = new Map<number, Annotation[]>();
+    annotations
+      .slice()
+      .sort((a, b) => a.created_at - b.created_at)
+      .forEach((annotation) => {
+        const bucket = map.get(annotation.message_id) ?? [];
+        bucket.push(annotation);
+        map.set(annotation.message_id, bucket);
+      });
+    return map;
+  }, [annotations]);
+  const activeMessageAnnotations =
+    activeAnnotationMessage !== null
+      ? annotationsByMessage.get(activeAnnotationMessage.id) ?? []
+      : [];
+  const isAnnotationPanelOpen = activeAnnotationMessage !== null;
+  const areAnnotationRowActionsAlwaysVisible =
+    isAnnotationDrawerOverlay || isAnnotationTriggerAlwaysVisible;
   const renameNoteTrimmed = renameNoteTitle.trim();
   const canSaveRenamedNote = Boolean(
     renameNoteTarget &&
@@ -378,7 +605,7 @@ export function LibraryTab({
     messages.length > 0 ? messages[0].created_at : selectedConversation?.updated_at;
   const renderedNoteContent = useMemo(() => {
     if (!noteContent.trim()) return "";
-    const html = marked.parse(noteContent, { gfm: true, breaks: false }) as string;
+    const html = marked.parse(noteContent, { gfm: true, breaks: true }) as string;
     return DOMPurify.sanitize(html);
   }, [noteContent]);
   const normalizeTags = (value: unknown): string[] => {
@@ -715,11 +942,278 @@ export function LibraryTab({
   function formatDate(timestamp?: number): string {
     if (!timestamp) return "Unknown date";
     return new Intl.DateTimeFormat("en-US", {
-      month: "long",
-      day: "numeric",
       year: "numeric",
+      month: "short",
+      day: "numeric",
     }).format(new Date(timestamp));
   }
+
+  function formatAnnotationTimestamp(annotation: Annotation): string {
+    const createdAt = annotation.created_at;
+    if (!createdAt) return "Added at an unknown time";
+    const dateLabel = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(createdAt));
+    const dayLabel = annotation.days_after === 1 ? "day" : "days";
+    return `Added on ${dateLabel} · ${annotation.days_after} ${dayLabel} after the conversation`;
+  }
+
+  function getAnnotationsForMessage(messageId: number): Annotation[] {
+    return annotationsByMessage.get(messageId) ?? [];
+  }
+
+  function getLatestAnnotationForMessage(messageId: number): Annotation | undefined {
+    const items = getAnnotationsForMessage(messageId);
+    return items[items.length - 1];
+  }
+
+  function setAnnotationTriggerRef(messageId: number, node: HTMLButtonElement | null) {
+    if (node) {
+      annotationTriggerRefs.current.set(messageId, node);
+      return;
+    }
+    annotationTriggerRefs.current.delete(messageId);
+  }
+
+  function isAnnotationTriggerTarget(target: EventTarget | null): boolean {
+    return target instanceof Element && Boolean(target.closest("[data-annotation-trigger='true']"));
+  }
+
+  function openAnnotationPanel(message: Message) {
+    setAnnotationDrafts((prev) => {
+      if (prev[message.id] !== undefined) return prev;
+      return {
+        ...prev,
+        [message.id]: "",
+      };
+    });
+    setActiveAnnotationMessageId(message.id);
+    setAnnotationPendingDeleteId(null);
+    setAnnotationNotice(null);
+  }
+
+  function closeAnnotationPanel() {
+    setActiveAnnotationMessageId(null);
+    setAnnotationPendingDeleteId(null);
+    setAnnotationNotice(null);
+  }
+
+  function updateAnnotationDraft(messageId: number, value: string) {
+    setAnnotationDrafts((prev) => ({
+      ...prev,
+      [messageId]: value,
+    }));
+    setAnnotationNotice(null);
+    setAnnotationPendingDeleteId(null);
+  }
+
+  function getAnnotationTriggerLabel(annotation?: Annotation): string {
+    return annotation ? "Open annotation" : "Add annotation";
+  }
+
+  function getAnnotationCountLabel(count: number): string {
+    return count === 1 ? "1 annotation" : `${count} annotations`;
+  }
+
+  function getAnnotationPreview(message: Message): string {
+    const normalized = message.content_text.replace(/\s+/g, " ").trim();
+    if (normalized.length <= 180) return normalized;
+    return `${normalized.slice(0, 180)}...`;
+  }
+
+  const persistAnnotationDraft = async (
+    message: Message,
+    options?: {
+      closeOnComplete?: boolean;
+      silentIfEmpty?: boolean;
+    }
+  ): Promise<"saved" | "empty" | "error"> => {
+    if (!selectedConversationId || !saveAnnotation) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Comments are unavailable in this build.",
+      });
+      return "error";
+    }
+
+    const draft = (annotationDrafts[message.id] || "").trim();
+    if (!draft) {
+      if (!options?.silentIfEmpty) {
+        setAnnotationNotice(null);
+      }
+      return "empty";
+    }
+
+    setAnnotationSaving((prev) => ({ ...prev, [message.id]: true }));
+    setAnnotationNotice(null);
+    try {
+      const annotation = await saveAnnotation({
+        conversationId: selectedConversationId,
+        messageId: message.id,
+        contentText: draft,
+      });
+      setAnnotations((prev) => {
+        return [...prev, annotation].sort((a, b) => a.created_at - b.created_at);
+      });
+      setAnnotationDrafts((prev) => ({
+        ...prev,
+        [message.id]: "",
+      }));
+      setAnnotationPendingDeleteId(null);
+      setAnnotationNotice(null);
+      if (options?.closeOnComplete) {
+        closeAnnotationPanel();
+      }
+      return "saved";
+    } catch (error) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Couldn't save this comment.",
+      });
+      return "error";
+    } finally {
+      setAnnotationSaving((prev) => ({ ...prev, [message.id]: false }));
+    }
+  };
+
+  const dismissAnnotationSurface = async () => {
+    if (annotationDismissInFlightRef.current) return;
+    if (!activeAnnotationMessage) {
+      closeAnnotationPanel();
+      return;
+    }
+
+    annotationDismissInFlightRef.current = true;
+    try {
+      const result = await persistAnnotationDraft(activeAnnotationMessage, {
+        closeOnComplete: false,
+        silentIfEmpty: true,
+      });
+      if (result !== "error") {
+        closeAnnotationPanel();
+      }
+    } finally {
+      annotationDismissInFlightRef.current = false;
+    }
+  };
+
+  const handleAnnotationTriggerClick = async (message: Message) => {
+    if (activeAnnotationMessageId === message.id) {
+      await dismissAnnotationSurface();
+      return;
+    }
+
+    if (activeAnnotationMessage) {
+      const result = await persistAnnotationDraft(activeAnnotationMessage, {
+        closeOnComplete: false,
+        silentIfEmpty: true,
+      });
+      if (result === "error") return;
+    }
+
+    openAnnotationPanel(message);
+  };
+
+  const handleSaveAnnotation = async (message: Message) => {
+    await persistAnnotationDraft(message, {
+      closeOnComplete: false,
+      silentIfEmpty: true,
+    });
+  };
+
+  const handleDeleteAnnotation = async (annotation: Annotation) => {
+    if (!deleteAnnotation) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Comments are unavailable in this build.",
+      });
+      return;
+    }
+    const busyKey = `delete:${annotation.id}`;
+    setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setAnnotationNotice(null);
+    try {
+      await deleteAnnotation(annotation.id);
+      setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
+      setAnnotationPendingDeleteId(null);
+      setAnnotationNotice(null);
+    } catch (error) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Couldn't delete this comment.",
+      });
+    } finally {
+      setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: false }));
+    }
+  };
+
+  const handleExportAnnotationToNote = async (annotation: Annotation) => {
+    if (!exportAnnotationToNote) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "My Notes export is not available in this build.",
+      });
+      return;
+    }
+
+    const busyKey = `note:${annotation.id}`;
+    setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setAnnotationNotice(null);
+    try {
+      const note = await exportAnnotationToNote(annotation.id);
+      setNotes((prev) => [note, ...prev.filter((item) => item.id !== note.id)]);
+      setHasLinkedNote(true);
+      setAnnotationNotice({
+        tone: "success",
+        message: "Saved to My Notes.",
+        annotationId: annotation.id,
+      });
+    } catch (error) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Couldn't export this comment to My Notes.",
+      });
+    } finally {
+      setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: false }));
+    }
+  };
+
+  const handleExportAnnotationToNotion = async (annotation: Annotation) => {
+    if (!exportAnnotationToNotion) {
+      setAnnotationNotice({
+        tone: "error",
+        message: "Notion export is not available in this build.",
+      });
+      return;
+    }
+
+    const busyKey = `notion:${annotation.id}`;
+    setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setAnnotationNotice(null);
+    try {
+      await exportAnnotationToNotion(annotation.id);
+      setAnnotationNotice({
+        tone: "success",
+        message: "Sent to Notion.",
+        annotationId: annotation.id,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message === "NOTION_SETTINGS_MISSING"
+          ? "Connect to Notion and choose a database in Settings before exporting."
+          : error instanceof Error && error.message === "NOTION_RECONNECT_REQUIRED"
+            ? "Your Notion session expired. Reconnect in Settings and try again."
+            : "Couldn't export this comment to Notion.";
+      setAnnotationNotice({
+        tone: "error",
+        message,
+      });
+    } finally {
+      setAnnotationActionBusy((prev) => ({ ...prev, [busyKey]: false }));
+    }
+  };
 
   function formatTimeAgo(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -734,6 +1228,205 @@ export function LibraryTab({
     if (months < 12) return `${months}mo ago`;
     return `${Math.floor(months / 12)}y ago`;
   }
+
+  function handleAnnotationComposerBlur(event: FocusEvent<HTMLTextAreaElement>) {
+    const nextTarget = event.relatedTarget;
+    if (
+      (nextTarget && annotationSurfaceRef.current?.contains(nextTarget)) ||
+      isAnnotationTriggerTarget(nextTarget)
+    ) {
+      return;
+    }
+
+    void dismissAnnotationSurface();
+  }
+
+  function handleAnnotationComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+    event.preventDefault();
+    if (!activeAnnotationMessage) return;
+    void handleSaveAnnotation(activeAnnotationMessage);
+  }
+
+  useEffect(() => {
+    if (!isAnnotationPanelOpen || isAnnotationDrawerOverlay) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (
+        (target instanceof Node && annotationSurfaceRef.current?.contains(target)) ||
+        isAnnotationTriggerTarget(target)
+      ) {
+        return;
+      }
+      void dismissAnnotationSurface();
+    };
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      void dismissAnnotationSurface();
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAnnotationPanelOpen, isAnnotationDrawerOverlay, activeAnnotationMessage]);
+
+  useEffect(() => {
+    if (annotationNotice?.tone !== "success") return;
+    const timer = window.setTimeout(() => {
+      setAnnotationNotice((current) =>
+        current?.tone === "success" ? null : current
+      );
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [annotationNotice]);
+
+  const renderAnnotationPanelContent = () => {
+    if (!activeAnnotationMessage || !selectedConversation) return null;
+
+    return (
+      <>
+        <div className="border-b border-border-subtle px-4 py-4">
+          <div className="text-[11px] font-sans uppercase tracking-[0.16em] text-text-tertiary">
+            {activeAnnotationMessage.role === "user" ? "You" : selectedConversation.platform}
+          </div>
+          <p className="mt-1 text-[13px] font-sans leading-relaxed text-text-secondary">
+            {getAnnotationPreview(activeAnnotationMessage)}
+          </p>
+        </div>
+
+        {annotationNotice?.tone === "error" && (
+          <div className="border-b border-border-subtle px-4 py-3">
+            <div className="rounded-xl bg-[#FEF2F2] px-3 py-2 text-[12px] font-sans text-[#B42318]">
+              {annotationNotice.message}
+            </div>
+          </div>
+        )}
+
+        {activeMessageAnnotations.length > 0 ? (
+          <div className="divide-y divide-border-subtle px-4">
+            {activeMessageAnnotations.map((annotation) => {
+              const isDeleteBusy = annotationActionBusy[`delete:${annotation.id}`];
+              const isNoteBusy = annotationActionBusy[`note:${annotation.id}`];
+              const isNotionBusy = annotationActionBusy[`notion:${annotation.id}`];
+              const inlineSuccessNotice =
+                annotationNotice?.tone === "success" &&
+                annotationNotice.annotationId === annotation.id
+                  ? annotationNotice.message
+                  : null;
+              const showActions =
+                areAnnotationRowActionsAlwaysVisible ||
+                annotationPendingDeleteId === annotation.id ||
+                Boolean(isDeleteBusy) ||
+                Boolean(isNoteBusy) ||
+                Boolean(isNotionBusy) ||
+                Boolean(inlineSuccessNotice);
+
+              return (
+                <article
+                  key={annotation.id}
+                  className="group/annotation py-3 first:pt-4 last:pb-4"
+                >
+                  <div className="text-[11px] font-sans text-text-tertiary">
+                    {formatAnnotationTimestamp(annotation)}
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-[13px] font-sans leading-relaxed text-text-primary">
+                    {annotation.content_text}
+                  </p>
+
+                  {annotationPendingDeleteId === annotation.id ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] font-sans text-[#B42318]">
+                      <span>Delete this comment?</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteAnnotation(annotation)}
+                        disabled={Boolean(isDeleteBusy)}
+                        className="rounded-md px-2 py-1 font-medium text-[#922018] hover:bg-[#FEF2F2] disabled:opacity-50"
+                      >
+                        {isDeleteBusy ? "Deleting..." : "Delete"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAnnotationPendingDeleteId(null)}
+                        className="rounded-md px-2 py-1 text-text-secondary hover:bg-bg-surface-card hover:text-text-primary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className={`mt-3 flex flex-wrap items-center gap-3 text-[12px] font-sans transition-opacity ${
+                        showActions
+                          ? "opacity-100"
+                          : "opacity-0 group-hover/annotation:opacity-100 group-focus-within/annotation:opacity-100"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleExportAnnotationToNote(annotation)}
+                        disabled={Boolean(isNoteBusy)}
+                        className="inline-flex items-center gap-1 text-text-secondary hover:text-text-primary disabled:opacity-50"
+                      >
+                        <BookOpen strokeWidth={1.6} className="h-3.5 w-3.5" />
+                        {isNoteBusy ? "Exporting..." : "My Notes"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleExportAnnotationToNotion(annotation)}
+                        disabled={Boolean(isNotionBusy) || !hasNotionExportConfig}
+                        className="inline-flex items-center gap-1 text-text-secondary hover:text-text-primary disabled:opacity-50"
+                        title={
+                          hasNotionExportConfig
+                            ? "Export to Notion"
+                            : "Connect to Notion and choose a database in Settings to enable export"
+                        }
+                      >
+                        <ArrowRight strokeWidth={1.6} className="h-3.5 w-3.5" />
+                        {isNotionBusy ? "Exporting..." : "Notion"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAnnotationPendingDeleteId(annotation.id)}
+                        className="inline-flex items-center gap-1 text-[#B42318] hover:text-[#922018]"
+                      >
+                        <Trash2 strokeWidth={1.6} className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                      {inlineSuccessNotice ? (
+                        <span className="text-text-tertiary">
+                          {inlineSuccessNotice}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="border-t border-border-subtle px-4 py-3">
+          <textarea
+            ref={annotationTextareaRef}
+            value={activeAnnotationDraft}
+            onChange={(event) =>
+              updateAnnotationDraft(activeAnnotationMessage.id, event.target.value)
+            }
+            onBlur={handleAnnotationComposerBlur}
+            onKeyDown={handleAnnotationComposerKeyDown}
+            rows={1}
+            placeholder="Comment..."
+            className="min-h-[38px] w-full resize-none border-0 bg-transparent px-0 py-0 text-[13px] font-sans leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-0"
+          />
+        </div>
+      </>
+    );
+  };
 
   function findTopicById(nodes: Topic[], id: number): Topic | null {
     for (const node of nodes) {
@@ -1672,7 +2365,8 @@ export function LibraryTab({
                 }`}
               >
                 <div
-                  className="rounded-lg bg-bg-surface-card border border-border-subtle p-4 max-h-[440px] overflow-y-auto"
+                  ref={conversationPreviewScrollRef}
+                  className="relative rounded-lg bg-bg-surface-card border border-border-subtle p-4 max-h-[440px] overflow-y-auto"
                   style={{ scrollbarGutter: "stable" }}
                 >
                   {messageCount > 1 && (
@@ -1686,47 +2380,182 @@ export function LibraryTab({
                       </button>
                     </div>
                   )}
-                  <div className="prose prose-slate max-w-none">
-                  {messagesLoading && (
-                    <div className="text-[13px] font-sans text-text-tertiary">
-                      Loading messages...
-                    </div>
-                  )}
-                  {!messagesLoading && messagesError && (
-                    <div className="text-[13px] font-sans text-text-tertiary">
-                      Unable to load messages.
-                    </div>
-                  )}
-                  {messages.map((message) => {
-                    const isUser = message.role === "user";
-                    return (
-                      <div key={message.id} className="mb-6">
-                        {isUser ? (
-                          <div className="text-[11px] font-sans text-text-tertiary uppercase tracking-wide mb-2">
-                            You
-                          </div>
-                        ) : (
-                          <span
-                            className="inline-block px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none uppercase tracking-wide mb-2"
-                            style={getPlatformBadgeStyle(selectedConversation.platform, themeMode)}
-                          >
-                            {getPlatformLabel(selectedConversation.platform)}
-                          </span>
-                        )}
-                        <div
-                          className={`text-base font-serif text-text-primary leading-relaxed whitespace-pre-wrap ${
-                            isUser ? "" : "p-3 rounded-lg bg-bg-surface-ai-message"
-                          }`}
-                        >
-                          {message.content_text}
+                  <div>
+                    <div className="prose prose-slate max-w-none min-w-0">
+                      {messagesLoading && (
+                        <div className="text-[13px] font-sans text-text-tertiary">
+                          Loading messages...
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                      {!messagesLoading && messagesError && (
+                        <div className="text-[13px] font-sans text-text-tertiary">
+                          Unable to load messages.
+                        </div>
+                      )}
+                      {messages.map((message) => {
+                        const isUser = message.role === "user";
+                        const messageAnnotations = getAnnotationsForMessage(message.id);
+                        const latestAnnotation = getLatestAnnotationForMessage(message.id);
+                        const annotationCount = messageAnnotations.length;
+                        const isAnnotationActive = activeAnnotationMessageId === message.id;
+
+                        return (
+                          <div key={message.id} className="group mb-5">
+                            <div
+                              className={`rounded-[22px] border px-4 py-4 transition-all duration-150 md:px-5 ${
+                                isAnnotationActive
+                                  ? "border-accent-primary/40 bg-accent-primary-light/40 shadow-[0_8px_28px_rgba(15,23,42,0.06)]"
+                                  : "border-transparent hover:border-border-subtle hover:bg-bg-secondary/40"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                {isUser ? (
+                                  <div className="text-[11px] font-sans text-text-tertiary uppercase tracking-wide">
+                                    You
+                                  </div>
+                                ) : (
+                                  <span
+                                    className="inline-block px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none uppercase tracking-wide"
+                                    style={getPlatformBadgeStyle(
+                                      selectedConversation.platform,
+                                      themeMode
+                                    )}
+                                  >
+                                    {getPlatformLabel(selectedConversation.platform)}
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  ref={(node) => setAnnotationTriggerRef(message.id, node)}
+                                  data-annotation-trigger="true"
+                                  onClick={() => void handleAnnotationTriggerClick(message)}
+                                  className={`relative inline-flex h-9 w-9 items-center justify-center rounded-2xl transition-all ${
+                                    annotationCount > 0
+                                      ? isAnnotationActive
+                                        ? "bg-accent-primary-light/70 text-accent-primary opacity-100"
+                                        : "bg-transparent text-text-secondary opacity-100"
+                                      : isAnnotationActive
+                                        ? "border border-border-subtle bg-bg-primary text-text-secondary"
+                                        : isAnnotationTriggerAlwaysVisible
+                                          ? "border border-border-subtle/80 bg-bg-primary/90 text-text-tertiary opacity-100"
+                                          : "border border-border-subtle/80 bg-bg-primary/90 text-text-tertiary opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                                  }`}
+                                  aria-label={`${getAnnotationTriggerLabel(latestAnnotation)}: ${
+                                    isUser ? "user message" : `${selectedConversation.platform} reply`
+                                  }`}
+                                  title={
+                                    annotationCount > 0
+                                      ? "Open annotations"
+                                      : getAnnotationTriggerLabel(latestAnnotation)
+                                  }
+                                >
+                                  {annotationCount === 0 ? (
+                                    <MessageSquarePlus strokeWidth={1.8} className="h-4 w-4" />
+                                  ) : (
+                                    <MessageSquare
+                                      strokeWidth={1.8}
+                                      className={`h-4 w-4 transition-opacity ${
+                                        isAnnotationActive || isAnnotationTriggerAlwaysVisible
+                                          ? "opacity-100"
+                                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                                      }`}
+                                    />
+                                  )}
+                                  {annotationCount > 0 ? (
+                                    <span
+                                      className={`absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent-primary transition-transform ${
+                                        isAnnotationActive ? "scale-125" : ""
+                                      }`}
+                                      aria-hidden="true"
+                                    >
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </div>
+
+                              <div
+                                className={`mt-3 text-base leading-relaxed whitespace-pre-wrap ${
+                                  isUser
+                                    ? "text-text-primary font-semibold"
+                                    : "text-text-secondary"
+                                }`}
+                              >
+                                <div
+                                  className={
+                                    isUser
+                                      ? ""
+                                      : "rounded-2xl bg-bg-surface-ai-message p-3"
+                                  }
+                                >
+                                  {message.content_text}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {isAnnotationPanelOpen &&
+                      !isAnnotationDrawerOverlay &&
+                      activeAnnotationMessage &&
+                      annotationPopoverStyle && (
+                        <div
+                          ref={annotationSurfaceRef}
+                          style={{
+                            top: annotationPopoverStyle.top,
+                            left: annotationPopoverStyle.left,
+                            width: annotationPopoverStyle.width,
+                            maxHeight: annotationPopoverStyle.maxHeight,
+                          }}
+                          className="absolute z-20 overflow-y-auto rounded-[22px] border border-border-subtle bg-bg-primary shadow-[0_18px_48px_rgba(15,23,42,0.18)]"
+                        >
+                          {renderAnnotationPanelContent()}
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {isAnnotationPanelOpen && isAnnotationDrawerOverlay && activeAnnotationMessage && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close annotation panel backdrop"
+                  onClick={() => void dismissAnnotationSurface()}
+                  className="fixed inset-0 z-40 bg-black/20 xl:hidden"
+                />
+                <aside
+                  ref={annotationSurfaceRef}
+                  className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] flex-col rounded-t-[28px] border border-border-subtle bg-bg-primary shadow-[0_-12px_48px_rgba(15,23,42,0.18)] xl:hidden"
+                >
+                  <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-border-subtle" />
+                  <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-5 py-4">
+                    <div>
+                      <div className="text-[11px] font-sans uppercase tracking-[0.16em] text-text-tertiary">
+                        Comment
+                      </div>
+                      <div className="mt-1 text-sm font-sans font-medium text-text-primary">
+                        {activeAnnotationMessage.role === "user"
+                          ? "You"
+                          : selectedConversation.platform}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void dismissAnnotationSurface()}
+                      className="rounded-md p-1 text-text-secondary hover:bg-bg-surface-card hover:text-text-primary transition-colors"
+                      aria-label="Close annotation panel"
+                    >
+                      <X strokeWidth={1.8} className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto">{renderAnnotationPanelContent()}</div>
+                </aside>
+              </>
+            )}
 
             {/* Related Notes */}
             {selectedConversation && (

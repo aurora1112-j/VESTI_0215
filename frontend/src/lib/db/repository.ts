@@ -1,13 +1,17 @@
 import type {
+  Annotation,
   Conversation,
   ConversationMatchSummary,
   ConversationSummaryV2,
   DataOverviewSnapshot,
   ExploreAgentMeta,
+  ExploreMessage,
+  ExploreSession,
   ExportFormat,
   ExportPayload,
   Message,
   Note,
+  RelatedConversation,
   Topic,
   DashboardStats,
   Platform,
@@ -34,7 +38,10 @@ import { SUPPORTED_PLATFORMS, normalizePlatform } from "../platform";
 import { db } from "./schema";
 import { enforceStorageWriteGuard, getStorageUsageSnapshot } from "./storageLimits";
 import type {
+  AnnotationRecord,
   ConversationRecord,
+  ExploreMessageRecord,
+  ExploreSessionRecord,
   MessageRecord,
   NoteRecord,
   SummaryRecordRecord,
@@ -42,12 +49,7 @@ import type {
   WeeklyReportRecordRecord,
 } from "./schema";
 
-type ExploreSourceRecord = {
-  id: number;
-  title: string;
-  platform: string;
-  similarity: number;
-};
+type ExploreSourceRecord = RelatedConversation;
 
 function normalizeExploreSources(
   sources: ExploreSourceRecord[] | undefined
@@ -56,16 +58,13 @@ function normalizeExploreSources(
     return undefined;
   }
 
-  return sources.map((source) => {
+  return sources.flatMap((source) => {
     const platform = normalizePlatform(source.platform);
     if (!platform) {
-      return source;
+      return [];
     }
 
-    return {
-      ...source,
-      platform,
-    };
+    return [{ ...source, platform }];
   });
 }
 
@@ -357,6 +356,24 @@ function toMessage(record: MessageRecord): Message {
     content_ast_version: record.content_ast_version ?? null,
     degraded_nodes_count: degradedNodesCount,
   };
+}
+
+function toAnnotation(record: AnnotationRecord & { id: number }): Annotation {
+  return {
+    id: record.id,
+    conversation_id: record.conversation_id,
+    message_id: record.message_id,
+    content_text: record.content_text,
+    created_at: record.created_at,
+    days_after: record.days_after,
+  };
+}
+
+export interface AnnotationExportContext {
+  annotation: Annotation;
+  conversation: Conversation;
+  message: Message;
+  messages: Message[];
 }
 
 function toSummary(record: SummaryRecordRecord): SummaryRecord {
@@ -803,6 +820,100 @@ export async function listMessages(
   return records.map(toMessage);
 }
 
+export async function listAnnotations(conversationId: number): Promise<Annotation[]> {
+  const records = await db.annotations
+    .where("conversation_id")
+    .equals(conversationId)
+    .sortBy("created_at");
+
+  return records
+    .filter((record): record is AnnotationRecord & { id: number } =>
+      typeof record.id === "number"
+    )
+    .map(toAnnotation);
+}
+
+export async function saveAnnotation(payload: {
+  conversationId: number;
+  messageId: number;
+  contentText: string;
+}): Promise<Annotation> {
+  const trimmed = payload.contentText.trim();
+  if (!trimmed) {
+    throw new Error("ANNOTATION_EMPTY");
+  }
+
+  const conversation = await db.conversations.get(payload.conversationId);
+  if (!conversation) {
+    throw new Error("CONVERSATION_NOT_FOUND");
+  }
+
+  const message = await db.messages.get(payload.messageId);
+  if (!message || message.conversation_id !== payload.conversationId) {
+    throw new Error("MESSAGE_NOT_FOUND");
+  }
+
+  await enforceStorageWriteGuard();
+  const now = Date.now();
+  const daysAfter = Math.max(
+    0,
+    Math.floor((now - conversation.created_at) / (24 * 60 * 60 * 1000))
+  );
+
+  const id = await db.annotations.add({
+    conversation_id: payload.conversationId,
+    message_id: payload.messageId,
+    content_text: trimmed,
+    created_at: now,
+    days_after: daysAfter,
+  });
+  const record = await db.annotations.get(id);
+  if (!record || record.id === undefined) {
+    throw new Error("ANNOTATION_NOT_FOUND");
+  }
+  return toAnnotation(record as AnnotationRecord & { id: number });
+}
+
+export async function deleteAnnotation(annotationId: number): Promise<boolean> {
+  const existing = await db.annotations.get(annotationId);
+  if (!existing || existing.id === undefined) {
+    return false;
+  }
+  await db.annotations.delete(annotationId);
+  return true;
+}
+
+export async function getAnnotationExportContext(
+  annotationId: number
+): Promise<AnnotationExportContext> {
+  const annotationRecord = await db.annotations.get(annotationId);
+  if (!annotationRecord || annotationRecord.id === undefined) {
+    throw new Error("ANNOTATION_NOT_FOUND");
+  }
+
+  const conversation = await db.conversations.get(annotationRecord.conversation_id);
+  if (!conversation || conversation.id === undefined) {
+    throw new Error("CONVERSATION_NOT_FOUND");
+  }
+
+  const message = await db.messages.get(annotationRecord.message_id);
+  if (!message || message.id === undefined) {
+    throw new Error("MESSAGE_NOT_FOUND");
+  }
+
+  const messages = await db.messages
+    .where("conversation_id")
+    .equals(annotationRecord.conversation_id)
+    .sortBy("created_at");
+
+  return {
+    annotation: toAnnotation(annotationRecord as AnnotationRecord & { id: number }),
+    conversation: toConversation(conversation),
+    message: toMessage(message),
+    messages: messages.map(toMessage),
+  };
+}
+
 export async function searchConversationIdsByText(query: string): Promise<number[]> {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length < 2) {
@@ -817,6 +928,22 @@ export async function searchConversationIdsByText(query: string): Promise<number
     }
 
     const content = record.content_text;
+    if (typeof content !== "string") {
+      return;
+    }
+
+    if (content.toLowerCase().includes(normalizedQuery)) {
+      conversationIds.add(conversationId);
+    }
+  });
+
+  await db.annotations.toCollection().each((record) => {
+    const conversationId = (record as AnnotationRecord).conversation_id;
+    if (typeof conversationId !== "number" || conversationIds.has(conversationId)) {
+      return;
+    }
+
+    const content = (record as AnnotationRecord).content_text;
     if (typeof content !== "string") {
       return;
     }
@@ -912,8 +1039,9 @@ export async function searchConversationMatchesByText(
 }
 
 export async function deleteConversation(id: number): Promise<boolean> {
-  await db.transaction("rw", db.conversations, db.messages, async () => {
+  await db.transaction("rw", db.conversations, db.messages, db.annotations, async () => {
     await db.messages.where("conversation_id").equals(id).delete();
+    await db.annotations.where("conversation_id").equals(id).delete();
     await db.conversations.delete(id);
   });
   return true;
@@ -949,15 +1077,13 @@ export async function updateConversationTitle(
 export async function clearAllData(): Promise<boolean> {
   await db.transaction(
     "rw",
-    db.conversations,
-    db.messages,
-    db.summaries,
-    db.weekly_reports,
+    [db.conversations, db.messages, db.summaries, db.weekly_reports, db.annotations],
     async () => {
       await db.messages.clear();
       await db.conversations.clear();
       await db.summaries.clear();
       await db.weekly_reports.clear();
+      await db.annotations.clear();
     }
   );
   return true;
@@ -981,7 +1107,12 @@ async function collectExportDataset() {
   const messages = (await db.messages.toArray()).map(toMessage);
   const summaries = (await db.summaries.toArray()).map(toSummary);
   const weeklyReports = (await db.weekly_reports.toArray()).map(toWeeklyReport);
-  return { conversations, messages, summaries, weeklyReports };
+  const annotations = (await db.annotations.toArray())
+    .filter((record): record is AnnotationRecord & { id: number } =>
+      typeof record.id === "number"
+    )
+    .map(toAnnotation);
+  return { conversations, messages, summaries, weeklyReports, annotations };
 }
 
 export async function getStorageUsage(): Promise<StorageUsageSnapshot> {
@@ -1183,27 +1314,6 @@ export async function deleteNote(id: number): Promise<void> {
 }
 
 // ===== Explore (RAG Chat) Operations =====
-
-import type { ExploreSessionRecord, ExploreMessageRecord } from "./schema";
-
-export interface ExploreSession {
-  id: string;
-  title: string;
-  preview: string;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ExploreMessage {
-  id: string;
-  sessionId: string;
-  role: "user" | "assistant";
-  content: string;
-  sources?: Array<{ id: number; title: string; platform: string; similarity: number }>;
-  agentMeta?: ExploreAgentMeta;
-  timestamp: number;
-}
 
 const MAX_SESSIONS = 50;
 const MAX_MESSAGES_PER_SESSION = 100;

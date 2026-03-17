@@ -8,10 +8,13 @@ import {
   updateConversationTopic,
   updateConversation,
   listMessages,
+  listAnnotations,
   listNotes,
   searchConversationIdsByText,
   searchConversationMatchesByText,
   deleteConversation,
+  saveAnnotation,
+  deleteAnnotation,
   createNote,
   updateNote,
   deleteNote,
@@ -42,6 +45,10 @@ import {
   vectorizeAllConversations,
   askKnowledgeBase,
 } from "../lib/services/searchService";
+import {
+  exportAnnotationToMyNotes,
+  exportAnnotationToNotion,
+} from "../lib/services/annotationExportService";
 import { getLlmSettings, setLlmSettings } from "../lib/services/llmSettingsService";
 import { callInference } from "../lib/services/llmService";
 import {
@@ -444,6 +451,26 @@ async function handleOffscreenRequest(message: RequestMessage): Promise<Response
       }
       case "GET_MESSAGES": {
         const data = await listMessages(message.payload.conversationId);
+        return { ok: true, type: messageType, data };
+      }
+      case "GET_ANNOTATIONS_BY_CONVERSATION": {
+        const data = await listAnnotations(message.payload.conversationId);
+        return { ok: true, type: messageType, data };
+      }
+      case "SAVE_ANNOTATION": {
+        const annotation = await saveAnnotation(message.payload);
+        return { ok: true, type: messageType, data: { annotation } };
+      }
+      case "DELETE_ANNOTATION": {
+        await deleteAnnotation(message.payload.annotationId);
+        return { ok: true, type: messageType, data: { deleted: true } };
+      }
+      case "EXPORT_ANNOTATION_TO_NOTE": {
+        const note = await exportAnnotationToMyNotes(message.payload.annotationId);
+        return { ok: true, type: messageType, data: { note } };
+      }
+      case "EXPORT_ANNOTATION_TO_NOTION": {
+        const data = await exportAnnotationToNotion(message.payload.annotationId);
         return { ok: true, type: messageType, data };
       }
       case "GET_NOTES": {

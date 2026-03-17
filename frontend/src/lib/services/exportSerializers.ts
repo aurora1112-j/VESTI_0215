@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   Conversation,
   ExportPayload,
   Message,
@@ -17,6 +18,7 @@ export interface ExportDataset {
   messages: Message[];
   summaries: SummaryRecord[];
   weeklyReports: WeeklyReportRecord[];
+  annotations: Annotation[];
 }
 
 interface ArchiveHeaderMeta {
@@ -201,6 +203,17 @@ function groupMessages(messages: Message[]): Map<number, Message[]> {
   return byConversation;
 }
 
+function groupAnnotations(annotations: Annotation[]): Map<number, Annotation[]> {
+  const byConversation = new Map<number, Annotation[]>();
+  const sorted = [...annotations].sort((a, b) => a.created_at - b.created_at);
+  for (const annotation of sorted) {
+    const list = byConversation.get(annotation.conversation_id) ?? [];
+    list.push(annotation);
+    byConversation.set(annotation.conversation_id, list);
+  }
+  return byConversation;
+}
+
 function groupSummaries(summaries: SummaryRecord[]): Map<number, SummaryRecord> {
   const byConversation = new Map<number, SummaryRecord>();
   for (const summary of summaries) {
@@ -253,6 +266,10 @@ export function buildExportJsonV1(dataset: ExportDataset): ExportPayload {
         rangeEndIso: toIso(item.rangeEnd),
         createdAtIso: toIso(item.createdAt),
       })),
+      annotations: dataset.annotations.map((item) => ({
+        ...item,
+        created_at_iso: toIso(item.created_at),
+      })),
     },
   };
 
@@ -270,6 +287,7 @@ export function buildExportTxtV1(dataset: ExportDataset): ExportPayload {
   );
   const messagesByConversation = groupMessages(dataset.messages);
   const summariesByConversation = groupSummaries(dataset.summaries);
+  const annotationsByConversation = groupAnnotations(dataset.annotations);
   const lines: string[] = [];
   const header = buildArchiveHeaderMeta(conversations);
 
@@ -279,12 +297,26 @@ export function buildExportTxtV1(dataset: ExportDataset): ExportPayload {
 
   conversations.forEach((conversation, index) => {
     const messages = messagesByConversation.get(conversation.id) ?? [];
+    const annotations = annotationsByConversation.get(conversation.id) ?? [];
+    const annotationByMessage = new Map<number, Annotation[]>();
+    for (const annotation of annotations) {
+      const bucket = annotationByMessage.get(annotation.message_id) ?? [];
+      bucket.push(annotation);
+      annotationByMessage.set(annotation.message_id, bucket);
+    }
     pushThreadHeader(lines, index, conversation, messages.length);
 
     for (const message of messages) {
       const role = message.role === "user" ? "User" : "AI";
       lines.push(`${role}: [${toLocalDateTime(message.created_at)}]`);
       lines.push(message.content_text);
+      const messageAnnotations = annotationByMessage.get(message.id) ?? [];
+      for (const annotation of messageAnnotations) {
+        const dayLabel = annotation.days_after === 1 ? "day" : "days";
+        lines.push(
+          `【Annotation】(${toLocalDateTime(annotation.created_at)} · ${annotation.days_after} ${dayLabel} after) ${annotation.content_text}`
+        );
+      }
       lines.push("");
     }
 
@@ -332,6 +364,7 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
   );
   const messagesByConversation = groupMessages(dataset.messages);
   const summariesByConversation = groupSummaries(dataset.summaries);
+  const annotationsByConversation = groupAnnotations(dataset.annotations);
   const lines: string[] = [];
   const header = buildArchiveHeaderMeta(conversations);
 
@@ -341,6 +374,13 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
 
   conversations.forEach((conversation, index) => {
     const messages = messagesByConversation.get(conversation.id) ?? [];
+    const annotations = annotationsByConversation.get(conversation.id) ?? [];
+    const annotationByMessage = new Map<number, Annotation[]>();
+    for (const annotation of annotations) {
+      const bucket = annotationByMessage.get(annotation.message_id) ?? [];
+      bucket.push(annotation);
+      annotationByMessage.set(annotation.message_id, bucket);
+    }
     pushThreadHeader(lines, index, conversation, messages.length);
     lines.push("[正文内容从这里开始...]");
     lines.push("");
@@ -350,6 +390,18 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
       lines.push(`### ${role} [${toLocalDateTime(message.created_at)}]`);
       lines.push("");
       lines.push(message.content_text);
+      const messageAnnotations = annotationByMessage.get(message.id) ?? [];
+      if (messageAnnotations.length > 0) {
+        lines.push("");
+        messageAnnotations.forEach((annotation) => {
+          const dayLabel = annotation.days_after === 1 ? "day" : "days";
+          lines.push(
+            `> 【Annotation】${toLocalDateTime(annotation.created_at)} · ${annotation.days_after} ${dayLabel} after`
+          );
+          lines.push(`> ${annotation.content_text}`);
+          lines.push(">");
+        });
+      }
       lines.push("");
     }
 
@@ -394,4 +446,3 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
     filename: `vesti-export-${meta.timestampTag}.md`,
   };
 }
-

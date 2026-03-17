@@ -35,6 +35,14 @@ export interface NoteRecord {
   updated_at: number;
   linked_conversation_ids: number[];
 }
+export interface AnnotationRecord {
+  id?: number;
+  conversation_id: number;
+  message_id: number;
+  content_text: string;
+  created_at: number;
+  days_after: number;
+}
 
 // Explore (RAG Chat) Records
 export interface ExploreSessionRecord {
@@ -118,6 +126,7 @@ export class MemoryHubDB extends Dexie {
   topics!: Table<TopicRecord, number>;
   vectors!: Table<VectorRecord, number>;
   notes!: Table<NoteRecord, number>;
+  annotations!: Table<AnnotationRecord, number>;
   explore_sessions!: Table<ExploreSessionRecord, string>;
   explore_messages!: Table<ExploreMessageRecord, string>;
 
@@ -389,6 +398,67 @@ export class MemoryHubDB extends Dexie {
                   ? record.updated_at
                   : record.first_captured_at;
             }
+          });
+      });
+    this.version(13)
+      .stores({
+        conversations:
+          "++id, platform, title, created_at, updated_at, uuid, source_created_at, turn_count, topic_id, is_starred, [platform+created_at], [platform+uuid], [topic_id+updated_at]",
+        messages:
+          "++id, conversation_id, role, created_at, [conversation_id+created_at]",
+        summaries: "++id, conversationId, createdAt",
+        weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
+        topics:
+          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+        vectors: "++id, conversation_id, text_hash",
+        notes: "++id, created_at, updated_at",
+        annotations:
+          "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
+        explore_sessions: "id, updatedAt, createdAt",
+        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+      })
+      .upgrade(async (tx) => {
+        const conversationCreatedAt = new Map<number, number>();
+
+        await tx
+          .table("conversations")
+          .toCollection()
+          .each((record: Partial<ConversationRecord>) => {
+            if (typeof record.id !== "number" || typeof record.created_at !== "number") {
+              return;
+            }
+            conversationCreatedAt.set(record.id, record.created_at);
+          });
+
+        await tx
+          .table("annotations")
+          .toCollection()
+          .modify((record: Record<string, unknown>) => {
+            const rawCreatedAt =
+              typeof record.created_at === "number" ? record.created_at : Date.now();
+            const conversationId =
+              typeof record.conversation_id === "number" ? record.conversation_id : null;
+            const conversationTs =
+              conversationId !== null
+                ? conversationCreatedAt.get(conversationId) ?? rawCreatedAt
+                : rawCreatedAt;
+            const daysAfter = Math.max(
+              0,
+              Math.floor((rawCreatedAt - conversationTs) / (24 * 60 * 60 * 1000))
+            );
+
+            const legacyContent =
+              typeof record.content_text === "string"
+                ? record.content_text
+                : typeof record.content === "string"
+                  ? record.content
+                  : "";
+
+            record.content_text = legacyContent;
+            record.created_at = rawCreatedAt;
+            record.days_after = daysAfter;
+            delete record.content;
+            delete record.updated_at;
           });
       });
   }

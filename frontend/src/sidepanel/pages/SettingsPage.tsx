@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArrowRight,
+  BookOpen,
   CircleAlert,
   Check,
   ChevronDown,
@@ -26,6 +27,8 @@ import type {
   CaptureMode,
   CaptureSettings,
   LlmConfig,
+  NotionDatabaseOption,
+  NotionSettings,
   UiThemeMode,
 } from "~lib/types";
 import {
@@ -54,6 +57,16 @@ import {
   setUiThemeMode,
   subscribeUiSettings,
 } from "~lib/services/uiSettingsService";
+import {
+  connectToNotion,
+  disconnectNotion,
+  formatNotionErrorMessage,
+  getNotionSettings,
+  isNotionConnected,
+  isNotionExportConfigured,
+  listNotionDatabases,
+  selectNotionDatabase,
+} from "~lib/services/notionSettingsService";
 import {
   forceArchiveTransient,
   getActiveCaptureStatus,
@@ -374,6 +387,23 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [compactCardsPreviewOn, setCompactCardsPreviewOn] = useState(false);
   const [modelAccessOpen, setModelAccessOpen] = useState(false);
+  const [notionOpen, setNotionOpen] = useState(false);
+  const [notionSettings, setNotionSettingsState] = useState<NotionSettings>({
+    authMode: "disconnected",
+    accessToken: "",
+    workspaceId: "",
+    workspaceName: "",
+    selectedDatabaseId: "",
+    selectedDatabaseTitle: "",
+    updatedAt: 0,
+  });
+  const [notionStatus, setNotionStatus] = useState<AsyncStatus>("idle");
+  const [notionMessage, setNotionMessage] = useState<string | null>(null);
+  const [notionDatabaseQuery, setNotionDatabaseQuery] = useState("");
+  const [notionDatabases, setNotionDatabases] = useState<NotionDatabaseOption[]>([]);
+  const [notionDatabasesStatus, setNotionDatabasesStatus] =
+    useState<AsyncStatus>("idle");
+  const [notionDatabasesMessage, setNotionDatabasesMessage] = useState<string | null>(null);
   const [feedbackExpanded, setFeedbackExpanded] = useState(false);
   const [feedbackCopyState, setFeedbackCopyState] = useState<
     "idle" | "copied" | "error"
@@ -392,6 +422,12 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
   const proxyConnectionBaseUrl = getProxyBaseUrl(proxyContextSource);
   const proxyServiceTokenAttached = Boolean((proxyContextSource.proxyServiceToken || "").trim());
   const archiveMode = activeCaptureStatus?.mode;
+  const notionAvailable =
+    typeof chrome !== "undefined" &&
+    Boolean(chrome.storage?.local) &&
+    Boolean(chrome.identity?.launchWebAuthFlow);
+  const notionConnected = isNotionConnected(notionSettings);
+  const notionExportReady = isNotionExportConfigured(notionSettings);
   const canArchiveByMode = archiveMode === "smart" || archiveMode === "manual";
   const canArchiveNow =
     canArchiveByMode &&
@@ -471,6 +507,57 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    getNotionSettings()
+      .then((settings) => {
+        setNotionSettingsState(settings);
+      })
+      .catch((error) => {
+        setNotionStatus("error");
+        setNotionMessage(formatNotionErrorMessage(error));
+      });
+  }, []);
+
+  const loadNotionDatabases = useCallback(
+    async (query = notionDatabaseQuery) => {
+      if (!notionConnected) {
+        setNotionDatabases([]);
+        setNotionDatabasesStatus("idle");
+        setNotionDatabasesMessage(null);
+        return;
+      }
+
+      setNotionDatabasesStatus("loading");
+      setNotionDatabasesMessage(null);
+
+      try {
+        const results = await listNotionDatabases(query);
+        setNotionDatabases(results);
+        setNotionDatabasesStatus("ready");
+        setNotionDatabasesMessage(
+          results.length === 0
+            ? "No shared databases found yet. Share the database with the integration, then refresh."
+            : null
+        );
+      } catch (error) {
+        setNotionDatabasesStatus("error");
+        setNotionDatabasesMessage(formatNotionErrorMessage(error));
+      }
+    },
+    [notionConnected, notionDatabaseQuery]
+  );
+
+  useEffect(() => {
+    if (!notionConnected) {
+      setNotionDatabases([]);
+      setNotionDatabasesStatus("idle");
+      setNotionDatabasesMessage(null);
+      return;
+    }
+
+    void loadNotionDatabases("");
+  }, [loadNotionDatabases, notionConnected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -556,6 +643,57 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
           ? feedbackFromDiagnostic(diagnostic)
           : toModelAccessFeedback(getErrorMessage(error), "Connection test failed.")
       );
+    }
+  };
+
+  const handleConnectNotion = async () => {
+    setNotionStatus("loading");
+    setNotionMessage(null);
+
+    try {
+      const saved = await connectToNotion();
+      setNotionSettingsState(saved);
+      setNotionStatus("ready");
+      setNotionMessage("Notion connected.");
+      setNotionDatabaseQuery("");
+      await loadNotionDatabases("");
+    } catch (error) {
+      setNotionStatus("error");
+      setNotionMessage(formatNotionErrorMessage(error));
+    }
+  };
+
+  const handleDisconnectNotion = async () => {
+    setNotionStatus("loading");
+    setNotionMessage(null);
+
+    try {
+      const next = await disconnectNotion();
+      setNotionSettingsState(next);
+      setNotionDatabases([]);
+      setNotionDatabasesStatus("idle");
+      setNotionDatabasesMessage(null);
+      setNotionDatabaseQuery("");
+      setNotionStatus("ready");
+      setNotionMessage("Notion disconnected.");
+    } catch (error) {
+      setNotionStatus("error");
+      setNotionMessage(formatNotionErrorMessage(error));
+    }
+  };
+
+  const handleSelectNotionDatabase = async (database: NotionDatabaseOption) => {
+    setNotionStatus("loading");
+    setNotionMessage(null);
+
+    try {
+      const saved = await selectNotionDatabase(database);
+      setNotionSettingsState(saved);
+      setNotionStatus("ready");
+      setNotionMessage(`Selected ${database.title}.`);
+    } catch (error) {
+      setNotionStatus("error");
+      setNotionMessage(formatNotionErrorMessage(error));
     }
   };
 
@@ -687,6 +825,10 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
 
   const handleToggleModelAccess = () => {
     setModelAccessOpen((prev) => !prev);
+  };
+
+  const handleToggleNotion = () => {
+    setNotionOpen((prev) => !prev);
   };
 
   return (
@@ -1033,6 +1175,203 @@ export function SettingsPage({ onNavigateToData }: SettingsPageProps) {
                   )}
                 </div>
               )}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="model-access-shell" data-open={notionOpen ? "true" : "false"}>
+          <button
+            type="button"
+            onClick={handleToggleNotion}
+            aria-expanded={notionOpen}
+            aria-controls="settings-notion-panel"
+            className="model-access-trigger"
+          >
+            <span className="model-access-trigger-main">
+              <span className="model-access-icon-tile">
+                <BookOpen className="h-4 w-4" strokeWidth={1.4} />
+              </span>
+              <span className="min-w-0">
+                <span className="model-access-title">Notion Export</span>
+                <span className="model-access-description">
+                  One-shot export for saved annotations
+                </span>
+              </span>
+            </span>
+            <ChevronDown className="model-access-chevron h-4 w-4" strokeWidth={1.8} />
+          </button>
+
+          {notionOpen ? (
+            <div id="settings-notion-panel" className="model-access-body">
+              <div className="model-access-info-block">
+                <div className="model-access-info-head">
+                  <span className="model-access-status-chip model-access-status-chip-demo">
+                    <span className="model-access-status-dot" />
+                    {notionConnected ? "OAuth Connected" : "Official OAuth"}
+                  </span>
+                  <CircleAlert className="h-3.5 w-3.5 text-text-tertiary" strokeWidth={1.4} />
+                </div>
+                <div className="model-access-info-divider" />
+                <p className="text-[11px] font-sans leading-[1.5] text-text-tertiary">
+                  Connect with Notion, then choose the database used for one-shot annotation
+                  exports.
+                </p>
+              </div>
+
+              <div className="model-access-field-group">
+                <label className="model-access-input-label">Connection</label>
+                <div className="rounded-xl border border-border-subtle bg-bg-primary px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-sans font-medium text-text-primary">
+                        {notionConnected
+                          ? notionSettings.workspaceName || "Notion workspace connected"
+                          : notionAvailable
+                            ? "Connect to Notion"
+                            : "Extension-only feature"}
+                      </div>
+                      <p className="mt-1 text-[11px] font-sans leading-[1.5] text-text-tertiary">
+                        {notionConnected
+                          ? notionSettings.authMode === "legacy_manual"
+                            ? "Legacy token detected. Reconnect to upgrade to official OAuth."
+                            : "Your workspace is ready. Choose a database below."
+                          : notionAvailable
+                            ? "Opens the official Notion authorization flow in a secure browser window."
+                            : "OAuth login is available only inside the extension build."}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleConnectNotion()}
+                        disabled={!notionAvailable || notionStatus === "loading"}
+                        className="model-access-save-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60"
+                      >
+                        {notionStatus === "loading"
+                          ? "Connecting..."
+                          : notionConnected
+                            ? "Change"
+                            : "Connect"}
+                      </button>
+                      {notionConnected ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDisconnectNotion()}
+                          disabled={notionStatus === "loading"}
+                          className="model-access-test-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60"
+                        >
+                          Disconnect
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {notionConnected ? (
+                <>
+                  <div className="model-access-field-group">
+                    <label className="model-access-input-label">Target Database</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={notionDatabaseQuery}
+                        onChange={(event) => {
+                          setNotionDatabaseQuery(event.target.value);
+                          setNotionDatabasesStatus("idle");
+                          setNotionDatabasesMessage(null);
+                        }}
+                        className="model-access-input"
+                        placeholder="Search shared databases"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void loadNotionDatabases()}
+                        disabled={notionDatabasesStatus === "loading"}
+                        className="model-access-test-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-60"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[11px] font-sans leading-[1.5] text-text-tertiary">
+                      If the database does not appear yet, share it with the integration in
+                      Notion, then refresh.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border-subtle bg-bg-primary p-2">
+                    {notionDatabases.length > 0 ? (
+                      <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                        {notionDatabases.map((database) => {
+                          const selected = database.id === notionSettings.selectedDatabaseId;
+                          return (
+                            <button
+                              key={database.id}
+                              type="button"
+                              onClick={() => void handleSelectNotionDatabase(database)}
+                              className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                selected
+                                  ? "border-accent-primary/40 bg-accent-primary-light/40"
+                                  : "border-transparent hover:border-border-subtle hover:bg-bg-surface-card"
+                              }`}
+                            >
+                              <div className="text-[12px] font-sans font-medium text-text-primary">
+                                {database.title}
+                              </div>
+                              <div className="mt-1 text-[11px] font-sans text-text-tertiary">
+                                {database.id}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="px-2 py-3 text-[11px] font-sans leading-[1.5] text-text-tertiary">
+                        {notionDatabasesStatus === "loading"
+                          ? "Loading shared databases..."
+                          : "No databases loaded yet. Connect and refresh to fetch shared databases."}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-[11px] font-sans text-text-tertiary">
+                    {notionExportReady
+                      ? `Selected: ${
+                          notionSettings.selectedDatabaseTitle || notionSettings.selectedDatabaseId
+                        }`
+                      : "Choose a database to enable annotation export."}
+                  </div>
+                </>
+              ) : null}
+
+              {notionStatus === "loading" && (
+                <div className="model-access-feedback text-text-tertiary">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Waiting for Notion...
+                </div>
+              )}
+
+              {notionMessage && notionStatus !== "loading" && (
+                <p
+                  className={`model-access-feedback ${
+                    notionStatus === "error" ? "text-danger" : "text-text-secondary"
+                  }`}
+                >
+                  {notionMessage}
+                </p>
+              )}
+
+              {notionDatabasesMessage && notionDatabasesStatus !== "loading" ? (
+                <p
+                  className={`model-access-feedback ${
+                    notionDatabasesStatus === "error"
+                      ? "text-danger"
+                      : "text-text-secondary"
+                  }`}
+                >
+                  {notionDatabasesMessage}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </section>

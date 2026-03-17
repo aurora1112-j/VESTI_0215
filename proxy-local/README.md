@@ -4,6 +4,9 @@ Local proxy for Vesti demo mode with two routes:
 
 - `POST /api/chat`
 - `POST /api/embeddings`
+- `GET /api/notion/oauth/start`
+- `GET /api/notion/oauth/callback`
+- `GET /api/notion/oauth/session/:sessionId`
 
 Both routes enforce:
 
@@ -15,6 +18,8 @@ Both routes enforce:
 1. Copy `.env.example` to `.env` and fill:
    - `MODELSCOPE_API_KEY`
    - `VESTI_SERVICE_TOKEN`
+   - `NOTION_CLIENT_ID`
+   - `NOTION_CLIENT_SECRET`
 2. Start server:
 
 ```powershell
@@ -35,8 +40,15 @@ Use this value as Vesti `proxyBaseUrl`.
 
 - chat route: `${proxyBaseUrl}/chat`
 - embeddings route: `${proxyBaseUrl}/embeddings`
+- notion oauth start route: `http://127.0.0.1:3000/api/notion/oauth/start`
 
 Set `proxyServiceToken` in Vesti settings to match `VESTI_SERVICE_TOKEN`.
+
+## Notion OAuth Notes
+
+- Register `NOTION_REDIRECT_URI` in your Notion public integration settings.
+- `extension_redirect_uri` is supplied by the extension at runtime via `chrome.identity`.
+- `/api/notion/oauth/session/:sessionId` returns the exchanged token once, then expires it.
 
 ## Notes
 

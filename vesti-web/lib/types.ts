@@ -41,6 +41,8 @@ export interface Conversation {
   last_captured_at: number;
   created_at: number;
   updated_at: number;
+  url?: string;
+  source_created_at?: number | null;
   is_starred: boolean;
   is_archived?: boolean;
   is_trash?: boolean;
@@ -71,6 +73,15 @@ export interface Message {
   role: 'user' | 'ai';
   content_text: string;
   created_at: number;
+}
+
+export interface Annotation {
+  id: number;
+  conversation_id: number;
+  message_id: number;
+  content_text: string;
+  created_at: number;
+  days_after: number;
 }
 
 export interface Note {

@@ -1,5 +1,6 @@
 import type {
   ActiveCaptureStatus,
+  Annotation,
   CaptureDecisionMeta,
   Conversation,
   ConversationMatchSummary,
@@ -17,13 +18,14 @@ import type {
   SummaryRecord,
   WeeklyReportRecord,
   RelatedConversation,
+  ExploreSession,
+  ExploreMessage,
   RagResponse,
   ExploreMode,
   ExploreAskOptions,
   Note,
   SearchConversationMatchesQuery,
 } from "../types";
-import type { ExploreSession, ExploreMessage } from "../db/repository";
 import type { AstRoot, AstVersion } from "../types/ast";
 
 export interface DateRange {
@@ -41,6 +43,16 @@ export interface ConversationUpdateChanges {
   topic_id?: number | null;
   is_starred?: boolean;
   tags?: string[];
+}
+
+export interface AnnotationSavePayload {
+  conversationId: number;
+  messageId: number;
+  contentText: string;
+}
+
+export interface AnnotationActionPayload {
+  annotationId: number;
 }
 
 export interface ConversationDraft {
@@ -266,6 +278,41 @@ export type RequestMessage =
       payload: { conversationId: number };
     }
   | {
+      type: "GET_ANNOTATIONS_BY_CONVERSATION";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: { conversationId: number };
+    }
+  | {
+      type: "SAVE_ANNOTATION";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: AnnotationSavePayload;
+    }
+  | {
+      type: "DELETE_ANNOTATION";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: AnnotationActionPayload;
+    }
+  | {
+      type: "EXPORT_ANNOTATION_TO_NOTE";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: AnnotationActionPayload;
+    }
+  | {
+      type: "EXPORT_ANNOTATION_TO_NOTION";
+      target?: "offscreen";
+      via?: "background";
+      requestId?: string;
+      payload: AnnotationActionPayload;
+    }
+  | {
       type: "GET_NOTES";
       target: "offscreen";
       via?: "background";
@@ -447,6 +494,11 @@ export type ResponseDataMap = {
   RENAME_EXPLORE_SESSION: { updated: boolean };
   UPDATE_EXPLORE_MESSAGE_CONTEXT: { updated: boolean };
   GET_MESSAGES: Message[];
+  GET_ANNOTATIONS_BY_CONVERSATION: Annotation[];
+  SAVE_ANNOTATION: { annotation: Annotation };
+  DELETE_ANNOTATION: { deleted: boolean };
+  EXPORT_ANNOTATION_TO_NOTE: { note: Note };
+  EXPORT_ANNOTATION_TO_NOTION: { pageId: string; url?: string };
   GET_NOTES: Note[];
   CREATE_NOTE: { note: Note };
   UPDATE_NOTE: { note: Note };

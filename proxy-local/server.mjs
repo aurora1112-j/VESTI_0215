@@ -38,12 +38,25 @@ const UPSTREAM_TIMEOUT_MS = Number.parseInt(
   process.env.VESTI_UPSTREAM_TIMEOUT_MS || "30000",
   10
 );
+const NOTION_CLIENT_ID = (process.env.NOTION_CLIENT_ID || "").trim();
+const NOTION_CLIENT_SECRET = (process.env.NOTION_CLIENT_SECRET || "").trim();
+const NOTION_REDIRECT_URI =
+  (process.env.NOTION_REDIRECT_URI || "").trim() ||
+  `http://127.0.0.1:${PORT}/api/notion/oauth/callback`;
+const NOTION_OAUTH_SESSION_TTL_MS = Number.parseInt(
+  process.env.NOTION_OAUTH_SESSION_TTL_MS || "300000",
+  10
+);
 
 const CHAT_UPSTREAM_URL = "https://api-inference.modelscope.cn/v1/chat/completions";
 const EMBEDDINGS_UPSTREAM_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings";
+const NOTION_AUTHORIZE_URL = "https://api.notion.com/v1/oauth/authorize";
+const NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token";
 
 const ALLOWED_CHAT_ROLES = new Set(["system", "user", "assistant"]);
+const notionOAuthStateStore = new Map();
+const notionOAuthSessionStore = new Map();
 
 function nowMs() {
   return Date.now();
@@ -88,7 +101,7 @@ function setCorsHeaders(res, origin, allowedOrigin) {
     res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   }
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, x-vesti-service-token"
@@ -103,6 +116,12 @@ function writeJson(res, status, payload) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+function redirect(res, location) {
+  res.statusCode = 302;
+  res.setHeader("location", location);
+  res.end();
 }
 
 async function readJsonBody(req) {
@@ -146,6 +165,181 @@ function clampMaxTokens(value) {
     return 800;
   }
   return Math.max(1, Math.min(Math.floor(value), 800));
+}
+
+function purgeExpiredNotionOAuthRecords() {
+  const now = nowMs();
+  for (const [state, record] of notionOAuthStateStore.entries()) {
+    if (record.expiresAt <= now) {
+      notionOAuthStateStore.delete(state);
+    }
+  }
+  for (const [sessionId, record] of notionOAuthSessionStore.entries()) {
+    if (record.expiresAt <= now) {
+      notionOAuthSessionStore.delete(sessionId);
+    }
+  }
+}
+
+function isValidExtensionRedirectUri(value) {
+  return typeof value === "string" && value.startsWith("chrome-extension://");
+}
+
+function buildNotionAuthorizeUrl(state) {
+  const url = new URL(NOTION_AUTHORIZE_URL);
+  url.searchParams.set("client_id", NOTION_CLIENT_ID);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("owner", "user");
+  url.searchParams.set("redirect_uri", NOTION_REDIRECT_URI);
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+async function exchangeNotionAuthorizationCode(code, requestId) {
+  const basicAuth = Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString("base64");
+  const upstream = await fetchWithTimeout(
+    NOTION_TOKEN_URL,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: NOTION_REDIRECT_URI,
+      }),
+    },
+    UPSTREAM_TIMEOUT_MS
+  );
+
+  const payload = (await upstream.json().catch(() => null)) || {};
+  if (!upstream.ok || typeof payload.access_token !== "string") {
+    throw new Error(payload?.message || `NOTION_TOKEN_${upstream.status}`);
+  }
+
+  return {
+    accessToken: payload.access_token,
+    workspaceId: typeof payload.workspace_id === "string" ? payload.workspace_id : "",
+    workspaceName: typeof payload.workspace_name === "string" ? payload.workspace_name : "",
+    requestId,
+  };
+}
+
+function getRequestUrl(req) {
+  return new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+}
+
+function handleNotionOAuthStart(req, res, requestId) {
+  if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET || !NOTION_REDIRECT_URI) {
+    writeJson(
+      res,
+      500,
+      buildErrorPayload(
+        "NOTION_OAUTH_NOT_CONFIGURED",
+        "Notion OAuth is not configured on this proxy.",
+        requestId
+      )
+    );
+    return;
+  }
+
+  const requestUrl = getRequestUrl(req);
+  const extensionRedirectUri = requestUrl.searchParams.get("extension_redirect_uri") || "";
+  if (!isValidExtensionRedirectUri(extensionRedirectUri)) {
+    writeJson(
+      res,
+      400,
+      buildErrorPayload(
+        "INVALID_EXTENSION_REDIRECT",
+        "A valid chrome-extension redirect URI is required.",
+        requestId
+      )
+    );
+    return;
+  }
+
+  const state = randomUUID();
+  notionOAuthStateStore.set(state, {
+    extensionRedirectUri,
+    expiresAt: nowMs() + NOTION_OAUTH_SESSION_TTL_MS,
+  });
+  redirect(res, buildNotionAuthorizeUrl(state));
+}
+
+async function handleNotionOAuthCallback(req, res, requestId) {
+  const requestUrl = getRequestUrl(req);
+  const state = requestUrl.searchParams.get("state") || "";
+  const code = requestUrl.searchParams.get("code") || "";
+  const error = requestUrl.searchParams.get("error") || "";
+  const errorDescription = requestUrl.searchParams.get("error_description") || "";
+  const stateRecord = notionOAuthStateStore.get(state);
+
+  if (!stateRecord) {
+    writeJson(
+      res,
+      400,
+      buildErrorPayload("NOTION_STATE_INVALID", "OAuth state is missing or expired.", requestId)
+    );
+    return;
+  }
+
+  notionOAuthStateStore.delete(state);
+  const redirectUrl = new URL(stateRecord.extensionRedirectUri);
+
+  if (error) {
+    redirectUrl.searchParams.set("error", errorDescription || error);
+    redirect(res, redirectUrl.toString());
+    return;
+  }
+
+  if (!code) {
+    redirectUrl.searchParams.set("error", "Missing authorization code.");
+    redirect(res, redirectUrl.toString());
+    return;
+  }
+
+  try {
+    const tokenPayload = await exchangeNotionAuthorizationCode(code, requestId);
+    const sessionId = randomUUID();
+    notionOAuthSessionStore.set(sessionId, {
+      ...tokenPayload,
+      expiresAt: nowMs() + NOTION_OAUTH_SESSION_TTL_MS,
+    });
+    redirectUrl.searchParams.set("session", sessionId);
+    redirect(res, redirectUrl.toString());
+  } catch (oauthError) {
+    redirectUrl.searchParams.set(
+      "error",
+      oauthError instanceof Error ? oauthError.message : "Notion authorization failed."
+    );
+    redirect(res, redirectUrl.toString());
+  }
+}
+
+function handleNotionOAuthSession(req, res, requestId) {
+  const requestUrl = getRequestUrl(req);
+  const segments = trimTrailingSlashes(requestUrl.pathname).split("/");
+  const sessionId = segments[segments.length - 1] || "";
+  const session = notionOAuthSessionStore.get(sessionId);
+
+  if (!session) {
+    writeJson(
+      res,
+      404,
+      buildErrorPayload("NOTION_SESSION_NOT_FOUND", "OAuth session is missing or expired.", requestId)
+    );
+    return;
+  }
+
+  notionOAuthSessionStore.delete(sessionId);
+  writeJson(res, 200, {
+    accessToken: session.accessToken,
+    workspaceId: session.workspaceId,
+    workspaceName: session.workspaceName,
+  });
 }
 
 function sanitizeChatPayload(body) {
@@ -461,6 +655,7 @@ const server = createServer(async (req, res) => {
   const path = trimTrailingSlashes((req.url || "").split("?")[0] || "");
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
   const allowedOrigin = resolveAllowedOrigin(origin);
+  purgeExpiredNotionOAuthRecords();
 
   setCommonHeaders(res, requestId);
   setCorsHeaders(res, origin, allowedOrigin);
@@ -474,9 +669,29 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (method === "OPTIONS" && (path === "/api/chat" || path === "/api/embeddings")) {
+  if (
+    method === "OPTIONS" &&
+    (path === "/api/chat" ||
+      path === "/api/embeddings" ||
+      path.startsWith("/api/notion/oauth"))
+  ) {
     res.statusCode = 204;
     res.end();
+    return;
+  }
+
+  if (method === "GET" && path === "/api/notion/oauth/start") {
+    handleNotionOAuthStart(req, res, requestId);
+    return;
+  }
+
+  if (method === "GET" && path === "/api/notion/oauth/callback") {
+    await handleNotionOAuthCallback(req, res, requestId);
+    return;
+  }
+
+  if (method === "GET" && path.startsWith("/api/notion/oauth/session/")) {
+    handleNotionOAuthSession(req, res, requestId);
     return;
   }
 
@@ -484,7 +699,11 @@ const server = createServer(async (req, res) => {
     writeJson(
       res,
       405,
-      buildErrorPayload("METHOD_NOT_ALLOWED", "Only POST and OPTIONS are supported.", requestId)
+      buildErrorPayload(
+        "METHOD_NOT_ALLOWED",
+        "Only GET, POST, and OPTIONS are supported.",
+        requestId
+      )
     );
     return;
   }

@@ -1,5 +1,6 @@
 import type {
   ChatSummaryData,
+  Annotation,
   Conversation,
   ExportFormat,
   GardenerResult,
@@ -98,6 +99,36 @@ type RequestMessage =
       payload: { conversationId: number };
     }
   | {
+      type: 'GET_ANNOTATIONS_BY_CONVERSATION';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { conversationId: number };
+    }
+  | {
+      type: 'SAVE_ANNOTATION';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { conversationId: number; messageId: number; contentText: string };
+    }
+  | {
+      type: 'DELETE_ANNOTATION';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { annotationId: number };
+    }
+  | {
+      type: 'EXPORT_ANNOTATION_TO_NOTE';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { annotationId: number };
+    }
+  | {
+      type: 'EXPORT_ANNOTATION_TO_NOTION';
+      target?: 'offscreen';
+      requestId?: string;
+      payload: { annotationId: number };
+    }
+  | {
       type: 'GET_NOTES';
       target?: 'offscreen';
       requestId?: string;
@@ -175,6 +206,11 @@ type ResponseDataMap = {
   REMOVE_FOLDER_TAG: { updated: number };
   ASK_KNOWLEDGE_BASE: RagResponse;
   GET_MESSAGES: Message[];
+  GET_ANNOTATIONS_BY_CONVERSATION: Annotation[];
+  SAVE_ANNOTATION: { annotation: Annotation };
+  DELETE_ANNOTATION: { deleted: boolean };
+  EXPORT_ANNOTATION_TO_NOTE: { note: Note };
+  EXPORT_ANNOTATION_TO_NOTION: { pageId: string; url?: string };
   GET_NOTES: Note[];
   CREATE_NOTE: { note: Note };
   UPDATE_NOTE: { note: Note };
@@ -552,6 +588,76 @@ export async function getMessages(
     target: 'offscreen',
     payload: { conversationId },
   }) as Promise<Message[]>;
+}
+
+export async function getAnnotationsByConversation(
+  conversationId: number
+): Promise<Annotation[]> {
+  return sendRequest({
+    type: 'GET_ANNOTATIONS_BY_CONVERSATION',
+    target: 'offscreen',
+    payload: { conversationId },
+  }) as Promise<Annotation[]>;
+}
+
+export async function saveAnnotation(payload: {
+  conversationId: number;
+  messageId: number;
+  contentText: string;
+}): Promise<Annotation> {
+  const result = (await sendRequest({
+    type: 'SAVE_ANNOTATION',
+    target: 'offscreen',
+    payload,
+  })) as { annotation: Annotation };
+
+  if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'VESTI_DATA_UPDATED' }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+
+  return result.annotation;
+}
+
+export async function deleteAnnotation(annotationId: number): Promise<void> {
+  await sendRequest({
+    type: 'DELETE_ANNOTATION',
+    target: 'offscreen',
+    payload: { annotationId },
+  });
+
+  if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'VESTI_DATA_UPDATED' }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+}
+
+export async function exportAnnotationToNote(annotationId: number): Promise<Note> {
+  const result = (await sendRequest({
+    type: 'EXPORT_ANNOTATION_TO_NOTE',
+    target: 'offscreen',
+    payload: { annotationId },
+  })) as { note: Note };
+
+  if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'VESTI_DATA_UPDATED' }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+
+  return result.note;
+}
+
+export async function exportAnnotationToNotion(
+  annotationId: number
+): Promise<{ pageId: string; url?: string }> {
+  return (await sendRequest({
+    type: 'EXPORT_ANNOTATION_TO_NOTION',
+    target: 'offscreen',
+    payload: { annotationId },
+  })) as { pageId: string; url?: string };
 }
 
 export async function deleteConversation(id: number): Promise<void> {

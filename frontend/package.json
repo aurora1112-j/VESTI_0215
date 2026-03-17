@@ -50,6 +50,7 @@
       "https://vesti-proxy.vercel.app/*",
       "https://dashscope.aliyuncs.com/*",
       "https://api-inference.modelscope.cn/*",
+      "https://api.notion.com/*",
       "https://chatgpt.com/*",
       "https://chat.openai.com/*",
       "https://claude.ai/*",
@@ -63,6 +64,7 @@
       "https://yuanbao.tencent.com/*"
     ],
     "permissions": [
+      "identity",
       "storage",
       "offscreen",
       "sidePanel",

@@ -1,5 +1,6 @@
 ﻿import type {
   ActiveCaptureStatus,
+  Annotation,
   Conversation,
   ConversationMatchSummary,
   DataOverviewSnapshot,
@@ -12,6 +13,8 @@
   Platform,
   RelatedConversation,
   RagResponse,
+  ExploreSession,
+  ExploreMessage,
   ExploreMode,
   ExploreAskOptions,
   StorageUsageSnapshot,
@@ -22,7 +25,6 @@
   GardenerResult,
 } from "../types";
 import type { ChatSummaryData } from "../types/insightsPresentation";
-import type { ExploreSession, ExploreMessage } from "../db/repository";
 import { sendRequest } from "../messaging/runtime";
 import type { ConversationUpdateChanges } from "../messaging/protocol";
 import type { LlmDiagnostic } from "./llmService";
@@ -88,11 +90,19 @@ export async function updateConversation(
   id: number,
   changes: ConversationUpdateChanges
 ): Promise<{ updated: boolean; conversation: Conversation }> {
-  return sendRequest({
+  const result = (await sendRequest({
     type: "UPDATE_CONVERSATION",
     target: "offscreen",
     payload: { id, changes },
-  }) as Promise<{ updated: boolean; conversation: Conversation }>;
+  })) as { updated: boolean; conversation: Conversation };
+
+  if (result.updated) {
+    chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+
+  return result;
 }
 
 export async function runGardener(
@@ -198,6 +208,72 @@ export async function getMessages(
     target: "offscreen",
     payload: { conversationId },
   }) as Promise<Message[]>;
+}
+
+export async function getAnnotationsByConversation(
+  conversationId: number
+): Promise<Annotation[]> {
+  return sendRequest({
+    type: "GET_ANNOTATIONS_BY_CONVERSATION",
+    target: "offscreen",
+    payload: { conversationId },
+  }) as Promise<Annotation[]>;
+}
+
+export async function saveAnnotation(payload: {
+  conversationId: number;
+  messageId: number;
+  contentText: string;
+}): Promise<Annotation> {
+  const result = (await sendRequest({
+    type: "SAVE_ANNOTATION",
+    target: "offscreen",
+    payload,
+  })) as { annotation: Annotation };
+
+  chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+    void chrome.runtime.lastError;
+  });
+
+  return result.annotation;
+}
+
+export async function deleteAnnotation(annotationId: number): Promise<void> {
+  await sendRequest({
+    type: "DELETE_ANNOTATION",
+    target: "offscreen",
+    payload: { annotationId },
+  });
+
+  chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+export async function exportAnnotationToNote(annotationId: number): Promise<Note> {
+  const result = (await sendRequest({
+    type: "EXPORT_ANNOTATION_TO_NOTE",
+    target: "offscreen",
+    payload: { annotationId },
+  })) as { note: Note };
+
+  chrome.runtime.sendMessage({ type: "VESTI_DATA_UPDATED" }, () => {
+    void chrome.runtime.lastError;
+  });
+
+  return result.note;
+}
+
+export async function exportAnnotationToNotion(
+  annotationId: number
+): Promise<{ pageId: string; url?: string }> {
+  const result = (await sendRequest({
+    type: "EXPORT_ANNOTATION_TO_NOTION",
+    target: "offscreen",
+    payload: { annotationId },
+  })) as { pageId: string; url?: string };
+
+  return result;
 }
 
 export async function getNotes(): Promise<Note[]> {
@@ -555,4 +631,3 @@ export async function forceArchiveTransient(): Promise<ForceArchiveTransientResu
     target: "background",
   }) as Promise<ForceArchiveTransientResult>;
 }
-

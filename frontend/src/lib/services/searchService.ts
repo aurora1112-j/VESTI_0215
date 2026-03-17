@@ -1,4 +1,5 @@
 ﻿import type {
+  Annotation,
   Conversation,
   ExploreAskOptions,
   ExploreAgentPlan,
@@ -602,9 +603,11 @@ function toFloat32Array(value: Float32Array | number[]): Float32Array {
 
 function buildConversationText(
   conversation: Conversation,
-  messageTexts: string[]
+  messageTexts: string[],
+  annotations: Annotation[]
 ): string {
-  const chunks = [conversation.title, conversation.snippet, ...messageTexts];
+  const annotationText = annotations.map((item) => `【批注】${item.content_text}`);
+  const chunks = [conversation.title, conversation.snippet, ...messageTexts, ...annotationText];
   const combined = chunks.filter(Boolean).join("\n");
   if (combined.length <= MAX_TEXT_LENGTH) return combined;
   return combined.slice(0, MAX_TEXT_LENGTH);
@@ -612,7 +615,8 @@ function buildConversationText(
 
 function buildConversationContext(
   conversation: Conversation,
-  messages: Array<{ role: "user" | "ai"; content_text: string }>
+  messages: Array<{ role: "user" | "ai"; content_text: string }>,
+  annotations: Annotation[]
 ): string {
   const lines = messages
     .slice(0, MAX_MESSAGE_COUNT)
@@ -621,11 +625,14 @@ function buildConversationContext(
       return `[${role}] ${msg.content_text}`;
     });
 
+  const annotationLines = annotations.map((item) => `[Note] ${item.content_text}`);
+
   return [
     `[Title] ${conversation.title}`,
     `[Platform] ${conversation.platform}`,
     "[Content]",
     ...lines,
+    ...(annotationLines.length > 0 ? ["【批注】", ...annotationLines] : []),
   ].join("\n");
 }
 
@@ -1126,7 +1133,22 @@ async function retrieveRagContext(
       platform: conversation.platform,
       similarity: Math.round(topItem.similarity * 100),
     };
-    const contextBlock = buildConversationContext(conversation, messages);
+    const annotationRecords = await db.annotations
+      .where("conversation_id")
+      .equals(conversation.id)
+      .toArray();
+    const annotations = annotationRecords
+      .filter((record): record is Annotation => typeof record?.content_text === "string")
+      .map((record) => ({
+        id: record.id as number,
+        conversation_id: record.conversation_id,
+        message_id: record.message_id,
+        content_text: record.content_text,
+        created_at: record.created_at,
+        days_after: record.days_after,
+      }));
+
+    const contextBlock = buildConversationContext(conversation, messages, annotations);
     const excerpt = extractExcerpt(messages);
 
     sources.push(source);
@@ -1696,7 +1718,26 @@ async function getConversationText(
     .map((message) => message.content_text)
     .filter(Boolean);
 
-  const text = buildConversationText(conversation as Conversation, messageTexts);
+  const annotationRecords = await db.annotations
+    .where("conversation_id")
+    .equals(conversationId)
+    .toArray();
+  const annotations = annotationRecords
+    .filter((record): record is Annotation => typeof record?.content_text === "string")
+    .map((record) => ({
+      id: record.id as number,
+      conversation_id: record.conversation_id,
+      message_id: record.message_id,
+      content_text: record.content_text,
+      created_at: record.created_at,
+      days_after: record.days_after,
+    }));
+
+  const text = buildConversationText(
+    conversation as Conversation,
+    messageTexts,
+    annotations
+  );
   return { conversation: conversation as Conversation, text };
 }
 
@@ -1975,4 +2016,3 @@ export async function vectorizeAllConversations(): Promise<number> {
 
   return created;
 }
-

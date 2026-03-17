@@ -43,6 +43,7 @@ export interface Conversation {
   topic_id: number | null;
   created_at: number;
   updated_at: number;
+  source_created_at?: number | null;
   is_starred: boolean;
   is_archived?: boolean;
   is_trash?: boolean;
@@ -177,6 +178,15 @@ export interface Message {
   created_at: number;
 }
 
+export interface Annotation {
+  id: number;
+  conversation_id: number;
+  message_id: number;
+  content_text: string;
+  created_at: number;
+  days_after: number;
+}
+
 export type AsyncStatus = "idle" | "loading" | "ready" | "error";
 export type ExportFormat = "json" | "txt" | "md";
 export type StorageUsageStatus = "ok" | "warning" | "blocked";
@@ -231,6 +241,17 @@ export type StorageApi = {
     conversationIds?: number[];
   }) => Promise<Array<{ source: number; target: number; weight: number }>>;
   getMessages?: (conversationId: number) => Promise<Message[]>;
+  getAnnotationsByConversation?: (conversationId: number) => Promise<Annotation[]>;
+  saveAnnotation?: (payload: {
+    conversationId: number;
+    messageId: number;
+    contentText: string;
+  }) => Promise<Annotation>;
+  deleteAnnotation?: (annotationId: number) => Promise<void>;
+  exportAnnotationToNote?: (annotationId: number) => Promise<Note>;
+  exportAnnotationToNotion?: (
+    annotationId: number
+  ) => Promise<{ pageId: string; url?: string }>;
   updateConversation?: (
     id: number,
     changes: { topic_id?: number | null; is_starred?: boolean; tags?: string[] }
