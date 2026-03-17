@@ -95,10 +95,11 @@ Locked requirements:
 - edge availability must not depend on whether a conversation was previously opened in `Library`
 - the graph renderer may change, but it must continue to honor the same `getConversations` + `getAllEdges({ threshold, conversationIds })` contract boundary
 - the current Network UX is a temporal playback view: nodes and edges appear day by day, while old items decay visually instead of disappearing
+- node chronology is defined as `originAt = source_created_at ?? first_captured_at ?? created_at`
+- `first_captured_at` and `last_captured_at` remain secondary acquisition / freshness clocks and must not change node placement on the main playback timeline
 - each time the dashboard re-enters the `Network` tab, playback resets to the start and auto-runs once over a fixed 8-second duration
 - the bottom time control is a draggable conversation-count trend chart based on daily new-conversation counts, not a static progress bar
 - when many conversations land on the same day, replay still distributes their births within that day by capture order so the graph remains readable
-- the current playback chronology remains a local, provisional `Network` timeline; it must not be documented as finalized `originAt` / `first_captured_at` / `last_captured_at` behavior
 - genuine empty graphs are allowed if similarity truly does not produce edges
 
 ## 6. Internal interface notes
@@ -106,6 +107,7 @@ Locked requirements:
 The web dashboard depends on the following internal edge contract as of rc8:
 - `StorageApi.getAllEdges(options?: { threshold?: number; conversationIds?: number[] })`
 - `GET_ALL_EDGES` payload: `{ threshold?: number; conversationIds?: number[] }`
+- `StorageApi.getConversations()` must preserve `source_created_at`, `first_captured_at`, `last_captured_at`, and `created_at` on the returned conversation records so `Network` can derive `originAt`
 
 These are internal engineering contracts used to keep `Network` self-sufficient. They are not public API commitments.
 

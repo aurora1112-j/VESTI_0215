@@ -17,6 +17,9 @@ export interface GraphNode {
   day: number;
   timelineDay: number;
   messageCount: number;
+  originAt: number;
+  firstCapturedAt: number;
+  lastCapturedAt: number;
   createdAt: number;
   radius: number;
   color: string;
@@ -173,6 +176,71 @@ export function getTrendPointY(
   return chartTop + chartHeight - visibleHeight;
 }
 
+function isFiniteTimestamp(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+export function getConversationSourceCreatedAt(conversation: Conversation) {
+  return isFiniteTimestamp(conversation.source_created_at)
+    ? conversation.source_created_at
+    : null;
+}
+
+export function getConversationFirstCapturedAt(conversation: Conversation) {
+  return isFiniteTimestamp(conversation.first_captured_at)
+    ? conversation.first_captured_at
+    : conversation.created_at;
+}
+
+export function getConversationLastCapturedAt(conversation: Conversation) {
+  return isFiniteTimestamp(conversation.last_captured_at)
+    ? conversation.last_captured_at
+    : conversation.updated_at;
+}
+
+export function getConversationOriginAt(conversation: Conversation) {
+  return (
+    getConversationSourceCreatedAt(conversation) ??
+    getConversationFirstCapturedAt(conversation)
+  );
+}
+
+function compareConversationChronology(left: Conversation, right: Conversation) {
+  const leftOriginAt = getConversationOriginAt(left);
+  const rightOriginAt = getConversationOriginAt(right);
+  if (leftOriginAt !== rightOriginAt) {
+    return leftOriginAt - rightOriginAt;
+  }
+
+  const leftFirstCapturedAt = getConversationFirstCapturedAt(left);
+  const rightFirstCapturedAt = getConversationFirstCapturedAt(right);
+  if (leftFirstCapturedAt !== rightFirstCapturedAt) {
+    return leftFirstCapturedAt - rightFirstCapturedAt;
+  }
+
+  if (left.created_at !== right.created_at) {
+    return left.created_at - right.created_at;
+  }
+
+  return left.id - right.id;
+}
+
+function compareGraphNodeChronology(left: GraphNode, right: GraphNode) {
+  if (left.originAt !== right.originAt) {
+    return left.originAt - right.originAt;
+  }
+
+  if (left.firstCapturedAt !== right.firstCapturedAt) {
+    return left.firstCapturedAt - right.firstCapturedAt;
+  }
+
+  if (left.createdAt !== right.createdAt) {
+    return left.createdAt - right.createdAt;
+  }
+
+  return left.id - right.id;
+}
+
 export function buildTemporalNetworkDataset(
   conversations: Conversation[],
   edges: GraphEdge[]
@@ -180,7 +248,7 @@ export function buildTemporalNetworkDataset(
   const sortedConversations = conversations
     .filter((conversation) => !conversation.is_archived && !conversation.is_trash)
     .slice()
-    .sort((left, right) => left.created_at - right.created_at || left.id - right.id);
+    .sort(compareConversationChronology);
 
   if (sortedConversations.length === 0) {
     return {
@@ -190,10 +258,13 @@ export function buildTemporalNetworkDataset(
     };
   }
 
-  const firstTimestamp = sortedConversations[0].created_at;
+  const firstTimestamp = getConversationOriginAt(sortedConversations[0]);
   const nodes = sortedConversations.map<GraphNode>((conversation) => {
+    const originAt = getConversationOriginAt(conversation);
+    const firstCapturedAt = getConversationFirstCapturedAt(conversation);
+    const lastCapturedAt = getConversationLastCapturedAt(conversation);
     const day =
-      Math.floor(Math.max(0, conversation.created_at - firstTimestamp) / DAY_MS) + 1;
+      Math.floor(Math.max(0, originAt - firstTimestamp) / DAY_MS) + 1;
     const messageCount =
       typeof conversation.message_count === "number" && Number.isFinite(conversation.message_count)
         ? Math.max(0, Math.floor(conversation.message_count))
@@ -206,6 +277,9 @@ export function buildTemporalNetworkDataset(
       day,
       timelineDay: day,
       messageCount,
+      originAt,
+      firstCapturedAt,
+      lastCapturedAt,
       createdAt: conversation.created_at,
       radius: getNodeRadius(messageCount),
       color: GRAPH_PLATFORM_COLORS[conversation.platform],
@@ -231,11 +305,7 @@ export function buildTemporalNetworkDataset(
 
     dayCounts[node.day] += 1;
     const existing = newestNodeByDay.get(node.day);
-    if (
-      !existing ||
-      node.createdAt > existing.createdAt ||
-      (node.createdAt === existing.createdAt && node.id > existing.id)
-    ) {
+    if (!existing || compareGraphNodeChronology(node, existing) > 0) {
       newestNodeByDay.set(node.day, node);
     }
   }

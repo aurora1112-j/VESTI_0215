@@ -56,34 +56,39 @@ Audience: Schema maintainers, capture owners, reader/web contributors, QA
 - export / compression / weekly-related prompt input
 - web library / web reader
 
-当前**没有**把 `Network` 一并纳入最终统一 contract。
+当前 `Network` 已锁定**节点主时间**，但还没有完成整套时间过滤 contract 收口。
 
-原因不是忽略它，而是 `Network` 仍处于单独演进阶段：
+当前基线是：
 
-- 当前 graph node set 主要消费 `getConversations()` 的结果
-- graph edge contract 仍只有 `threshold + conversationIds`
-- `Network` 的时间过滤、时间回放、动态生成动画还没有统一成正式时间语义
-
-因此当前基线应理解为：
-
-- `Network` 之外的主阅读表面已经完成时间语义收口
-- `Network` 的时间语义仍待专项设计，不应被默认视为已经跟随本轮方案完成
+- `Network` 节点 chronology 使用 `originAt`
+- `first_captured_at` 保留 acquisition 语义
+- `last_captured_at` 保留 freshness 语义
+- `Time Range` / edge filtering 是否进入 runtime contract 仍待专项设计
 
 ## Contributor Coordination Note
 
 目前已有贡献者在推进 `Network` 的动态生成动画。
-在 `Network` 专项时间 contract 定稿之前，协作约束固定如下：
+在当前 `Network` contract 下，协作约束固定如下：
 
-- 不要把 `conv.created_at` 直接当成 `Network` 的最终节点时间语义
+- 不要把 `conv.created_at` 直接当成 `Network` 的节点主时间；节点 chronology 已固定为 `originAt`
+- 不要让 `first_captured_at` 或 `last_captured_at` 改变节点在主时间轴上的位置
 - 不要默认 `Time Range` 已经具有 runtime 过滤语义
-- 不要把“动画时间”直接等同于 `source_created_at`、`first_captured_at` 或 `last_captured_at` 中的任一字段
-- 如果动画实现必须临时使用某个时间来源，应将该逻辑局部化，并明确标注为 provisional behavior
+- 如果需要展示 capture / freshness，应作为 secondary metadata，而不是改写主 chronology
 
-后续 `Network` 需要单独锁定这三个问题：
+当前 `Network` 仍待继续锁定的问题是：
 
-1. 节点 chronology 以 `originAt`、`first_captured_at` 还是别的时间为准
-2. `Time Range` 只是前端节点过滤，还是进入 edge / storage contract
-3. 动态动画表达“线程起点”“首次进入系统”还是“最近一次捕获刷新”
+1. `Time Range` 只是前端节点过滤，还是进入 edge / storage contract
+2. 动态动画除节点 birth chronology 外，是否还需要表达 freshness 变化
+3. capture / freshness 元信息以 tooltip、badge 还是别的 secondary channel 暴露
+
+## Network Decision
+
+`Network` 现已确定：
+
+- 节点主时间 = `originAt = source_created_at ?? first_captured_at ?? created_at`
+- 回放顺序、按日分桶、趋势图统计默认都以 `originAt` 为准
+- 同一天内的稳定排序使用：`originAt`，再 `first_captured_at`，再 `created_at`，最后 `id`
+- `first_captured_at` 与 `last_captured_at` 不是节点主时间，只保留 acquisition / freshness 语义
 
 ## Manual Capture Scenario Clarification
 

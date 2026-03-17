@@ -72,10 +72,10 @@ As of rc8, `Network` explicitly requests edges for its active base node set rath
 The current renderer no longer depends on ECharts; it builds temporal node state in the web layer, draws nodes/edges onto `<canvas>`, keeps replay/reset behavior local to the tab, and drives the visible time position from a fixed-duration local playback clock rather than a days-per-second control.
 
 Current temporal status:
-- `Network` is not yet on the finalized thread timestamp contract used by Threads / Reader / Web Reader
-- the current playback chronology is still a local, provisional timeline derived inside `Network`, not a finalized `originAt`, `first_captured_at`, or `last_captured_at` contract
+- `Network` node chronology now uses the same `originAt = source_created_at ?? first_captured_at ?? created_at` start-time semantics as Threads / Reader / Web Reader
+- `first_captured_at` and `last_captured_at` remain secondary acquisition / freshness clocks and do not move nodes on the main playback timeline
 - the trend scrubber / replay UI is local to the tab and does not yet imply a stable runtime-backed time-filtering contract
-- temporal animation / replay behavior must continue to be treated as provisional until a dedicated `Network` time contract is written
+- temporal playback is only partially finalized: node placement is locked, but filtering / edge-contract time semantics remain pending
 
 ## 4. Message and data flow
 
@@ -120,14 +120,14 @@ Data may arrive after the shell is already mounted. Tabs must therefore tolerate
 There is active work on dynamic network-generation animation, where nodes may appear or connect progressively over time.
 
 That work must not assume that:
-- the current `created_at`-ordered local timeline is the final node time source
-- the graph already inherits the same semantics as Threads / Reader
+- anything other than `originAt` should drive node chronology
+- `first_captured_at` or `last_captured_at` should move node positions on the main playback timeline
 - the current trend scrubber already implies edge-level or storage-level filtering
 
-Before shipping time-driven `Network` behavior as a finalized contract, the dashboard layer still needs to fix:
-- which timestamp defines node chronology
+Before the rest of time-driven `Network` behavior is treated as a finalized contract, the dashboard layer still needs to fix:
 - whether time filtering is UI-only or part of the graph data contract
-- whether animation expresses origin time, first capture time, or last capture freshness
+- whether capture / freshness clocks surface only as metadata or also influence secondary visual channels
+- whether animation beyond node birth expresses origin time, first capture time, or last capture freshness
 
 ### 5.5 Historical document split
 Older web/dashboard knowledge is currently spread across dated memos and handoffs. This file replaces them as the canonical ?current architecture? entry for web surfaces while leaving those older files intact as evidence.

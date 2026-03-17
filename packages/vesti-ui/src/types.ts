@@ -41,6 +41,9 @@ export interface Conversation {
   url?: string;
   tags: string[];
   topic_id: number | null;
+  source_created_at?: number | null;
+  first_captured_at?: number;
+  last_captured_at?: number;
   created_at: number;
   updated_at: number;
   source_created_at?: number | null;
