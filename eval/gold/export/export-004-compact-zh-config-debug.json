@@ -1,0 +1,55 @@
+﻿{
+  "id": "export-004-compact-zh-config-debug",
+  "type": "export",
+  "mode": "compact",
+  "locale": "zh",
+  "title": "ModelScope proxy 401 排查与导出压缩诊断",
+  "platform": "Kimi",
+  "created_at": 1773673200000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Settings 里的 Test API 通过了，但 Compact export 仍然 fallback。请区分鉴权问题和输出验证问题，并保留具体 request id。",
+      "timestamp": 1773673200000
+    },
+    {
+      "role": "ai",
+      "content": "当前更像是 llm 调用成功但 exportCompression.ts 的结构校验没过，不再是 proxy /api/chat 的 401。请重点看 frontend/src/sidepanel/utils/exportCompression.ts 和 frontend/src/lib/services/llmService.ts。",
+      "timestamp": 1773673560000
+    },
+    {
+      "role": "user",
+      "content": "把主模型切到 moonshotai/Kimi-K2.5，备用模型切到 stepfun-ai/Step-3.5-Flash。proxy-local/server.mjs 和 vesti-proxy/api/chat.js 都要同步，VESTI_UPSTREAM_TIMEOUT_MS 提到 30000。",
+      "timestamp": 1773674100000
+    },
+    {
+      "role": "ai",
+      "content": "收到。legacy 的 deepseek-ai/DeepSeek-R1-Distill-Qwen-14B 和 Qwen/Qwen3-14B 继续保留为支持模型，但默认主备改成 Kimi/Step。对于 legacy 模型继续发送 enable_thinking: false，Kimi/Step 默认省略这个字段。",
+      "timestamp": 1773674580000
+    },
+    {
+      "role": "user",
+      "content": "同时把 EXPORT_COMPRESSION_OUTPUT_INVALID 拆成子码，至少包括 export_missing_required_headings 和 export_artifact_signal_missing；还要补 pnpm -C frontend eval:prompts --mode=mock --strict。",
+      "timestamp": 1773675060000
+    },
+    {
+      "role": "ai",
+      "content": "可以。关键复用项包括 `getLlmModelProfile(...)`、`moonshotai/Kimi-K2.5`、`stepfun-ai/Step-3.5-Flash`、`pnpm -C frontend build`、`pnpm -C frontend eval:prompts --mode=mock --strict`，以及路径 documents/prompt_engineering/model_settings.md。",
+      "timestamp": 1773675480000
+    }
+  ],
+  "gold": {
+    "required_facts": [
+      "moonshotai/Kimi-K2.5",
+      "stepfun-ai/Step-3.5-Flash",
+      "export_missing_required_headings",
+      "exportCompression.ts",
+      "pnpm -C frontend eval:prompts --mode=mock --strict"
+    ],
+    "forbidden_facts": [
+      "Kubernetes",
+      "Redis cluster"
+    ],
+    "reference": "## Background\n- Title: ModelScope proxy 401 排查与导出压缩诊断\n- Platform: Kimi\n- Context: 鉴权问题已基本打通，当前重点转为 exportCompression.ts 的输出校验与模型基线切换。\n- Constraint: proxy-local/server.mjs 与 vesti-proxy/api/chat.js 需要同步主备模型与 timeout，legacy 模型继续兼容。\n\n## Key Questions\n- Compact export 为什么在 Test API 通过后仍然 fallback？\n- Kimi/Step 切换后，如何保留 legacy 模型的 enable_thinking=false 策略？\n\n## Decisions And Answers\n- 将默认主模型切到 moonshotai/Kimi-K2.5，备用模型切到 stepfun-ai/Step-3.5-Flash。\n- deepseek-ai/DeepSeek-R1-Distill-Qwen-14B 与 Qwen/Qwen3-14B 继续作为 legacy supported models 保留。\n- 把 EXPORT_COMPRESSION_OUTPUT_INVALID 拆成 export_missing_required_headings、export_artifact_signal_missing 等明确子码，作为后续调 prompt 的依据。\n\n## Reusable Artifacts\n- Path: frontend/src/sidepanel/utils/exportCompression.ts\n- Path: frontend/src/lib/services/llmService.ts\n- Path: documents/prompt_engineering/model_settings.md\n- API/Function: getLlmModelProfile(...)\n- Command: pnpm -C frontend build\n- Command: pnpm -C frontend eval:prompts --mode=mock --strict\n\n## Unresolved\n- 需要确认 Kimi/Step 在真实压缩任务下是否仍会触发 grounded/artifact 验证失败。\n- 需要继续观察 invalid-reason 子码分布，再决定是否进一步放宽或重写 prompt。"
+  }
+}

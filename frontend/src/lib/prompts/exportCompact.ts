@@ -56,14 +56,19 @@ function toTranscript(messages: Message[]): string {
 }
 
 function buildCompactPrompt(payload: ExportCompressionPromptPayload): string {
+  const isStepProfile = payload.profile === "step_flash_concise";
+  const brevityRule = isStepProfile
+    ? "Keep bullets concise and prioritize grounded artifacts over narrative polish."
+    : "Preserve the full implementation trail when it is grounded, even if the output becomes longer.";
+
   return `Create a high-fidelity export handoff for this conversation.
 
 Metadata:
 - Title: ${payload.conversationTitle || "(untitled)"}
 - Platform: ${payload.conversationPlatform || "unknown"}
-- CreatedAt: ${
-    payload.conversationCreatedAt
-      ? formatDateTime(payload.conversationCreatedAt)
+- StartedAt: ${
+    payload.conversationOriginAt
+      ? formatDateTime(payload.conversationOriginAt)
       : "unknown"
   }
 - Locale: ${payload.locale || "zh"}
@@ -80,14 +85,20 @@ Output requirements:
 5) In ## Decisions And Answers, capture grounded resolutions, tradeoffs, and chosen implementation paths.
 6) In ## Reusable Artifacts, preserve filenames, commands, APIs, functions, and code blocks when grounded.
 7) In ## Unresolved, call out what remains open, risky, or needs continuation.
-8) If evidence is sparse, keep the structure and use conservative placeholders.
-9) Write the final output in ${payload.locale === "en" ? "natural English" : "natural Chinese"}.
-10) Output markdown only.`;
+8) ${brevityRule}
+9) If evidence is sparse, keep the structure and use conservative placeholders.
+10) Write the final output in ${payload.locale === "en" ? "natural English" : "natural Chinese"}.
+11) Output markdown only.`;
 }
 
 function buildCompactFallbackPrompt(
   payload: ExportCompressionPromptPayload
 ): string {
+  const fallbackNote =
+    payload.profile === "step_flash_concise"
+      ? "Keep it tight, but do not lose grounded files, commands, APIs, or unresolved work."
+      : "Preserve grounded files, commands, APIs, code, and unresolved work whenever they appear.";
+
   return `Write a shorter fallback markdown handoff for this conversation.
 You must keep these exact headings:
 ## Background
@@ -96,7 +107,8 @@ You must keep these exact headings:
 ## Reusable Artifacts
 ## Unresolved
 
-Keep it shorter and more conservative than the main prompt, but still preserve grounded files, commands, APIs, code, and unresolved work when present.
+Keep it shorter and more conservative than the main prompt.
+${fallbackNote}
 Use ${payload.locale === "en" ? "English" : "Chinese"}.
 Output markdown only.
 
@@ -105,10 +117,10 @@ ${toTranscript(payload.messages)}`;
 }
 
 export const CURRENT_EXPORT_COMPACT_PROMPT: PromptVersion<ExportCompressionPromptPayload> = {
-  version: "v1.1.0-export-compact-handoff",
+  version: "v1.2.0-export-compact-kimi-step-profiled",
   createdAt: "2026-03-16",
   description:
-    "High-fidelity compact export handoff prompt for AI-to-AI or engineer-to-engineer transfer.",
+    "High-fidelity compact export handoff prompt with Kimi-rich and Step-concise profiles.",
   system: EXPORT_COMPACT_SYSTEM,
   fallbackSystem: "You are a cautious technical export assistant. Output markdown only.",
   userTemplate: buildCompactPrompt,
@@ -116,9 +128,9 @@ export const CURRENT_EXPORT_COMPACT_PROMPT: PromptVersion<ExportCompressionPromp
 };
 
 export const EXPERIMENTAL_EXPORT_COMPACT_PROMPT: PromptVersion<ExportCompressionPromptPayload> = {
-  version: "v1.1.0-export-compact-handoff-exp",
+  version: "v1.2.0-export-compact-kimi-step-profiled-exp",
   createdAt: "2026-03-16",
-  description: "Experimental high-fidelity compact export handoff variant.",
+  description: "Experimental profiled compact export handoff variant.",
   system: EXPORT_COMPACT_SYSTEM,
   fallbackSystem: "You are a cautious technical export assistant. Output markdown only.",
   userTemplate: buildCompactPrompt,

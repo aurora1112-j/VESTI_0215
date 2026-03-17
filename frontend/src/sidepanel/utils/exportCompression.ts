@@ -3,7 +3,12 @@ import type { ExportCompressionPromptPayload } from "~lib/prompts";
 import {
   FUTURE_MODELSCOPE_EXPORT_MODEL_CANDIDATES,
   FUTURE_MOONSHOT_DIRECT_EXPORT_MODEL_CANDIDATES,
+  getEffectiveModelId,
 } from "~lib/services/llmConfig";
+import {
+  getLlmModelProfile,
+  type ExportPromptProfile,
+} from "~lib/services/llmModelProfile";
 import {
   callInference,
   sanitizeSummaryText,
@@ -25,6 +30,11 @@ export type ExportCompressionRoute =
   | "current_llm_settings"
   | "moonshot_direct";
 export type ExportCompressionSource = "llm" | "local_fallback";
+export type ExportCompressionInvalidReasonCode =
+  | "export_output_too_short"
+  | "export_missing_required_headings"
+  | "export_grounded_sections_insufficient"
+  | "export_artifact_signal_missing";
 
 export interface ConversationExportDatasetItem {
   conversation: Conversation;
@@ -50,10 +60,30 @@ interface ExportCompressionAdapter {
   ) => Promise<CompressedConversationExport>;
 }
 
+interface ExportCompressionValidationResult {
+  valid: boolean;
+  issueCode?: ExportCompressionInvalidReasonCode;
+}
+
 const ACTIVE_EXPORT_COMPRESSION_ROUTE: ExportCompressionRoute =
   "current_llm_settings";
-const PRIMARY_PROMPT_CHAR_BUDGET = 16000;
-const FALLBACK_PROMPT_CHAR_BUDGET = 12000;
+const PROMPT_BUDGETS: Record<
+  ExportPromptProfile,
+  { primary: number; fallback: number }
+> = {
+  legacy_handoff_balanced: {
+    primary: 14000,
+    fallback: 11000,
+  },
+  kimi_handoff_rich: {
+    primary: 18000,
+    fallback: 14000,
+  },
+  step_flash_concise: {
+    primary: 12000,
+    fallback: 9000,
+  },
+};
 const MIN_VALID_OUTPUT_LENGTH = 48;
 const QUESTION_CUE =
   /(?:[?？]$|^(?:how|why|what|which|should|can|could|would|is|are|do|does|did|where|when|whether|how do|how should|what should|如何|为什么|为何|怎么|是否|能否|需不需要|应该|要不要))/i;
@@ -143,15 +173,16 @@ function detectLocale(): "zh" | "en" {
 }
 
 function buildPromptPayload(
-  item: ConversationExportDatasetItem
+  item: ConversationExportDatasetItem,
+  profile: ExportPromptProfile
 ): ExportCompressionPromptPayload {
   return {
     conversationTitle: item.conversation.title,
     conversationPlatform: item.conversation.platform,
-    conversationCreatedAt:
-      item.conversation.source_created_at || item.conversation.created_at,
+    conversationOriginAt: item.conversation.source_created_at || item.conversation.created_at,
     messages: item.messages,
     locale: detectLocale(),
+    profile,
   };
 }
 
@@ -656,32 +687,44 @@ function preservesArtifactSignal(
   );
 }
 
-function isValidCompressionOutput(
+function validateCompressionOutput(
   value: string,
   item: ConversationExportDatasetItem,
   mode: ExportCompressionMode
-): boolean {
+): ExportCompressionValidationResult {
   const normalized = sanitizeSummaryText(value);
   if (normalized.length < MIN_VALID_OUTPUT_LENGTH) {
-    return false;
+    return {
+      valid: false,
+      issueCode: "export_output_too_short",
+    };
   }
 
   const sections = extractSections(value, mode);
   if (!sections) {
-    return false;
+    return {
+      valid: false,
+      issueCode: "export_missing_required_headings",
+    };
   }
 
   const groundedSectionCount = countGroundedSections(sections);
   const minimumGroundedSections = mode === "compact" ? 3 : 4;
   if (groundedSectionCount < minimumGroundedSections) {
-    return false;
+    return {
+      valid: false,
+      issueCode: "export_grounded_sections_insufficient",
+    };
   }
 
   if (!preservesArtifactSignal(value, item.messages)) {
-    return false;
+    return {
+      valid: false,
+      issueCode: "export_artifact_signal_missing",
+    };
   }
 
-  return true;
+  return { valid: true };
 }
 
 async function compressWithCurrentLlmSettings(
@@ -693,20 +736,25 @@ async function compressWithCurrentLlmSettings(
     throw new Error("LLM_SETTINGS_UNAVAILABLE");
   }
 
+  const modelId = getEffectiveModelId(settings);
+  const modelProfile = getLlmModelProfile(modelId);
+  const exportProfile = modelProfile.exportPromptProfile;
+  const promptBudget = PROMPT_BUDGETS[exportProfile];
   const prompt = getPrompt(mode === "compact" ? "exportCompact" : "exportSummary", {
     variant: "current",
   });
-  const payload = buildPromptPayload(item);
+  const payload = buildPromptPayload(item, exportProfile);
   const primaryPrompt = truncateForContext(
     prompt.userTemplate(payload),
-    PRIMARY_PROMPT_CHAR_BUDGET
+    promptBudget.primary
   );
 
   const primary = await callInference(settings, primaryPrompt, {
     systemPrompt: prompt.system,
   });
   const primaryBody = normalizeCompressionBody(primary.content);
-  if (isValidCompressionOutput(primaryBody, item, mode)) {
+  const primaryValidation = validateCompressionOutput(primaryBody, item, mode);
+  if (primaryValidation.valid) {
     return {
       conversation: item.conversation,
       messages: item.messages,
@@ -718,15 +766,25 @@ async function compressWithCurrentLlmSettings(
     };
   }
 
+  logger.warn("llm", "Export compression primary output failed validation", {
+    route: "current_llm_settings",
+    mode,
+    conversationId: item.conversation.id,
+    modelId,
+    exportPromptProfile: exportProfile,
+    invalidReason: primaryValidation.issueCode,
+  });
+
   const fallbackPrompt = truncateForContext(
     prompt.fallbackTemplate(payload),
-    FALLBACK_PROMPT_CHAR_BUDGET
+    promptBudget.fallback
   );
   const fallback = await callInference(settings, fallbackPrompt, {
     systemPrompt: prompt.fallbackSystem || prompt.system,
   });
   const fallbackBody = normalizeCompressionBody(fallback.content);
-  if (isValidCompressionOutput(fallbackBody, item, mode)) {
+  const fallbackValidation = validateCompressionOutput(fallbackBody, item, mode);
+  if (fallbackValidation.valid) {
     return {
       conversation: item.conversation,
       messages: item.messages,
@@ -738,7 +796,21 @@ async function compressWithCurrentLlmSettings(
     };
   }
 
-  throw new Error("EXPORT_COMPRESSION_OUTPUT_INVALID");
+  logger.warn("llm", "Export compression fallback prompt failed validation", {
+    route: "current_llm_settings",
+    mode,
+    conversationId: item.conversation.id,
+    modelId,
+    exportPromptProfile: exportProfile,
+    invalidReason: fallbackValidation.issueCode,
+    primaryInvalidReason: primaryValidation.issueCode,
+  });
+
+  throw new Error(
+    fallbackValidation.issueCode ||
+      primaryValidation.issueCode ||
+      "export_output_too_short"
+  );
 }
 
 const ADAPTERS: Record<ExportCompressionRoute, ExportCompressionAdapter> = {

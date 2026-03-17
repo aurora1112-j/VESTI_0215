@@ -1,4 +1,5 @@
 import type { Conversation, ConversationSummaryV2, Message } from "../types";
+import type { ExportPromptProfile } from "../services/llmModelProfile";
 
 export type PromptType =
   | "compaction"
@@ -43,9 +44,10 @@ export interface WeeklyDigestPromptPayload {
 export interface ExportCompressionPromptPayload {
   conversationTitle?: string;
   conversationPlatform?: string;
-  conversationCreatedAt?: number;
+  conversationOriginAt?: number;
   messages: Message[];
   locale?: "zh" | "en";
+  profile?: ExportPromptProfile;
 }
 
 export interface PromptVersion<TPayload> {

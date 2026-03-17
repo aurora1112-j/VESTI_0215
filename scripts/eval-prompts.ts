@@ -2,6 +2,10 @@
 import path from "node:path";
 import process from "node:process";
 import { getPrompt } from "../frontend/src/lib/prompts";
+import {
+  getLlmModelProfile,
+  type ExportPromptProfile,
+} from "../frontend/src/lib/services/llmModelProfile";
 import type { Message, WeeklyLiteReportV1 } from "../frontend/src/lib/types";
 
 type Mode = "auto" | "live" | "mock";
@@ -30,6 +34,10 @@ const EXPORT_HEADINGS: Record<ExportEvalMode, string[]> = {
     "## Tags",
   ],
 };
+const EXPORT_PROFILES: ExportPromptProfile[] = [
+  "kimi_handoff_rich",
+  "step_flash_concise",
+];
 
 const args = process.argv.slice(2);
 const cli: Cli = {
@@ -55,7 +63,7 @@ function rootDir(): string {
 }
 
 function readJson<T>(p: string): T {
-  return JSON.parse(fs.readFileSync(p, "utf-8")) as T;
+  return JSON.parse(fs.readFileSync(p, "utf-8").replace(/^\uFEFF/, "")) as T;
 }
 
 function listJson<T>(dir: string): T[] {
@@ -582,6 +590,81 @@ function parseExportMarkdown(
   };
 }
 
+function hasExportMeaningfulText(value: string): boolean {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return false;
+  const cjkCount = countCjkChars(compact);
+  const asciiWordCount = countAsciiWords(compact);
+  return cjkCount >= 4 || asciiWordCount >= 3 || compact.length >= 18;
+}
+
+function detectExportArtifactSignals(text: string): {
+  hasCode: boolean;
+  hasCommand: boolean;
+  hasPath: boolean;
+  hasApi: boolean;
+} {
+  return {
+    hasCode: /```[\s\S]*?```/m.test(text),
+    hasCommand: /(?:^|\s)(?:pnpm|npm|git|node|python|pytest|rg|gh|curl|yarn|tsx|ts-node)\b[^\n]*/im.test(
+      text
+    ),
+    hasPath:
+      /(?:[A-Za-z]:\\[^\s`"')]+|(?:\.?\.?(?:\/|\\))?(?:[\w.-]+(?:\/|\\))+[\w./\\-]*[\w-]+(?:\.[A-Za-z0-9]+)?)/.test(
+        text
+      ),
+    hasApi:
+      /\b[A-Za-z_][A-Za-z0-9_]*\([^()\n]{0,80}\)/.test(text) ||
+      /`[^`\n]{2,120}`/.test(text),
+  };
+}
+
+function evaluateExportCaseQuality(
+  mode: ExportEvalMode,
+  raw: string,
+  parsed: { mode: ExportEvalMode; body: string; sections: Record<string, string> } | null,
+  messages: Message[]
+): string[] {
+  const issues = new Set<string>();
+  const normalized = raw.trim();
+
+  if (normalized.length < 48) {
+    issues.add("export_output_too_short");
+  }
+
+  if (!parsed) {
+    issues.add("export_missing_required_headings");
+    return [...issues];
+  }
+
+  const groundedSections = Object.values(parsed.sections).filter((body) =>
+    body
+      .split(/\n+/)
+      .map((line) => line.replace(/^[-*]\s+/, "").trim())
+      .filter(Boolean)
+      .some((line) => hasExportMeaningfulText(line))
+  ).length;
+  const minimumGroundedSections = mode === "compact" ? 3 : 4;
+  if (groundedSections < minimumGroundedSections) {
+    issues.add("export_grounded_sections_insufficient");
+  }
+
+  const transcript = messages.map((message) => message.content_text).join("\n");
+  const sourceSignals = detectExportArtifactSignals(transcript);
+  const outputSignals = detectExportArtifactSignals(parsed.body);
+  const artifactLost =
+    (sourceSignals.hasCode && !outputSignals.hasCode) ||
+    (sourceSignals.hasCommand && !outputSignals.hasCommand) ||
+    (sourceSignals.hasPath && !outputSignals.hasPath) ||
+    (sourceSignals.hasApi && !outputSignals.hasApi);
+
+  if (artifactLost) {
+    issues.add("export_artifact_signal_missing");
+  }
+
+  return [...issues];
+}
+
 function parseStructured(kind: CaseKind, raw: string, exportMode?: ExportEvalMode) {
   if (kind === "export") {
     if (!exportMode) {
@@ -669,6 +752,7 @@ async function callProvider(
   jsonMode: boolean
 ): Promise<{ content: string; mode: "json_mode" | "prompt_json" | "plain_text" }> {
   const url = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const modelProfile = getLlmModelProfile(cfg.modelId);
   const post = (body: Record<string, unknown>) =>
     fetch(url, {
       method: "POST",
@@ -700,6 +784,15 @@ async function callProvider(
     }
   };
 
+  const baseBody: Record<string, unknown> = {
+    model: cfg.modelId,
+    temperature: cfg.temperature,
+    max_tokens: cfg.maxTokens,
+  };
+  if (modelProfile.thinkingParamPolicy === "force_false") {
+    baseBody.enable_thinking = false;
+  }
+
   const content = (p: unknown) => {
     const c = (p as any)?.choices?.[0]?.message?.content?.trim();
     if (!c) throw new Error("empty content");
@@ -710,37 +803,47 @@ async function callProvider(
     { role: "user", content: user },
   ];
   if (jsonMode) {
-    const r = await postWithRetry({
-      model: cfg.modelId,
-      enable_thinking: false,
-      temperature: cfg.temperature,
-      max_tokens: cfg.maxTokens,
-      response_format: { type: "json_object" },
-      messages: msgs,
-    });
-    if (r.ok) return { content: content(await r.json()), mode: "json_mode" };
-    const err = await r.text();
-    const fallback =
-      [400, 404, 415, 422].includes(r.status) || /response_format|json_object|unsupported/i.test(err);
-    if (!fallback) throw new Error(`provider json failed ${r.status}`);
-    const r2 = await postWithRetry({
-      model: cfg.modelId,
-      enable_thinking: false,
-      temperature: cfg.temperature,
-      max_tokens: cfg.maxTokens,
-      messages: [
-        { role: "system", content: `${system}\n${STRICT_JSON}` },
-        { role: "user", content: user },
-      ],
-    });
-    if (!r2.ok) throw new Error(`provider prompt_json failed ${r2.status}`);
-    return { content: content(await r2.json()), mode: "prompt_json" };
+    const jsonAttempt = async () => {
+      const r = await postWithRetry({
+        ...baseBody,
+        response_format: { type: "json_object" },
+        messages: msgs,
+      });
+      if (r.ok) return { content: content(await r.json()), mode: "json_mode" as const };
+      const err = await r.text();
+      const fallback =
+        [400, 404, 415, 422].includes(r.status) ||
+        /response_format|json_object|unsupported/i.test(err);
+      if (!fallback) throw new Error(`provider json failed ${r.status}`);
+      return null;
+    };
+
+    const promptJsonAttempt = async () => {
+      const r = await postWithRetry({
+        ...baseBody,
+        messages: [
+          { role: "system", content: `${system}\n${STRICT_JSON}` },
+          { role: "user", content: user },
+        ],
+      });
+      if (!r.ok) throw new Error(`provider prompt_json failed ${r.status}`);
+      return { content: content(await r.json()), mode: "prompt_json" as const };
+    };
+
+    const attemptOrder =
+      modelProfile.responseFormatStrategy === "prompt_json_first"
+        ? [promptJsonAttempt, jsonAttempt]
+        : [jsonAttempt, promptJsonAttempt];
+
+    for (const attempt of attemptOrder) {
+      const result = await attempt();
+      if (result) {
+        return result;
+      }
+    }
   }
   const r = await postWithRetry({
-    model: cfg.modelId,
-    enable_thinking: false,
-    temperature: cfg.temperature,
-    max_tokens: cfg.maxTokens,
+    ...baseBody,
     messages: msgs,
   });
   if (!r.ok) throw new Error(`provider plain failed ${r.status}`);
@@ -802,6 +905,17 @@ async function main() {
     ...listJson<any>(path.join(root, "eval", "gold", "weekly")),
     ...listJson<any>(path.join(root, "eval", "gold", "export")),
   ];
+
+  cases = cases.flatMap((item: any) =>
+    item.type === "export"
+      ? EXPORT_PROFILES.map((profile) => ({
+          ...item,
+          source_id: item.id,
+          id: `${item.id}--${profile}`,
+          eval_profile: profile,
+        }))
+      : [item]
+  );
 
   if (cli.caseFilter) {
     const filters = cli.caseFilter
@@ -919,6 +1033,7 @@ async function main() {
                   c.created_at || c.messages?.[0]?.timestamp || Date.now(),
                 messages: toEvalMessages(c.messages),
                 locale: c.locale || "zh",
+                profile: (c.eval_profile || "kimi_handoff_rich") as ExportPromptProfile,
               };
 
       const p1 = await callProvider(
@@ -995,7 +1110,7 @@ async function main() {
       const debugPath = path.join(debugDir, `${c.id}.json`);
       fs.writeFileSync(
         debugPath,
-        `${JSON.stringify({ id: c.id, type: kind, promptVersion: prompt.version, runMode, variant: cli.variant, attempt, finalMode: mode, formatCompliant: !!parsed, modelId: runMode === "live" ? cfg!.modelId : "mock", baseUrl: runMode === "live" ? cfg!.baseUrl : "mock", attempts: debugAttempts }, null, 2)}
+        `${JSON.stringify({ id: c.id, sourceId: c.source_id || c.id, type: kind, exportProfile: c.eval_profile, promptVersion: prompt.version, runMode, variant: cli.variant, attempt, finalMode: mode, formatCompliant: !!parsed, modelId: runMode === "live" ? cfg!.modelId : "mock", baseUrl: runMode === "live" ? cfg!.baseUrl : "mock", attempts: debugAttempts }, null, 2)}
 `,
         "utf-8"
       );
@@ -1028,6 +1143,7 @@ async function main() {
     let weeklyEvidenceConsistencyRate = 100;
     let weeklySemanticPassed = true;
     let weeklySemanticIssueCodes: string[] = [];
+    let exportValidationIssueCodes: string[] = [];
 
     if (kind === "weekly" && parsed) {
       const knownConversationIds = new Set<number>(
@@ -1042,6 +1158,15 @@ async function main() {
       weeklyEvidenceConsistencyRate = weeklyEval.evidenceConsistencyRate;
       weeklySemanticPassed = weeklyEval.semanticPassed;
       weeklySemanticIssueCodes = weeklyEval.semanticIssueCodes;
+    }
+
+    if (kind === "export") {
+      exportValidationIssueCodes = evaluateExportCaseQuality(
+        exportMode!,
+        raw,
+        parsed,
+        toEvalMessages(c.messages)
+      );
     }
 
     let subjective =
@@ -1061,7 +1186,9 @@ async function main() {
 
     scored.push({
       id: c.id,
+      sourceId: c.source_id || c.id,
       type: kind,
+      exportProfile: kind === "export" ? c.eval_profile : undefined,
       promptVersion: runMode === "mock" ? `${prompt.version}#mock` : prompt.version,
       mode,
       attempt,
@@ -1082,6 +1209,8 @@ async function main() {
       weeklySemanticPassed: kind === "weekly" ? weeklySemanticPassed : undefined,
       weeklySemanticIssueCodes:
         kind === "weekly" ? weeklySemanticIssueCodes : undefined,
+      exportValidationIssueCodes:
+        kind === "export" ? exportValidationIssueCodes : undefined,
     });
 
     if (cli.caseDelayMs > 0) {

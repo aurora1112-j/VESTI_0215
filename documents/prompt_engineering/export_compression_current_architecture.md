@@ -1,7 +1,7 @@
 # Export Compression Current Architecture
 
 Status: Active canonical design note  
-Last Updated: 2026-03-16  
+Last Updated: 2026-03-17  
 Audience: Frontend, prompt engineering, release owner
 
 ## Purpose
@@ -13,7 +13,7 @@ This document covers:
 - prompt-as-code ownership for export compression
 - current LLM execution path
 - deterministic local fallback behavior
-- future dormant seam for Moonshot direct routing
+- active Kimi/Step model-profile routing and future dormant Moonshot seam
 
 This document does not authorize a new public provider or a new Settings page surface.
 
@@ -62,6 +62,11 @@ This keeps export compression inside the same prompt-as-code discipline as compa
 The only active export compression route is:
 - `current_llm_settings`
 
+This route now ships on top of the active ModelScope stable line:
+- primary: `moonshotai/Kimi-K2.5`
+- backup: `stepfun-ai/Step-3.5-Flash`
+- legacy support retained for `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` and `Qwen/Qwen3-14B`
+
 This route reuses the existing application stack:
 - `getLlmSettings()`
 - `callInference(...)`
@@ -69,6 +74,19 @@ This route reuses the existing application stack:
 - current Settings page storage and model config semantics
 
 ### Compression behavior
+
+### Model-profile routing
+
+Export compression now selects its prompt profile from the active model profile:
+- `kimi_handoff_rich` for `moonshotai/Kimi-K2.5`
+- `step_flash_concise` for `stepfun-ai/Step-3.5-Flash`
+
+Prompt budget baseline:
+- Kimi primary: `18000`
+- Kimi fallback: `14000`
+- Step primary: `12000`
+- Step fallback: `9000`
+
 
 - `Full` always stays local and exports the full transcript.
 - `Compact` and `Summary` first try the active LLM route.
@@ -118,6 +136,11 @@ LLM output validation is intentionally stricter in this phase:
 - `Compact` must contain at least 3 grounded sections
 - `Summary` must contain at least 4 grounded sections
 - if the transcript contains code, commands, or file paths, the output must preserve at least one grounded artifact signal
+- invalid LLM output is now classified into explicit subcodes:
+  - `export_output_too_short`
+  - `export_missing_required_headings`
+  - `export_grounded_sections_insufficient`
+  - `export_artifact_signal_missing`
 - invalid LLM output falls through to fallback prompt, then deterministic local fallback
 
 ## Future routing seam
@@ -139,13 +162,13 @@ It is not part of the current public `LlmProvider` contract.
 - `FUTURE_MOONSHOT_DIRECT_EXPORT_MODEL_CANDIDATES`
 
 Current intent:
-- keep `moonshotai/Kimi-K2.5` as a future ModelScope candidate anchor
-- keep Moonshot direct integration as a dormant export-only seam until real API validation is complete
+- keep `moonshot_direct` as the dormant Moonshot official API seam
+- keep ModelScope Kimi/Step as the active stable export baseline
+- keep any future direct-Moonshot rollout as a separate explicit enablement step
 
 ### Explicit non-goals for this phase
 
 This phase does not:
-- add `Kimi-K2.5` to `BYOK_MODEL_WHITELIST`
 - add a standalone Kimi API key flow
 - add a standalone `kimiService.ts`
 - expose `moonshot_direct` in Settings
@@ -156,5 +179,5 @@ This phase does not:
 1. Export compression must remain feature-sliced into the current Threads tray flow.
 2. `exportConversations.ts` stays the canonical export entry.
 3. Prompt changes for compression go through the shared prompt registry, not ad hoc local strings.
-4. `BYOK_MODEL_WHITELIST` remains unchanged until route verification is complete.
-5. Future Kimi enablement must be a separate explicit rollout step.
+4. `BYOK_MODEL_WHITELIST` now includes the active Kimi/Step stable line while `moonshot_direct` remains internal-only.
+5. Future Moonshot-direct enablement must still be a separate explicit rollout step.
