@@ -67,6 +67,12 @@ Primary responsibilities:
 
 As of rc8, `Network` explicitly requests edges for its active base node set rather than passively reading whatever vectors already exist.
 
+Current temporal status:
+- `Network` is not yet on the finalized thread timestamp contract used by Threads / Reader / Web Reader
+- node chronology is not formally defined as `originAt`, `first_captured_at`, or `last_captured_at`
+- the current `Time Range` control is not a stable runtime-backed time filter contract
+- temporal animation / replay behavior must be treated as provisional until a dedicated `Network` time contract is written
+
 ## 4. Message and data flow
 
 ### 4.1 General request path
@@ -106,7 +112,20 @@ Data may arrive after the shell is already mounted. Tabs must therefore tolerate
 - late refreshes
 - asynchronous runtime recomputation
 
-### 5.4 Historical document split
+### 5.4 Network temporal contract is still pending
+There is active work on dynamic network-generation animation, where nodes may appear or connect progressively over time.
+
+That work must not assume that:
+- `created_at` is the final node time source
+- the graph already inherits the same semantics as Threads / Reader
+- `Time Range` already implies edge-level or storage-level filtering
+
+Before shipping time-driven `Network` behavior, the dashboard contract still needs to fix:
+- which timestamp defines node chronology
+- whether time filtering is UI-only or part of the graph data contract
+- whether animation expresses origin time, first capture time, or last capture freshness
+
+### 5.5 Historical document split
 Older web/dashboard knowledge is currently spread across dated memos and handoffs. This file replaces them as the canonical ?current architecture? entry for web surfaces while leaving those older files intact as evidence.
 
 ## 6. Current canonical sources

@@ -158,6 +158,23 @@ JSON export 较强，但 MD / TXT 和 compression prompt 过去更依赖 `conten
 3. sidepanel、export、insights、web 全部对齐
 4. 再继续推进 attachment / artifact / citation 等 richer content package
 
+## 8.1 Current Exclusion: Network
+
+需要单独说明的是，当前 reader / web 时间统一**不包含 `Network` 图谱页**。
+
+原因很具体：
+
+- Threads、reader、export、web library / reader 现在已经显式消费 `originAt / captureFreshnessAt / recordModifiedAt`
+- `Network` 仍主要依赖 graph node set、vector edge set 和独立的 graph rendering contract
+- 这条线当前还没有正式决定节点时间、时间过滤和时间动画分别应该对应哪一个字段
+
+因此这轮 reader pipeline 基线只能得出一个明确结论：
+
+- 主阅读链路时间语义已经收口
+- `Network` 仍是待专项校准的下一个 consumer
+
+任何 `Network` 贡献者都不应该从“Threads / Reader 已统一”推出“Network 已自动跟随统一”。
+
 ## 9. Decision Statement
 
 reader pipeline 当前不是“没有架构”，而是“主通道已经存在，但共享 consumer contract 还不够强”。

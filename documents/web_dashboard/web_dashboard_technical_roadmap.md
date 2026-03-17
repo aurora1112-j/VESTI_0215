@@ -30,12 +30,22 @@ Priority work after rc8:
 - separate ?true empty graph? from ?runtime unavailable? and ?edge computation failed? states
 - consider lightweight graph refresh hooks when base node set changes rapidly
 
-### 3.2 Explore / Network contract clarity
+### 3.2 Network temporal contract alignment
+Before time-driven graph animation or replay ships, the web/dashboard layer needs an explicit temporal contract for `Network`.
+
+That contract must decide:
+- whether node chronology uses `originAt`, `first_captured_at`, `last_captured_at`, or a dedicated derived field
+- whether `Time Range` filters only visible nodes or also changes the edge-computation contract
+- whether animation semantics represent thread origin, first capture into Vesti, or latest capture freshness
+
+Until then, any dynamic node/edge animation should be treated as provisional and should avoid baking permanent timestamp assumptions into shared graph contracts.
+
+### 3.3 Explore / Network contract clarity
 - keep retrieval and network graph contracts explicit in `StorageApi`
 - avoid hidden coupling where one discovery surface quietly prepares another
 - document all cross-tab jumps and the data they are allowed to assume
 
-### 3.3 Dashboard observability
+### 3.4 Dashboard observability
 - add web-surface-focused debug views or structured logs for late data, empty graph, and adapter failure modes
 - make regression diagnosis cheaper without requiring deep runtime forensics every time
 
