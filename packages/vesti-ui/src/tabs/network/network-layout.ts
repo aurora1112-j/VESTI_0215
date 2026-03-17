@@ -310,7 +310,25 @@ function buildSlots(componentCount: number, bounds: LayoutBounds): Slot[] {
     );
   });
 
-  return slots.slice(0, componentCount);
+  const limited = slots.slice(0, componentCount);
+  if (limited.length <= 1) return limited;
+
+  const [centerSlot, ...outerSlots] = limited;
+  outerSlots.sort((left, right) => {
+    const leftDistance =
+      (left.centerX - centerX) * (left.centerX - centerX) +
+      (left.centerY - centerY) * (left.centerY - centerY);
+    const rightDistance =
+      (right.centerX - centerX) * (right.centerX - centerX) +
+      (right.centerY - centerY) * (right.centerY - centerY);
+    return (
+      compareNumbers(rightDistance, leftDistance) ||
+      compareNumbers(left.row, right.row) ||
+      compareNumbers(left.column, right.column)
+    );
+  });
+
+  return [centerSlot, ...outerSlots];
 }
 
 function clampStateToBounds(state: LayoutNodeState, bounds: LayoutBounds) {
@@ -336,14 +354,28 @@ function buildInitialStates(
   const slots = buildSlots(components.length, bounds);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const states: LayoutNodeState[] = [];
+  const totalNodeCount = nodes.length;
+  const totalWeight = components.reduce((sum, component) => sum + component.totalWeight, 0);
 
   components.forEach((component, index) => {
-    const slot = slots[index] ?? {
+    const fallbackSlot = slots[index] ?? {
       centerX: bounds.left + bounds.width / 2,
       centerY: bounds.top + bounds.height / 2,
       cellWidth: bounds.width,
       cellHeight: bounds.height,
     };
+    const isDominantComponent =
+      index === 0 &&
+      (component.nodeCount >= Math.max(8, Math.ceil(totalNodeCount * 0.42)) ||
+        component.totalWeight >= totalWeight * 0.52);
+    const slot = isDominantComponent
+      ? {
+          centerX: bounds.left + bounds.width / 2,
+          centerY: bounds.top + bounds.height / 2,
+          cellWidth: bounds.width * 0.9,
+          cellHeight: bounds.height * 0.82,
+        }
+      : fallbackSlot;
 
     const componentNodes = component.nodeIds
       .map((nodeId) => nodesById.get(nodeId))
@@ -359,9 +391,14 @@ function buildInitialStates(
         );
       });
 
-    const spacing = Math.max(component.maxCollisionRadius * 1.38, 52);
+    const spacing = Math.max(
+      component.maxCollisionRadius * (isDominantComponent ? 1.86 : 1.38),
+      isDominantComponent ? 74 : 52
+    );
     const flattenY = 0.92;
-    const componentPull = 0.012 / Math.max(1, Math.sqrt(component.nodeCount));
+    const componentPull =
+      (isDominantComponent ? 0.0065 : 0.012) /
+      Math.max(1, Math.sqrt(component.nodeCount));
     const subslots = buildComponentSubslots(
       slot,
       component.nodeCount,

@@ -144,28 +144,32 @@ function clampTransform(
   width: number,
   height: number
 ) {
+  const fitScale = getFitScale(bounds, width, height);
   const worldWidth = Math.max(1, bounds.maxX - bounds.minX);
   const worldHeight = Math.max(1, bounds.maxY - bounds.minY);
   const scaledWidth = worldWidth * transform.scale;
   const scaledHeight = worldHeight * transform.scale;
+  const allowOverscroll = transform.scale > fitScale + 0.02;
+  const overscrollX = allowOverscroll ? OVERSCROLL_X : 0;
+  const overscrollY = allowOverscroll ? OVERSCROLL_Y : 0;
 
   const minOffsetX =
     scaledWidth + VIEW_PADDING * 2 <= width
       ? (width - scaledWidth) / 2 - bounds.minX * transform.scale
-      : width - VIEW_PADDING - bounds.maxX * transform.scale - OVERSCROLL_X;
+      : width - VIEW_PADDING - bounds.maxX * transform.scale - overscrollX;
   const maxOffsetX =
     scaledWidth + VIEW_PADDING * 2 <= width
       ? (width - scaledWidth) / 2 - bounds.minX * transform.scale
-      : VIEW_PADDING - bounds.minX * transform.scale + OVERSCROLL_X;
+      : VIEW_PADDING - bounds.minX * transform.scale + overscrollX;
 
   const minOffsetY =
     scaledHeight + VIEW_PADDING * 2 <= height
       ? (height - scaledHeight) / 2 - bounds.minY * transform.scale
-      : height - VIEW_PADDING - bounds.maxY * transform.scale - OVERSCROLL_Y;
+      : height - VIEW_PADDING - bounds.maxY * transform.scale - overscrollY;
   const maxOffsetY =
     scaledHeight + VIEW_PADDING * 2 <= height
       ? (height - scaledHeight) / 2 - bounds.minY * transform.scale
-      : VIEW_PADDING - bounds.minY * transform.scale + OVERSCROLL_Y;
+      : VIEW_PADDING - bounds.minY * transform.scale + overscrollY;
 
   return {
     offsetX: clamp(transform.offsetX, Math.min(minOffsetX, maxOffsetX), Math.max(minOffsetX, maxOffsetX)),
@@ -250,6 +254,7 @@ export function TemporalGraph({
   const activeNodesRef = useRef<RenderNode[]>([]);
   const layoutRef = useRef<ReturnType<typeof buildFixedAnchorLayout>>(new Map());
   const worldBoundsRef = useRef<WorldBounds>(createWorldBounds());
+  const fitScaleRef = useRef(1);
   const transformRef = useRef<ViewTransform>({ offsetX: 0, offsetY: 0, scale: 1 });
   const activePointersRef = useRef(new Map<number, PointerSnapshot>());
   const gestureRef = useRef<GestureState>(createGestureState());
@@ -260,6 +265,14 @@ export function TemporalGraph({
     () => new Set(highlightedNodeIds ?? []),
     [highlightedNodeIds]
   );
+  const degreeById = useMemo(() => {
+    const next = new Map<number, number>();
+    data.edges.forEach((edge) => {
+      next.set(edge.source, (next.get(edge.source) ?? 0) + 1);
+      next.set(edge.target, (next.get(edge.target) ?? 0) + 1);
+    });
+    return next;
+  }, [data.edges]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -339,6 +352,7 @@ export function TemporalGraph({
 
       const isSelected = node.id === selectedNodeId;
       const isNeighbor = highlightedNodeIdSet.has(node.id);
+      const nodeDegree = degreeById.get(node.id) ?? 0;
       if (hasSelection && !isSelected && !isNeighbor) {
         alpha *= 0.22;
       }
@@ -371,12 +385,15 @@ export function TemporalGraph({
       context.lineWidth = isSelected ? 2.2 : 1;
       context.stroke();
 
-      if (alpha > 0.3 || isSelected || isNeighbor) {
+      const allowGeneralLabel =
+        transform.scale >= fitScaleRef.current * 1.12 || nodeDegree <= 1;
+
+      if (isSelected || isNeighbor || (alpha > 0.36 && allowGeneralLabel)) {
         const labelAlpha = isSelected
           ? 1
           : isNeighbor
             ? Math.max(0.62, Math.min(1, (alpha - 0.2) / 0.28))
-            : Math.min(1, (alpha - 0.3) / 0.25);
+            : Math.min(0.9, (alpha - 0.32) / 0.22);
         const label = truncateLabel(node.label, 18);
         const anchor = layoutRef.current.get(node.id);
         const labelHalfWidth = anchor?.labelHalfWidth ?? Math.max(36, label.length * 4);
@@ -423,7 +440,16 @@ export function TemporalGraph({
         context.fillStyle = getGraphLabelFill(themeMode, candidate.alpha);
         context.fillText(candidate.label, candidate.x, candidate.y);
       });
-  }, [data.edges, data.nodes, height, highlightedNodeIdSet, selectedNodeId, themeMode, width]);
+  }, [
+    data.edges,
+    data.nodes,
+    degreeById,
+    height,
+    highlightedNodeIdSet,
+    selectedNodeId,
+    themeMode,
+    width,
+  ]);
 
   const setTransformAndRedraw = useCallback(
     (nextTransform: ViewTransform) => {
@@ -505,6 +531,7 @@ export function TemporalGraph({
     layoutRef.current = layout;
     const worldBounds = buildWorldBounds(layout);
     worldBoundsRef.current = worldBounds;
+    fitScaleRef.current = getFitScale(worldBounds, width, height);
     transformRef.current = createCenteredTransform(worldBounds, width, height);
     draw();
   }, [data.edges, data.nodes, draw, height, width]);
@@ -631,7 +658,6 @@ export function TemporalGraph({
 
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLCanvasElement>) => {
-      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
 
       const rect = event.currentTarget.getBoundingClientRect();
