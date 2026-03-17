@@ -34,8 +34,7 @@ const args = [
   "--external:react/jsx-dev-runtime",
   "--external:lucide-react",
   "--external:marked",
-  "--external:dompurify",
-  "--external:echarts"
+  "--external:dompurify"
 ];
 
 const run = spawnSync(esbuildBin, args, {

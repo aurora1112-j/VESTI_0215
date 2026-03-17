@@ -62,16 +62,20 @@ Primary responsibilities:
 Primary responsibilities:
 - determine current graph node set
 - request edge data for those nodes
-- render graph via ECharts
-- apply platform filtering without mutating the underlying node-set fetch contract
+- render the graph via a canvas-based `d3-force` playback system
+- map conversation chronology into a day-by-day playback timeline while keeping the underlying node-set fetch contract explicit
+- reset and auto-run the replay whenever the `Network` tab becomes active again
+- expose a local trend-chart scrubber over daily new-conversation counts so users can pause on a specific time point
+- distribute same-day births within that day by capture order so one-day datasets still produce a visible replay
 
 As of rc8, `Network` explicitly requests edges for its active base node set rather than passively reading whatever vectors already exist.
+The current renderer no longer depends on ECharts; it builds temporal node state in the web layer, draws nodes/edges onto `<canvas>`, keeps replay/reset behavior local to the tab, and drives the visible time position from a fixed-duration local playback clock rather than a days-per-second control.
 
 Current temporal status:
 - `Network` is not yet on the finalized thread timestamp contract used by Threads / Reader / Web Reader
-- node chronology is not formally defined as `originAt`, `first_captured_at`, or `last_captured_at`
-- the current `Time Range` control is not a stable runtime-backed time filter contract
-- temporal animation / replay behavior must be treated as provisional until a dedicated `Network` time contract is written
+- the current playback chronology is still a local, provisional timeline derived inside `Network`, not a finalized `originAt`, `first_captured_at`, or `last_captured_at` contract
+- the trend scrubber / replay UI is local to the tab and does not yet imply a stable runtime-backed time-filtering contract
+- temporal animation / replay behavior must continue to be treated as provisional until a dedicated `Network` time contract is written
 
 ## 4. Message and data flow
 
@@ -96,7 +100,7 @@ For `Network`:
 2. call `getAllEdges({ threshold, conversationIds })`
 3. runtime performs best-effort vector ensure for those ids
 4. runtime computes edges among the ensured node set
-5. UI filters visibility by active platform selection only after receiving the edge set
+5. UI derives node/edge visibility from the current replay time locally after receiving the edge set
 
 ## 5. Known design constraints
 
@@ -116,11 +120,11 @@ Data may arrive after the shell is already mounted. Tabs must therefore tolerate
 There is active work on dynamic network-generation animation, where nodes may appear or connect progressively over time.
 
 That work must not assume that:
-- `created_at` is the final node time source
+- the current `created_at`-ordered local timeline is the final node time source
 - the graph already inherits the same semantics as Threads / Reader
-- `Time Range` already implies edge-level or storage-level filtering
+- the current trend scrubber already implies edge-level or storage-level filtering
 
-Before shipping time-driven `Network` behavior, the dashboard contract still needs to fix:
+Before shipping time-driven `Network` behavior as a finalized contract, the dashboard layer still needs to fix:
 - which timestamp defines node chronology
 - whether time filtering is UI-only or part of the graph data contract
 - whether animation expresses origin time, first capture time, or last capture freshness

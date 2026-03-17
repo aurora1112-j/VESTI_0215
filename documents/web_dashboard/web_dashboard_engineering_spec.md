@@ -87,13 +87,18 @@ This rule is now a formal engineering constraint for future web work.
 ## 5. Network-specific contract
 
 `Network` operates on two logical datasets:
-- current node set: typically the recent conversation subset chosen for graph display
+- current node set: the active conversation timeline chosen for graph display
 - edge set: similarity links among the current node set
 
 Locked requirements:
 - entering `Network` must be sufficient to compute and render real edges for the active node set
 - edge availability must not depend on whether a conversation was previously opened in `Library`
-- platform filtering may reduce visible edges, but must not silently redefine the underlying node-set computation contract
+- the graph renderer may change, but it must continue to honor the same `getConversations` + `getAllEdges({ threshold, conversationIds })` contract boundary
+- the current Network UX is a temporal playback view: nodes and edges appear day by day, while old items decay visually instead of disappearing
+- each time the dashboard re-enters the `Network` tab, playback resets to the start and auto-runs once over a fixed 8-second duration
+- the bottom time control is a draggable conversation-count trend chart based on daily new-conversation counts, not a static progress bar
+- when many conversations land on the same day, replay still distributes their births within that day by capture order so the graph remains readable
+- the current playback chronology remains a local, provisional `Network` timeline; it must not be documented as finalized `originAt` / `first_captured_at` / `last_captured_at` behavior
 - genuine empty graphs are allowed if similarity truly does not produce edges
 
 ## 6. Internal interface notes
@@ -107,7 +112,7 @@ These are internal engineering contracts used to keep `Network` self-sufficient.
 ## 7. Non-goals for this spec version
 
 This spec does not define:
-- new graph UX patterns
+- alternate graph modes beyond the current temporal replay + trend scrubber interaction
 - new storage schema
 - parser/runtime refactors
 - unified diagnostics system for all tabs

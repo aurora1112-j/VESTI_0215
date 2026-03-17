@@ -488,6 +488,7 @@ export function VestiDashboard({
               <NetworkTab
                 storage={storage}
                 themeMode={themeMode}
+                isActive={activeTab === "network"}
                 onSelectConversation={handleOpenConversation}
               />
             </div>

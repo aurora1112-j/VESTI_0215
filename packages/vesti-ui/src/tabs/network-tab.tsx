@@ -1,438 +1,434 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { X, ArrowRight, ChevronDown } from "lucide-react";
-import type { Platform, StorageApi, UiThemeMode } from "../types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { StorageApi, UiThemeMode } from "../types";
 import { useLibraryData } from "../contexts/library-data";
-import * as echarts from "echarts";
+import { GraphLegend } from "./network/GraphLegend";
+import { TemporalGraph } from "./network/TemporalGraph";
+import { TimeBar } from "./network/TimeBar";
 import {
-  getPlatformBadgeStyle,
-  PLATFORM_FILTER_OPTIONS,
-  getPlatformHex,
-  getPlatformLabel,
-} from "../constants/platform";
-
-interface Node {
-  id: number;
-  x: number;
-  y: number;
-  r: number;
-  color: string;
-  label: string;
-  platform: Platform;
-  topicName?: string;
-  isStarred?: boolean;
-  created_at: number;
-}
-
-interface Edge {
-  source: number;
-  target: number;
-  weight: number;
-}
-
-const NOW = Date.now();
-const DAY = 86_400_000;
-
-const mockNodes: Node[] = [
-  { id: 1, x: 0, y: 0, r: 20, color: "#F7D8BA", label: "React 虚拟列表优化", platform: "Claude", created_at: NOW - 90 * DAY },
-  { id: 2, x: 0, y: 0, r: 18, color: "#F7D8BA", label: "TypeScript 重构实践", platform: "Claude", created_at: NOW - 80 * DAY },
-  { id: 3, x: 0, y: 0, r: 16, color: "#F3F4F6", label: "Chrome Extension MV3", platform: "ChatGPT", created_at: NOW - 72 * DAY },
-  { id: 4, x: 0, y: 0, r: 22, color: "#F3F4F6", label: "Plasmo 框架搭建", platform: "ChatGPT", created_at: NOW - 65 * DAY },
-  { id: 5, x: 0, y: 0, r: 16, color: "#F3F4F6", label: "IndexedDB 性能优化", platform: "ChatGPT", created_at: NOW - 55 * DAY },
-  { id: 6, x: 0, y: 0, r: 20, color: "#172554", label: "PostgreSQL 查询调优", platform: "DeepSeek", created_at: NOW - 50 * DAY },
-  { id: 7, x: 0, y: 0, r: 18, color: "#172554", label: "Docker Compose 编排", platform: "DeepSeek", created_at: NOW - 42 * DAY },
-  { id: 8, x: 0, y: 0, r: 16, color: "#172554", label: "Redis 缓存策略", platform: "DeepSeek", created_at: NOW - 35 * DAY },
-  { id: 9, x: 0, y: 0, r: 22, color: "#3A62D9", label: "AI Papers 2024", platform: "Gemini", created_at: NOW - 28 * DAY },
-  { id: 10, x: 0, y: 0, r: 20, color: "#3A62D9", label: "RAG 检索增强", platform: "Gemini", created_at: NOW - 20 * DAY },
-  { id: 11, x: 0, y: 0, r: 18, color: "#F7D8BA", label: "Tailwind 设计系统", platform: "Claude", created_at: NOW - 12 * DAY },
-  { id: 12, x: 0, y: 0, r: 16, color: "#3A62D9", label: "向量数据库选型", platform: "Gemini", created_at: NOW - 5 * DAY },
-];
-
-mockNodes.forEach((node) => {
-  node.color = getPlatformHex(node.platform);
-});
-
-const mockEdges: Edge[] = [
-  { source: 1, target: 2, weight: 0.82 },
-  { source: 1, target: 3, weight: 0.75 },
-  { source: 3, target: 4, weight: 0.91 },
-  { source: 4, target: 5, weight: 0.78 },
-  { source: 2, target: 11, weight: 0.72 },
-  { source: 1, target: 11, weight: 0.68 },
-  { source: 6, target: 7, weight: 0.85 },
-  { source: 7, target: 8, weight: 0.79 },
-  { source: 6, target: 8, weight: 0.71 },
-  { source: 9, target: 10, weight: 0.88 },
-  { source: 10, target: 12, weight: 0.83 },
-  { source: 9, target: 12, weight: 0.76 },
-  { source: 5, target: 6, weight: 0.38 },
-  { source: 10, target: 1, weight: 0.35 },
-  { source: 4, target: 12, weight: 0.41 },
-];
+  GRAPH_HEIGHT,
+  buildTemporalNetworkDataset,
+  dayToProgress,
+  getVisibleConversationCount,
+  progressToDay,
+  type GraphEdge,
+} from "./network/temporal-graph-utils";
 
 interface NetworkTabProps {
   storage: StorageApi;
   themeMode?: UiThemeMode;
+  isActive?: boolean;
   onSelectConversation?: (id: number) => void;
+}
+
+type EdgeStatus = "idle" | "loading" | "ready" | "error";
+
+const PLAYBACK_DURATION_MS = 8_000;
+
+function formatDefaultInfo(totalDays: number) {
+  if (totalDays <= 0) return "No conversations captured yet.";
+  return "This replay runs the full timeline in 8 seconds, even when everything was captured today.";
+}
+
+function formatBirthInfo(label: string, platform: string) {
+  if (label.trim().toLowerCase() === platform.trim().toLowerCase()) {
+    return `+ New conversation on ${platform}`;
+  }
+  return `+ ${label} \u00b7 ${platform}`;
 }
 
 export function NetworkTab({
   storage,
   themeMode = "light",
+  isActive = true,
   onSelectConversation,
 }: NetworkTabProps) {
-  const { conversations, topics } = useLibraryData();
-  const [selectedPlatform, setSelectedPlatform] = useState<Platform | "all">("all");
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [apiEdges, setApiEdges] = useState<Edge[]>([]);
-  const [graphLoading, setGraphLoading] = useState(false);
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const { conversations } = useLibraryData();
+  const [currentDay, setCurrentDay] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [playbackToken, setPlaybackToken] = useState(0);
+  const [infoText, setInfoText] = useState("No conversations captured yet.");
+  const [graphResetToken, setGraphResetToken] = useState(0);
+  const [scrubToken, setScrubToken] = useState(0);
+  const [edgeStatus, setEdgeStatus] = useState<EdgeStatus>("idle");
+  const [edgeError, setEdgeError] = useState<string | null>(null);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  const playbackOriginRef = useRef<number | null>(null);
+  const playbackStartProgressRef = useRef(0);
+  const currentDayRef = useRef(0);
+  const previousDayRef = useRef(0);
+  const previousScrubTokenRef = useRef(0);
+  const previousIsActiveRef = useRef(isActive);
+  const previousTotalDaysRef = useRef(0);
 
-  const platforms: (Platform | "all")[] = ["all", ...PLATFORM_FILTER_OPTIONS];
-  const useRealGraph = conversations.length >= 3;
-
-  const topicMap = useMemo(() => {
-    const map = new Map<number, string>();
-    const walk = (items: typeof topics) => {
-      items.forEach((topic) => {
-        map.set(topic.id, topic.name);
-        if (topic.children) walk(topic.children);
-      });
-    };
-    walk(topics);
-    return map;
-  }, [topics]);
-
-  const baseNodes = useMemo<Node[]>(() => {
-    if (!useRealGraph) return mockNodes;
-    return conversations.slice(0, 30).map((conv) => ({
-      id: conv.id,
-      x: 0,
-      y: 0,
-      r: conv.is_starred ? 24 : 16,
-      color: getPlatformHex(conv.platform),
-      label: conv.title || "Untitled",
-      platform: conv.platform,
-      topicName: conv.topic_id ? topicMap.get(conv.topic_id) : undefined,
-      isStarred: conv.is_starred,
-      created_at: conv.created_at,
-    }));
-  }, [conversations, topicMap, useRealGraph]);
-
-  const baseNodeIds = useMemo(() => baseNodes.map((node) => node.id), [baseNodes]);
+  const dataset = useMemo(
+    () => buildTemporalNetworkDataset(conversations, edges),
+    [conversations, edges]
+  );
+  const baseDataset = useMemo(
+    () => buildTemporalNetworkDataset(conversations, []),
+    [conversations]
+  );
+  const totalDays = dataset.data.totalDays;
+  const conversationIdsKey = useMemo(
+    () => baseDataset.data.nodes.map((node) => node.id).join(","),
+    [baseDataset.data.nodes]
+  );
+  const visibleCount = useMemo(
+    () => getVisibleConversationCount(dataset.data.nodes, currentDay),
+    [currentDay, dataset.data.nodes]
+  );
 
   useEffect(() => {
+    currentDayRef.current = currentDay;
+  }, [currentDay]);
+
+  const stopPlayback = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    playbackOriginRef.current = null;
+    setPlaying(false);
+  }, []);
+
+  const resetTimeline = useCallback(
+    (
+      nextDay = 0,
+      options: {
+        hardReset?: boolean;
+        scrub?: boolean;
+        nextInfoText?: string;
+      } = {}
+    ) => {
+      const { hardReset = true, scrub = false, nextInfoText } = options;
+      const clampedDay = Math.max(0, Math.min(totalDays, nextDay));
+
+      stopPlayback();
+      setCurrentDay(clampedDay);
+      currentDayRef.current = clampedDay;
+      previousDayRef.current = clampedDay;
+
+      if (hardReset) {
+        setGraphResetToken((token) => token + 1);
+      }
+
+      if (scrub) {
+        setScrubToken((token) => token + 1);
+      } else {
+        previousScrubTokenRef.current = 0;
+        setScrubToken(0);
+      }
+
+      if (typeof nextInfoText === "string") {
+        setInfoText(nextInfoText);
+      }
+    },
+    [stopPlayback, totalDays]
+  );
+
+  const startReplay = useCallback(() => {
+    if (totalDays <= 0) return;
+
+    resetTimeline(0, {
+      hardReset: true,
+      scrub: false,
+      nextInfoText: formatDefaultInfo(totalDays),
+    });
+    setScrubbing(false);
+    playbackStartProgressRef.current = 0;
+    setPlaybackToken((token) => token + 1);
+    setPlaying(true);
+  }, [resetTimeline, totalDays]);
+
+  useEffect(() => {
+    const conversationIds = baseDataset.data.nodes.map((node) => node.id);
     let cancelled = false;
 
-    if (!storage.getAllEdges || !useRealGraph || baseNodeIds.length === 0) {
-      setApiEdges([]);
-      setGraphLoading(false);
+    if (conversationIds.length < 2) {
+      setEdges([]);
+      setEdgeStatus("ready");
+      setEdgeError(null);
       return () => {
         cancelled = true;
       };
     }
 
-    setGraphLoading(true);
+    if (!storage.getAllEdges) {
+      setEdges([]);
+      setEdgeStatus("error");
+      setEdgeError("Semantic edge loading is unavailable in this environment.");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setEdgeStatus("loading");
+    setEdgeError(null);
+
     storage
-      .getAllEdges({ threshold: 0.4, conversationIds: baseNodeIds })
-      .then((edges) => {
-        if (!cancelled) {
-          setApiEdges(edges ?? []);
-        }
+      .getAllEdges({ threshold: 0.4, conversationIds })
+      .then((result) => {
+        if (cancelled) return;
+        setEdges((result ?? []).map((edge) => ({ ...edge })));
+        setEdgeStatus("ready");
       })
-      .catch((err) => {
-        if (!cancelled) {
-          console.error("[Network] getAllEdges error:", err);
-          setApiEdges([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setGraphLoading(false);
-        }
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("[Network] getAllEdges error:", error);
+        setEdges([]);
+        setEdgeStatus("error");
+        setEdgeError("Semantic edge playback is temporarily unavailable.");
       });
 
     return () => {
       cancelled = true;
     };
-  }, [baseNodeIds, storage, useRealGraph]);
-
-  const visibleNodes = useMemo(() => {
-    if (selectedPlatform === "all") return baseNodes;
-    return baseNodes.filter((node) => node.platform === selectedPlatform);
-  }, [baseNodes, selectedPlatform]);
-
-  const visibleNodeIds = useMemo(
-    () => new Set(visibleNodes.map((node) => node.id)),
-    [visibleNodes]
-  );
-
-  const baseEdges = useMemo<Edge[]>(() => {
-    return useRealGraph ? apiEdges.filter((edge) => edge.weight >= 0.4) : mockEdges;
-  }, [apiEdges, useRealGraph]);
-
-  const visibleEdges = useMemo(
-    () =>
-      baseEdges.filter(
-        (edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
-      ),
-    [baseEdges, visibleNodeIds]
-  );
+  }, [baseDataset.data.nodes, conversationIdsKey, storage]);
 
   useEffect(() => {
-    if (!selectedNode) return;
-    const next = baseNodes.find((node) => node.id === selectedNode.id);
-    if (!next || !visibleNodeIds.has(next.id)) {
-      setSelectedNode(null);
+    const previousTotalDays = previousTotalDaysRef.current;
+    previousTotalDaysRef.current = totalDays;
+
+    if (totalDays <= 0) {
+      resetTimeline(0, {
+        hardReset: true,
+        scrub: false,
+        nextInfoText: formatDefaultInfo(0),
+      });
       return;
     }
-    setSelectedNode(next);
-  }, [baseNodes, selectedNode, visibleNodeIds]);
 
-  const handleNodeClick = useCallback(
-    (nodeId: number) => {
-      const node = visibleNodes.find((n) => n.id === nodeId);
-      if (node) setSelectedNode(node);
-    },
-    [visibleNodes]
-  );
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-
-    if (!chartInstance.current) {
-      chartInstance.current = echarts.init(chartRef.current, null, {
-        renderer: "svg",
-      });
+    if (currentDayRef.current > totalDays) {
+      setCurrentDay(totalDays);
+      currentDayRef.current = totalDays;
+      previousDayRef.current = totalDays;
     }
 
-    const chart = chartInstance.current;
+    if (isActive && previousTotalDays <= 0 && totalDays > 0) {
+      startReplay();
+      return;
+    }
 
-    const echartsNodes: echarts.GraphSeriesOption["data"] = visibleNodes.map((node) => ({
-      id: String(node.id),
-      name: node.label,
-      symbolSize: node.r * 2,
-      itemStyle: {
-        color: node.color,
-        borderColor: "#FFFFFF",
-        borderWidth: 2,
-      },
-      label: { show: false },
-      emphasis: {
-        label: {
-          show: true,
-          position: "bottom" as const,
-          fontSize: 11,
-          color: "#6B6B6B",
-          fontFamily: "Nunito Sans, sans-serif",
-          formatter: (params: { name: string }) =>
-            params.name.length > 16 ? params.name.slice(0, 16) + "…" : params.name,
-        },
-        itemStyle: {
-          borderColor: "#3266AD",
-          borderWidth: 3,
-        },
-      },
-    }));
+    if (!playing && currentDayRef.current === 0 && scrubToken === 0) {
+      setInfoText(formatDefaultInfo(totalDays));
+    }
+  }, [isActive, playing, resetTimeline, scrubToken, startReplay, totalDays]);
 
-    const echartsEdges: echarts.GraphSeriesOption["edges"] = visibleEdges
-      .filter((edge) => edge.weight >= 0.4)
-      .map((edge) => ({
-        source: String(edge.source),
-        target: String(edge.target),
-        lineStyle: {
-          width: edge.weight * 2,
-          color: "#C8C4BC",
-          opacity: 0.3 + edge.weight * 0.4,
-          curveness: 0,
-        },
-        emphasis: {
-          lineStyle: {
-            color: "#3266AD",
-            opacity: 0.9,
-            width: edge.weight * 3,
-          },
-        },
-      }));
+  useEffect(() => {
+    const wasActive = previousIsActiveRef.current;
+    previousIsActiveRef.current = isActive;
 
-    const option: echarts.EChartsOption = {
-      backgroundColor: "transparent",
-      series: [
-        {
-          type: "graph",
-          layout: "force",
-          animation: true,
-          animationDuration: 1200,
-          animationEasingUpdate: "quinticInOut",
-          data: echartsNodes,
-          edges: echartsEdges,
-          force: {
-            repulsion: 300,
-            gravity: 0.1,
-            edgeLength: [80, 200],
-            layoutAnimation: true,
-          },
-          roam: true,
-          focusNodeAdjacency: true,
-          lineStyle: {
-            color: "#C8C4BC",
-            curveness: 0,
-          },
-          emphasis: {
-            focus: "adjacency",
-          },
-        },
-      ],
-    };
+    if (!isActive) {
+      stopPlayback();
+      return;
+    }
 
-    chart.setOption(option);
+    if (!wasActive && totalDays > 0) {
+      startReplay();
+    }
+  }, [isActive, startReplay, stopPlayback, totalDays]);
 
-    chart.off("click");
-    chart.on("click", (params) => {
-      if (params.dataType === "node") {
-        handleNodeClick(Number((params.data as { id: string }).id));
+  useEffect(() => {
+    if (!playing || totalDays <= 0) return;
+
+    playbackOriginRef.current = null;
+    playbackStartProgressRef.current = dayToProgress(currentDayRef.current, totalDays);
+
+    const tick = (timestamp: number) => {
+      if (playbackOriginRef.current === null) {
+        playbackOriginRef.current =
+          timestamp - playbackStartProgressRef.current * PLAYBACK_DURATION_MS;
       }
-    });
+
+      const progress = Math.max(
+        0,
+        Math.min(1, (timestamp - playbackOriginRef.current) / PLAYBACK_DURATION_MS)
+      );
+      const nextDay = progressToDay(progress, totalDays);
+
+      currentDayRef.current = nextDay;
+      setCurrentDay(nextDay);
+
+      if (progress >= 1) {
+        animationFrameRef.current = null;
+        playbackOriginRef.current = null;
+        setPlaying(false);
+        return;
+      }
+
+      animationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(tick);
 
     return () => {
-      chart.off("click");
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      playbackOriginRef.current = null;
     };
-  }, [visibleNodes, visibleEdges, handleNodeClick]);
+  }, [playbackToken, playing, totalDays]);
 
   useEffect(() => {
-    return () => {
-      chartInstance.current?.dispose();
-      chartInstance.current = null;
-    };
+    const previousDay = previousDayRef.current;
+    const didScrub = previousScrubTokenRef.current !== scrubToken;
+
+    if (totalDays > 0 && !playing && currentDay === 0 && scrubToken === 0) {
+      previousDayRef.current = 0;
+      setInfoText(formatDefaultInfo(totalDays));
+      return;
+    }
+
+    if (didScrub) {
+      previousScrubTokenRef.current = scrubToken;
+      previousDayRef.current = currentDay;
+      setInfoText(`${visibleCount} conversations visible`);
+      return;
+    }
+
+    if (currentDay > previousDay) {
+      let latestBirth: (typeof dataset.data.nodes)[number] | undefined;
+      for (let index = dataset.data.nodes.length - 1; index >= 0; index -= 1) {
+        const node = dataset.data.nodes[index];
+        if (node.timelineDay <= previousDay) break;
+        if (node.timelineDay <= currentDay) {
+          latestBirth = node;
+          break;
+        }
+      }
+
+      if (latestBirth) {
+        setInfoText(formatBirthInfo(latestBirth.label, latestBirth.platform));
+      } else if (!playing) {
+        setInfoText(`${visibleCount} conversations visible`);
+      }
+    } else if (!playing && totalDays > 0 && currentDay > 0) {
+      setInfoText(`${visibleCount} conversations visible`);
+    }
+
+    previousDayRef.current = currentDay;
+  }, [
+    currentDay,
+    dataset.data.nodes,
+    playing,
+    scrubToken,
+    totalDays,
+    visibleCount,
+  ]);
+
+  useEffect(() => () => stopPlayback(), [stopPlayback]);
+
+  const handleReplay = useCallback(() => {
+    startReplay();
+  }, [startReplay]);
+
+  const handleScrubStart = useCallback(() => {
+    stopPlayback();
+    setScrubbing(true);
+  }, [stopPlayback]);
+
+  const handleScrubChange = useCallback(
+    (day: number) => {
+      const nextDay = Math.max(0, Math.min(totalDays, day));
+      stopPlayback();
+      setCurrentDay(nextDay);
+      currentDayRef.current = nextDay;
+      setScrubToken((token) => token + 1);
+    },
+    [stopPlayback, totalDays]
+  );
+
+  const handleScrubEnd = useCallback(() => {
+    setScrubbing(true);
   }, []);
 
-  useEffect(() => {
-    const handleResize = () => chartInstance.current?.resize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const edgeMessage =
+    edgeStatus === "error"
+      ? edgeError
+      : edgeStatus === "ready" && dataset.data.nodes.length > 1 && dataset.data.edges.length === 0
+        ? "No semantic links yet. Playback still shows how conversations accumulated over time."
+        : null;
+
+  if (dataset.data.nodes.length === 0) {
+    return (
+      <div className="h-full overflow-y-auto bg-bg-tertiary">
+        <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col justify-center gap-3 px-4 py-8">
+          <div className="max-w-sm">
+            <p className="text-sm font-medium text-text-primary">
+              Your temporal network will appear here.
+            </p>
+            <p className="mt-2 text-sm font-sans text-text-secondary">
+              Capture a few conversations first, then reopen Network to watch the graph
+              evolve over time.
+            </p>
+          </div>
+          <GraphLegend />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="h-10 bg-bg-tertiary border-b border-border-subtle px-4 flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          {platforms.map((platform) => (
-            <button
-              key={platform}
-              onClick={() => setSelectedPlatform(platform)}
-              className={`px-3 py-1 rounded-full text-[11px] font-sans font-medium transition-all ${
-                selectedPlatform === platform
-                  ? platform === "all"
-                    ? themeMode === "dark"
-                      ? "bg-bg-secondary text-text-primary"
-                      : "bg-accent-primary text-white"
-                    : "text-white"
-                  : "bg-bg-surface-card text-text-secondary hover:bg-bg-surface-card-hover"
-              }`}
-              style={
-                selectedPlatform === platform && platform !== "all"
-                  ? getPlatformBadgeStyle(platform, themeMode)
-                  : {}
-              }
-            >
-              {platform === "all" ? "All" : getPlatformLabel(platform)}
-            </button>
-          ))}
+    <div className="h-full overflow-y-auto bg-bg-tertiary">
+      <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col justify-center gap-4 px-4 py-8">
+        <div className="relative h-[360px] bg-bg-tertiary">
+          {edgeStatus === "loading" && (
+            <div className="pointer-events-none absolute left-0 top-0 z-10 rounded-full bg-bg-primary/85 px-2.5 py-1 text-[11px] font-sans text-text-tertiary backdrop-blur-sm">
+              Building graph...
+            </div>
+          )}
+          <TemporalGraph
+            data={dataset.data}
+            currentDay={currentDay}
+            height={GRAPH_HEIGHT}
+            themeMode={themeMode}
+            scrubbing={scrubbing}
+            resetToken={graphResetToken}
+            onNodeClick={onSelectConversation}
+          />
         </div>
 
-        <button className="ml-auto px-3 py-1 rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover text-[11px] font-sans text-text-secondary transition-all flex items-center gap-1.5">
-          <span>Time Range</span>
-          <ChevronDown strokeWidth={1.5} className="w-3 h-3" />
-        </button>
+        <div className="text-[11px] font-sans text-text-tertiary">
+          Trend · daily new conversations
+        </div>
 
-        <button className="px-3 py-1 rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover text-[11px] font-sans text-text-secondary transition-all">
-          Reset View
-        </button>
-      </div>
-
-      {/* Graph Area */}
-      <div className="flex-1 relative bg-bg-tertiary overflow-hidden">
-        {graphLoading && (
-          <div className="absolute top-3 left-3 text-[11px] font-sans text-text-tertiary">
-            Building graph...
-          </div>
-        )}
-        <div
-          ref={chartRef}
-          className="absolute inset-0"
-          style={{ width: "100%", height: "100%" }}
+        <TimeBar
+          totalDays={totalDays}
+          dayCounts={dataset.dayCounts}
+          currentDay={currentDay}
+          themeMode={themeMode}
+          onChange={handleScrubChange}
+          onScrubStart={handleScrubStart}
+          onScrubEnd={handleScrubEnd}
         />
-      </div>
 
-      {selectedNode && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/20 z-40"
-            onClick={() => setSelectedNode(null)}
-          />
-          <div
-            className="fixed top-0 right-0 bottom-0 w-80 bg-bg-primary shadow-2xl z-50 overflow-y-auto transition-transform duration-200"
-            style={{ transform: "translateX(0)" }}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button
+            type="button"
+            onClick={handleReplay}
+            className="rounded-full border border-border-subtle bg-bg-primary px-3 py-1.5 text-[12px] font-sans text-text-primary transition-colors hover:bg-bg-secondary"
           >
-            <div className="p-4">
-              <button
-                onClick={() => setSelectedNode(null)}
-                className="flex items-center gap-2 text-sm font-sans text-text-secondary hover:text-text-primary mb-4 transition-colors"
-              >
-                <X strokeWidth={1.5} className="w-4 h-4" />
-                <span>Close</span>
-              </button>
+            Replay
+          </button>
 
-              <h2 className="text-lg font-serif font-normal text-text-primary mb-3">
-                {selectedNode.label}
-              </h2>
+          <span className="text-[11px] font-sans text-text-tertiary">
+            Drag the trend line to pause on a moment.
+          </span>
+        </div>
 
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <span
-                  className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
-                  style={getPlatformBadgeStyle(selectedNode.platform, themeMode)}
-                >
-                  {getPlatformLabel(selectedNode.platform)}
-                </span>
-                <span className="text-xs font-sans text-text-tertiary">2yr ago</span>
-                {selectedNode.topicName && (
-                  <span className="text-xs font-sans text-text-tertiary">
-                    · {selectedNode.topicName}
-                  </span>
-                )}
-                {selectedNode.isStarred && (
-                  <span className="text-xs font-sans text-text-tertiary">· Starred</span>
-                )}
-              </div>
+        {edgeMessage && (
+          <div className="text-[11px] font-sans text-text-secondary">{edgeMessage}</div>
+        )}
 
-              <div className="mb-6 p-3 rounded-lg bg-bg-surface-card">
-                <div className="flex items-center gap-2 text-sm font-sans text-text-primary mb-2">
-                  <span>✓ Analyzed</span>
-                </div>
-                <p className="text-xs font-sans text-text-secondary">
-                  Discussion about {selectedNode.label.toLowerCase()} covering implementation strategies, best practices, and common patterns.
-                </p>
-              </div>
+        <div className="min-h-[16px] text-[11px] font-sans text-text-tertiary">{infoText}</div>
 
-              <button
-                onClick={() => {
-                  if (onSelectConversation && selectedNode) {
-                    onSelectConversation(selectedNode.id);
-                  }
-                  setSelectedNode(null);
-                }}
-                className="w-full py-2.5 px-4 rounded-lg bg-accent-primary hover:bg-accent-primary/90 text-white text-sm font-sans font-medium transition-all flex items-center justify-center gap-2"
-              >
-                <span>View in Library</span>
-                <ArrowRight strokeWidth={1.5} className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+        <GraphLegend />
+      </div>
     </div>
   );
 }

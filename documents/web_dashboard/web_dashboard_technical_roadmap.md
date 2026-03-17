@@ -29,16 +29,18 @@ Priority work after rc8:
 - add stronger graph diagnostics for node count / edge count / empty-graph reasons
 - separate ?true empty graph? from ?runtime unavailable? and ?edge computation failed? states
 - consider lightweight graph refresh hooks when base node set changes rapidly
+- keep the temporal playback renderer CSP-safe in extension surfaces by preferring canvas / local-force approaches over charting integrations that require riskier runtime assumptions
+- preserve the fixed-duration replay + trend-scrubber model as the default interaction, instead of reintroducing tab-local hidden warmup assumptions or charting-based controls
 
 ### 3.2 Network temporal contract alignment
-Before time-driven graph animation or replay ships, the web/dashboard layer needs an explicit temporal contract for `Network`.
+Before time-driven graph animation or replay is treated as finalized behavior, the web/dashboard layer still needs an explicit temporal contract for `Network`.
 
 That contract must decide:
 - whether node chronology uses `originAt`, `first_captured_at`, `last_captured_at`, or a dedicated derived field
-- whether `Time Range` filters only visible nodes or also changes the edge-computation contract
+- whether the trend scrubber filters only visible nodes or also changes the edge-computation contract
 - whether animation semantics represent thread origin, first capture into Vesti, or latest capture freshness
 
-Until then, any dynamic node/edge animation should be treated as provisional and should avoid baking permanent timestamp assumptions into shared graph contracts.
+Until then, the current playback timeline should be treated as provisional and should avoid baking permanent timestamp assumptions into shared graph contracts.
 
 ### 3.3 Explore / Network contract clarity
 - keep retrieval and network graph contracts explicit in `StorageApi`
@@ -78,8 +80,8 @@ The dashboard roadmap depends on, but does not own, the following deeper work:
 - runtime/parser boundary clarification
 
 Those future directions are already tracked in:
-- `documents/capture_engine/capture_engine_current_architecture.md`
-- `documents/capture_engine/capture_engine_engineering_spec.md`
+- `documents/capture_engine/v1_4_capture_engine_hardening_retrospective.md`
+- `documents/capture_engine/v1_5_capture_engine_refactor_roadmap.md`
 
 The web layer should reference those documents when a UI feature depends on improved parser/runtime guarantees, rather than re-specifying parser internals here.
 
