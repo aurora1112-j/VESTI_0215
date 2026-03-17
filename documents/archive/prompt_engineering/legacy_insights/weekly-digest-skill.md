@@ -1,4 +1,14 @@
-﻿# Agent C — Weekly Digest Skill
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/prompt_engineering/README.md`
+> - `documents/prompt_engineering/export_multi_agent_architecture.md`
+> - `documents/prompt_engineering/export_prompt_contract.md`
+> - `documents/prompt_engineering/export_eval_and_drift_gate.md`
+
+# Agent C — Weekly Digest Skill
 **Artifact ID:** `agent_c_weekly_digest`  
 **Target Schema:** `weekly_lite.v1`  
 **Mode:** bounded evidence-based aggregation · 7-day window only  

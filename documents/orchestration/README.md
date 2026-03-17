@@ -1,27 +1,33 @@
-﻿# Orchestration Documentation Package
+# Orchestration Documentation Package
 
-Status: Active canonical documentation tree for orchestration and runtime rollout work  
+Status: Active canonical documentation tree for generic runtime orchestration contracts  
 Audience: Runtime engineers, release owners, QA
 
 ## Purpose
 
-`documents/orchestration/` is the source of truth for multi-agent orchestration, feature-flag rollout, and runtime event contracts.
+`documents/orchestration/` now exists to hold cross-product runtime contracts only.
 
 It owns:
-- multi-agent orchestration specs
-- runtime event contracts
-- rollout and feature-flag governance
-- orchestration-specific manual acceptance guidance
+- generic pipeline progress/event contracts
+- generic tool-trace contracts
+- runtime-facing orchestration semantics that can be shared across features
 
 It does not own:
-- parser / DOM extraction rules
-- web dashboard engineering specs
-- dated release handoffs
+- export prompt artifact design
+- Insights feature-specific product architecture
+- Explore product-specific UI flow design
+- dated rollout narratives for legacy product lines
 
-## Current source-of-truth docs
+## Active canonical docs
 
-- `v1_7_multi_agent_orchestration_spec.md`
+- `README.md`
 - `v1_7_runtime_event_contract.md`
-- `v1_7_feature_flag_rollout_spec.md`
-- `v1_7_manual_sampling_and_acceptance.md`
-- `v1_7_multi_link_api_summary.md`
+- `tool_trace_contract.md`
+
+## Legacy references
+
+Older product-specific orchestration specs now live under:
+- `documents/archive/orchestration/legacy_insights/`
+- `documents/archive/orchestration/legacy_explore/`
+
+Those files remain useful as historical implementation references, but they are not active canonical docs.

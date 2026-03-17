@@ -1,3 +1,12 @@
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/orchestration/README.md`
+> - `documents/orchestration/v1_7_runtime_event_contract.md`
+> - `documents/orchestration/tool_trace_contract.md`
+
 # Vesti v1.7 Multi-Link API Summary (RPC / Event / Persistence)
 
 Date: 2026-02-23  

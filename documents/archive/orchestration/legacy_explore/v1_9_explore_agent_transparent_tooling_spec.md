@@ -1,3 +1,12 @@
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/orchestration/README.md`
+> - `documents/orchestration/v1_7_runtime_event_contract.md`
+> - `documents/orchestration/tool_trace_contract.md`
+
 # Vesti v1.9 Explore Transparent Agent Tooling Spec
 
 Version: v1.9.0-proposed  

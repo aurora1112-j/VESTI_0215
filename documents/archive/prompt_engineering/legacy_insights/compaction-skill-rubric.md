@@ -1,3 +1,13 @@
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/prompt_engineering/README.md`
+> - `documents/prompt_engineering/export_multi_agent_architecture.md`
+> - `documents/prompt_engineering/export_prompt_contract.md`
+> - `documents/prompt_engineering/export_eval_and_drift_gate.md`
+
 # Vesti Agent A Rubric: Compaction Skill 评分与验收准则
 
 Version: v1.7.0-rc.x  

@@ -1,155 +1,60 @@
-﻿# Vesti v1.7 Runtime Event Contract
+# Generic Pipeline Progress Event Contract
 
-Version: v1.7.0-rc.x  
-Status: Docs Freeze  
-Audience: Offscreen engineering, Sidepanel engineering, QA
+Status: Active canonical runtime contract  
+Audience: Runtime engineers, UI consumers, QA
 
----
+## Purpose
 
-## 0. Purpose
+Define the shared event shape for bounded pipeline progress reporting.
 
-Define a typed push-event contract for orchestration progress reporting from Offscreen to Sidepanel.
+This document is generic by intent. It is not owned by Insights as a product line.
 
-This contract is internal and does not change external APIs.
+## Compatibility note
 
----
-
-## 1. Event Identity
-
-Canonical event message type:
-
+The currently shipped extension still uses the legacy message type:
 - `INSIGHT_PIPELINE_PROGRESS`
 
-Direction:
+That compatibility name does not make Insights the architectural owner of this contract.
 
-- sender: Offscreen
-- receiver: Sidepanel
+## Required payload shape
 
-Transport:
+Every pipeline progress payload must provide:
+- `pipelineId`
+- `scope`
+- `targetId`
+- `stage`
+- `status`
+- `seq`
+- `attempt`
+- `startedAt`
+- `updatedAt`
+- `route`
+- `modelId`
+- `promptVersion`
 
-- chrome runtime push event (no polling canonical path)
+Optional:
+- `message`
 
----
+## Contract rules
 
-## 2. Type Contract
+- `seq` is strictly monotonic within one pipeline
+- consumers deduplicate by `pipelineId + seq`
+- each stage transition emits at least one event
+- terminal state must be explicit
+- raw stack traces do not belong in the user-facing event payload
 
-```ts
-export type InsightPipelineScope = "summary" | "weekly";
+## Stage semantics
 
-export type InsightPipelineStage =
-  | "initiating_pipeline"
-  | "distilling_core_logic"
-  | "curating_summary"
-  | "aggregating_weekly_digest"
-  | "persisting_result"
-  | "completed"
-  | "degraded_fallback";
+This contract does not freeze one universal stage taxonomy.
 
-export type InsightPipelineStatus = "started" | "in_progress" | "succeeded" | "fallback" | "failed";
+It requires only that each bounded pipeline:
+- declares its own ordered stages
+- emits terminal completion or degraded fallback explicitly
+- keeps stage names stable within that pipeline family
 
-export interface InsightPipelineProgressEvent {
-  type: "INSIGHT_PIPELINE_PROGRESS";
-  pipelineId: string;
-  scope: InsightPipelineScope;
-  targetId: string;
-  stage: InsightPipelineStage;
-  status: InsightPipelineStatus;
-  seq: number;
-  attempt: number;
-  startedAt: number;
-  updatedAt: number;
-  route: "proxy" | "modelscope";
-  modelId: string;
-  promptVersion: string;
-  message?: string;
-}
-```
+## Intended reuse
 
-Required fields (must always be present):
-
-- `pipelineId`, `scope`, `targetId`, `stage`, `status`, `seq`, `attempt`, `startedAt`, `updatedAt`, `route`, `modelId`, `promptVersion`
-
-Optional fields:
-
-- `message` for human-readable progress hints or fallback reason summary.
-
----
-
-## 3. Sequencing and Ordering Rules
-
-1. `seq` starts at 1 for each new `pipelineId`.
-2. `seq` is strictly increasing per pipeline.
-3. Late/out-of-order events must be ignored by consumers when `seq` <= last seen sequence.
-4. Terminal stage is mandatory: `completed` or `degraded_fallback`.
-
----
-
-## 4. Stage Emission Requirements
-
-### 4.1 Summary
-
-Expected progression:
-
-1. `initiating_pipeline`
-2. `distilling_core_logic`
-3. `curating_summary`
-4. `persisting_result`
-5. `completed` or `degraded_fallback`
-
-### 4.2 Weekly
-
-Expected progression:
-
-1. `initiating_pipeline`
-2. `aggregating_weekly_digest`
-3. `persisting_result`
-4. `completed` or `degraded_fallback`
-
-At least one event must be emitted when entering each stage.
-
----
-
-## 5. Failure Semantics
-
-1. Internal non-terminal errors should emit `status=fallback` on active stage and continue chain when possible.
-2. Terminal unrecoverable outcome must emit `stage=degraded_fallback` before completion path returns.
-3. Raw exception stack traces are not emitted in event payloads.
-
----
-
-## 6. Sidepanel Consumer Contract
-
-Sidepanel behavior:
-
-1. Subscribe once and filter `type === INSIGHT_PIPELINE_PROGRESS`.
-2. Deduplicate by `pipelineId + seq`.
-3. Keep latest event snapshot per pipeline.
-4. If terminal event is received, stop spinner/state text updates for that pipeline.
-
-Recovery behavior:
-
-- If Sidepanel remounts mid-run, it may miss older events; renderer must remain stable from latest received event and final persisted data readback.
-
----
-
-## 7. Compatibility and Rollout
-
-This event contract is guarded behind `enable_v17_progress_events`.
-
-Defaults:
-
-- off in production
-- on for QA staging validation
-
-When flag is off:
-
-- generation must continue without progress events.
-
----
-
-## 8. Acceptance Checks
-
-1. Summary and weekly both emit stage-correct events.
-2. `seq` monotonicity is preserved under retries.
-3. Terminal event is always emitted exactly once per pipeline.
-4. Sidepanel does not regress when progress events are disabled.
+This contract can be reused by:
+- legacy Insights compatibility flows
+- future export multi-agent stages
+- other bounded agent pipelines that need progress visibility

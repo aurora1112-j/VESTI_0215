@@ -1,4 +1,13 @@
-﻿# Vesti v1.7 Feature Flag Rollout Spec
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/orchestration/README.md`
+> - `documents/orchestration/v1_7_runtime_event_contract.md`
+> - `documents/orchestration/tool_trace_contract.md`
+
+# Vesti v1.7 Feature Flag Rollout Spec
 
 Version: v1.7.0-rc.x  
 Status: Docs Freeze  

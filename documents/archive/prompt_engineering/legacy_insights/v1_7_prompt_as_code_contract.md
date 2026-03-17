@@ -1,4 +1,14 @@
-﻿# Vesti v1.7 Prompt-as-Code Contract
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/prompt_engineering/README.md`
+> - `documents/prompt_engineering/export_multi_agent_architecture.md`
+> - `documents/prompt_engineering/export_prompt_contract.md`
+> - `documents/prompt_engineering/export_eval_and_drift_gate.md`
+
+# Vesti v1.7 Prompt-as-Code Contract
 
 Version: v1.7.0-rc.x  
 Status: Docs Freeze  

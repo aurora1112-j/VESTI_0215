@@ -1,4 +1,14 @@
-﻿# Agent B — Thread Summary Skill
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/prompt_engineering/README.md`
+> - `documents/prompt_engineering/export_multi_agent_architecture.md`
+> - `documents/prompt_engineering/export_prompt_contract.md`
+> - `documents/prompt_engineering/export_eval_and_drift_gate.md`
+
+# Agent B — Thread Summary Skill
 **Artifact ID:** `agent_b_thread_summary`  
 **Target Schema:** `conversation_summary.v2`  
 **Mode:** strict structural mapping · zero second-pass inference  

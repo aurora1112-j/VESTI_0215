@@ -1,4 +1,13 @@
-﻿# Vesti v1.7 Manual Sampling and Acceptance
+> Legacy Notice
+>
+> Status: Legacy reference  
+> Not canonical for export multi-agent  
+> Active canonical replacements:
+> - `documents/orchestration/README.md`
+> - `documents/orchestration/v1_7_runtime_event_contract.md`
+> - `documents/orchestration/tool_trace_contract.md`
+
+# Vesti v1.7 Manual Sampling and Acceptance
 
 Version: v1.7.0-rc.x  
 Status: QA Gate Spec  

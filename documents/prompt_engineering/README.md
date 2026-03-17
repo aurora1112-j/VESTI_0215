@@ -1,33 +1,56 @@
-﻿# Prompt Engineering Documentation Package
+# Prompt Engineering Documentation Package
 
-Status: Active canonical documentation tree for prompt, proxy, and prompt-UI interaction work  
-Audience: Prompt engineers, frontend engineers, release owners
+Status: Active canonical documentation tree for export-centric prompt engineering, proxy contracts, and export eval governance  
+Audience: Prompt engineers, runtime engineers, release owners
 
 ## Purpose
 
-`documents/prompt_engineering/` is the source of truth for prompt-as-code contracts, prompt schema safety, model/proxy routing notes, and prompt-linked UI engineering guidance.
+`documents/prompt_engineering/` is the canonical documentation tree for the export multi-agent direction.
 
-It owns:
-- prompt-as-code contracts
-- prompt schema drift gates
-- model and proxy interface notes
-- prompt skill docs that are still operational references
-- prompt/UI interaction guidance
+This directory owns:
+- export multi-agent architecture
+- export prompt artifact contracts
+- export eval and drift-governance rules
+- model/proxy interface baselines used by export
+- prompt inventory and migration debt tracking
 
-It does not own:
-- parser normalization strategy
-- dashboard runtime contracts
-- dated handoff snapshots unless directly promoted here
+This directory does not own:
+- runtime event transport contracts
+- Explore product flow specifications
+- legacy Insights prompt workflow docs
+- the runtime prompt text source itself
 
-## Current source-of-truth docs
+## Canonical split
 
-- `v1_7_prompt_as_code_contract.md`
-- `v1_7_prompt_schema_drift_gate.md`
-- `embedding_proxy_contract_v2_0.md`
-- `insights_prompt_ui_engineering.md`
+Two sources of truth now coexist with different responsibilities:
+
+- Runtime prompt source: `frontend/src/lib/prompts/**`
+- Documentation source: `documents/prompt_engineering/**`
+
+Documentation explains contracts, architecture, inventory, and evaluation. Runtime prompt text is no longer canonical in markdown docs.
+
+## Active canonical docs
+
 - `model_settings.md`
+- `embedding_proxy_contract_v2_0.md`
+- `export_multi_agent_architecture.md`
+- `export_prompt_contract.md`
+- `export_eval_and_drift_gate.md`
+- `export_prompt_inventory.md`
+
+## Transition / supporting docs
+
 - `export_compression_current_architecture.md`
+  - transition note for the currently shipped export compression path
+  - superseded in architecture authority by `export_multi_agent_architecture.md`
+- `v2_0_proxy_engineer_handoff.md`
+  - operational proxy handoff reference aligned with the active model baseline
 
-## Supporting operational docs
+## Legacy and archived docs
 
-Skill docs such as `thread-summary-skill.md`, `weekly-digest-skill.md`, `synthesis_skill.md`, and `compaction-skill.md` remain valid operational references under this directory.
+Legacy Insights-oriented prompt and orchestration docs now live under:
+- `documents/archive/prompt_engineering/legacy_insights/`
+- `documents/archive/orchestration/legacy_insights/`
+- `documents/archive/orchestration/legacy_explore/`
+
+Those files remain valuable as historical references, but they are not canonical for export multi-agent design.
