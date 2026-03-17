@@ -1,5 +1,7 @@
 import {
+  Check,
   CheckSquare,
+  Copy,
   Download,
   Loader2,
   Square,
@@ -27,19 +29,24 @@ interface BatchFeedback {
 interface BatchActionBarProps {
   mode: BatchActionMode;
   exportMode: ConversationExportContentMode;
+  selectedExportFormat: ConversationExportFormat;
   selectedCount: number;
   totalCount: number;
   actionKey: string | null;
   deleteConfirmValue: string;
+  clipboardAvailable: boolean;
+  copyJustSucceeded: boolean;
   feedback?: BatchFeedback | null;
   onDeleteConfirmValueChange: (value: string) => void;
   onExportModeChange: (mode: ConversationExportContentMode) => void;
+  onExportFormatChange: (format: ConversationExportFormat) => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
   onToggleExportPanel: () => void;
   onToggleDeletePanel: () => void;
   onClosePanel: () => void;
-  onChooseExportFormat: (format: ConversationExportFormat) => void;
+  onDownload: () => void;
+  onCopy: () => void;
   onConfirmDelete: () => void;
   onExit: () => void;
 }
@@ -50,19 +57,19 @@ const EXPORT_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    format: "json",
-    name: "JSON",
-    description: "Structured export for backup, review, and reprocessing",
+    format: "md",
+    name: "Markdown",
+    description: "Markdown export for notes, docs, and writing tools",
   },
   {
     format: "txt",
-    name: "TXT",
+    name: "Text",
     description: "Plain text export for quick reading and copy/paste",
   },
   {
-    format: "md",
-    name: "MD",
-    description: "Markdown export for notes, docs, and writing tools",
+    format: "json",
+    name: "JSON",
+    description: "Structured export for backup, review, and reprocessing",
   },
 ];
 
@@ -93,19 +100,24 @@ const EXPORT_MODE_OPTIONS: Array<{
 export function BatchActionBar({
   mode,
   exportMode,
+  selectedExportFormat,
   selectedCount,
   totalCount,
   actionKey,
   deleteConfirmValue,
+  clipboardAvailable,
+  copyJustSucceeded,
   feedback = null,
   onDeleteConfirmValueChange,
   onExportModeChange,
+  onExportFormatChange,
   onSelectAll,
   onClearSelection,
   onToggleExportPanel,
   onToggleDeletePanel,
   onClosePanel,
-  onChooseExportFormat,
+  onDownload,
+  onCopy,
   onConfirmDelete,
   onExit,
 }: BatchActionBarProps) {
@@ -117,6 +129,9 @@ export function BatchActionBar({
   const selectedMode =
     EXPORT_MODE_OPTIONS.find((option) => option.mode === exportMode) ||
     EXPORT_MODE_OPTIONS[0];
+  const selectedFormat =
+    EXPORT_OPTIONS.find((option) => option.format === selectedExportFormat) ||
+    EXPORT_OPTIONS[0];
   const feedbackClassName =
     feedback?.tone === "error"
       ? "is-error"
@@ -128,7 +143,34 @@ export function BatchActionBar({
   const toolbarNeutralActionClassName = `${toolbarActionBaseClassName} text-text-secondary hover:bg-bg-secondary hover:text-text-primary`;
   const toolbarDeleteActionClassName = `${toolbarActionBaseClassName} text-danger hover:bg-bg-secondary`;
   const toolbarSelectActionClassName = `${toolbarNeutralActionClassName} px-1.5`;
-  const hasStructuredFeedback = Boolean(feedback?.title || feedback?.detail || feedback?.hint);
+  const hasStructuredFeedback = Boolean(
+    feedback?.title || feedback?.detail || feedback?.technicalSummary || feedback?.hint
+  );
+  const downloadBusy = actionKey === `download-${selectedExportFormat}`;
+  const copyBusy = actionKey === `copy-${selectedExportFormat}`;
+  const exportActionsDisabled = Boolean(actionKey) || !hasSelection;
+  const copyDisabled = exportActionsDisabled || !clipboardAvailable;
+  const copyButtonClassName = [
+    "data-export-action-btn",
+    exportMode !== "full" ? "is-ai-ready" : "",
+    copyJustSucceeded ? "is-success" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const copyButtonLabel = copyBusy
+    ? "Generating"
+    : copyJustSucceeded
+      ? "Copied"
+      : clipboardAvailable
+        ? "Copy"
+        : "Copy unavailable";
+  const copyButtonIcon = copyBusy ? (
+    <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+  ) : copyJustSucceeded ? (
+    <Check className="h-3.5 w-3.5" strokeWidth={1.8} />
+  ) : (
+    <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
+  );
 
   return (
     <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-3">
@@ -179,31 +221,50 @@ export function BatchActionBar({
           </p>
 
           <p className="mt-3 data-subgroup-label">Export format</p>
-          <div className="data-export-list">
+          <div className="data-format-selector">
             {EXPORT_OPTIONS.map((option) => {
-              const busy = actionKey === `export-${option.format}`;
+              const active = selectedExportFormat === option.format;
               return (
-                <div className="data-export-item" key={option.format}>
-                  <div className="data-export-info">
-                    <p className="data-export-name">{option.name}</p>
-                    <p className="data-export-desc">{option.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="data-export-btn"
-                    disabled={Boolean(actionKey) || !hasSelection}
-                    onClick={() => onChooseExportFormat(option.format)}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
-                    ) : (
-                      <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    )}
-                    Export
-                  </button>
-                </div>
+                <button
+                  key={option.format}
+                  type="button"
+                  onClick={() => onExportFormatChange(option.format)}
+                  disabled={Boolean(actionKey)}
+                  className={`data-format-option ${active ? "is-selected" : ""}`}
+                >
+                  <span className="data-format-option-name">{option.name}</span>
+                  <span className="data-format-option-desc">{option.description}</span>
+                </button>
               );
             })}
+          </div>
+          <p className="mt-2 text-[11px] leading-[1.45] text-text-secondary">
+            Current format: {selectedFormat.name}
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="data-export-action-btn"
+              disabled={exportActionsDisabled}
+              onClick={onDownload}
+            >
+              {downloadBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+              ) : (
+                <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+              )}
+              {downloadBusy ? "Generating" : "Download"}
+            </button>
+            <button
+              type="button"
+              className={copyButtonClassName}
+              disabled={copyDisabled}
+              onClick={onCopy}
+            >
+              {copyButtonIcon}
+              {copyButtonLabel}
+            </button>
           </div>
 
           {feedback &&

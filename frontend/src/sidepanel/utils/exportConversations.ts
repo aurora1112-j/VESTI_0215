@@ -341,3 +341,16 @@ export function downloadConversationExport(
   link.click();
   URL.revokeObjectURL(url);
 }
+
+export async function copyConversationExport(
+  result: ConversationExportResult
+): Promise<void> {
+  if (
+    typeof navigator === "undefined" ||
+    typeof navigator.clipboard?.writeText !== "function"
+  ) {
+    throw new Error("Clipboard copy is unavailable in this context.");
+  }
+
+  await navigator.clipboard.writeText(result.content);
+}

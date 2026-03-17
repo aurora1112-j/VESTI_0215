@@ -4,7 +4,6 @@ import type {
   Conversation,
   ConversationMatchSummary,
   DashboardStats,
-  ExportFormat,
   Platform,
 } from "~lib/types";
 import {
@@ -24,10 +23,14 @@ import type { ThreadsEvent, ThreadsSearchSession } from "../types/threadsSearch"
 import { useBatchSelection } from "../hooks/useBatchSelection";
 import { BatchActionBar } from "../components/BatchActionBar";
 import {
+  copyConversationExport,
   downloadConversationExport,
   exportConversations,
 } from "../utils/exportConversations";
-import type { ConversationExportContentMode } from "../types/export";
+import type {
+  ConversationExportContentMode,
+  ConversationExportFormat,
+} from "../types/export";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -108,6 +111,8 @@ export function TimelinePage({
   const [visibleConversations, setVisibleConversations] = useState<Conversation[]>([]);
   const [exportMode, setExportMode] =
     useState<ConversationExportContentMode>("full");
+  const [selectedExportFormat, setSelectedExportFormat] =
+    useState<ConversationExportFormat>("md");
   const [batchActionKey, setBatchActionKey] = useState<string | null>(null);
   const [deleteConfirmValue, setDeleteConfirmValue] = useState("");
   const [batchFeedback, setBatchFeedback] = useState<{
@@ -115,10 +120,16 @@ export function TimelinePage({
     tone: "default" | "warning" | "error";
     title?: string;
     detail?: string;
+    technicalSummary?: string;
     hint?: string;
   } | null>(null);
+  const [copyJustSucceeded, setCopyJustSucceeded] = useState(false);
   const suppressNextReaderOpenRef = useRef(false);
   const suppressNextReaderOpenTimerRef = useRef<number | null>(null);
+  const copySuccessTimerRef = useRef<number | null>(null);
+  const clipboardAvailable =
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard?.writeText === "function";
 
   useEffect(() => {
     let cancelled = false;
@@ -139,8 +150,28 @@ export function TimelinePage({
       if (suppressNextReaderOpenTimerRef.current !== null) {
         window.clearTimeout(suppressNextReaderOpenTimerRef.current);
       }
+      if (copySuccessTimerRef.current !== null) {
+        window.clearTimeout(copySuccessTimerRef.current);
+      }
     };
   }, []);
+
+  const clearCopySuccess = useCallback(() => {
+    setCopyJustSucceeded(false);
+    if (copySuccessTimerRef.current !== null) {
+      window.clearTimeout(copySuccessTimerRef.current);
+      copySuccessTimerRef.current = null;
+    }
+  }, []);
+
+  const markCopySuccess = useCallback(() => {
+    clearCopySuccess();
+    setCopyJustSucceeded(true);
+    copySuccessTimerRef.current = window.setTimeout(() => {
+      setCopyJustSucceeded(false);
+      copySuccessTimerRef.current = null;
+    }, 1800);
+  }, [clearCopySuccess]);
 
   const firstCapturedTodayCount = stats?.firstCapturedTodayCount ?? 0;
   const platformDistribution = stats?.platformDistribution ?? null;
@@ -192,28 +223,33 @@ export function TimelinePage({
 
   const handleClearSelection = useCallback(() => {
     setDeleteConfirmValue("");
+    clearCopySuccess();
     clearSelection();
-  }, [clearSelection]);
+  }, [clearCopySuccess, clearSelection]);
 
   const handleExitBatchMode = useCallback(() => {
     setDeleteConfirmValue("");
     setBatchActionKey(null);
     setBatchFeedback(null);
+    clearCopySuccess();
     exitBatchMode();
-  }, [exitBatchMode]);
+  }, [clearCopySuccess, exitBatchMode]);
 
   const handleToggleExportPanel = useCallback(() => {
     setDeleteConfirmValue("");
     setBatchFeedback(null);
+    clearCopySuccess();
     if (batchMode === "export_panel") {
       closePanel();
       return;
     }
+    setSelectedExportFormat("md");
     openExportPanel();
-  }, [batchMode, closePanel, openExportPanel]);
+  }, [batchMode, clearCopySuccess, closePanel, openExportPanel]);
 
   const handleToggleDeletePanel = useCallback(() => {
     setBatchFeedback(null);
+    clearCopySuccess();
     if (batchMode === "delete_panel") {
       setDeleteConfirmValue("");
       closePanel();
@@ -221,54 +257,146 @@ export function TimelinePage({
     }
     setDeleteConfirmValue("");
     openDeletePanel();
-  }, [batchMode, closePanel, openDeletePanel]);
+  }, [batchMode, clearCopySuccess, closePanel, openDeletePanel]);
 
   const handleClosePanel = useCallback(() => {
     setDeleteConfirmValue("");
+    clearCopySuccess();
     closePanel();
-  }, [closePanel]);
+  }, [clearCopySuccess, closePanel]);
 
-  const handleChooseExportFormat = useCallback(
-    async (format: ExportFormat) => {
+  const buildExportFeedback = useCallback(
+    (
+      result: Awaited<ReturnType<typeof exportConversations>>,
+      action: "download" | "copy"
+    ) => {
+      const actionHint =
+        action === "download"
+          ? `Saved as ${result.filename}.`
+          : "Copied current export to clipboard.";
+
+      if (
+        result.notice?.title ||
+        result.notice?.detail ||
+        result.notice?.technicalSummary ||
+        result.notice?.hint
+      ) {
+        return {
+          message: result.notice.message,
+          tone: result.notice.tone,
+          title: result.notice.title,
+          detail: result.notice.detail,
+          technicalSummary: result.notice.technicalSummary,
+          hint: result.notice.hint
+            ? `${result.notice.hint} ${actionHint}`
+            : actionHint,
+        };
+      }
+
+      return {
+        message:
+          action === "download"
+            ? result.notice
+              ? `${result.notice.message} Saved as ${result.filename}.`
+              : `Exported ${result.filename}`
+            : result.notice
+              ? `${result.notice.message} Copied current export to clipboard.`
+              : `Copied current ${result.filename.split(".").pop()?.toUpperCase() || "export"} export to clipboard.`,
+        tone: result.notice?.tone ?? "default",
+      };
+    },
+    []
+  );
+
+  const runExportAction = useCallback(
+    async (action: "download" | "copy") => {
       if (selectedConversations.length === 0) return;
-      setBatchActionKey(`export-${format}`);
+      const format = selectedExportFormat;
+      setBatchActionKey(`${action}-${format}`);
       setBatchFeedback(null);
+      clearCopySuccess();
       try {
         const result = await exportConversations(selectedConversations, {
           contentMode: exportMode,
           format,
         });
-        downloadConversationExport(result);
-        closePanel();
-        if (result.notice?.title || result.notice?.detail || result.notice?.hint) {
-          setBatchFeedback({
-            message: result.notice.message,
-            tone: result.notice.tone,
-            title: result.notice.title,
-            detail: result.notice.detail,
-            technicalSummary: result.notice.technicalSummary,
-            hint: result.notice.hint
-              ? `${result.notice.hint} Saved as ${result.filename}.`
-              : `Saved as ${result.filename}.`,
-          });
+        if (action === "download") {
+          downloadConversationExport(result);
+          closePanel();
+          setBatchFeedback(buildExportFeedback(result, "download"));
         } else {
-          setBatchFeedback({
-            message: result.notice
-              ? `${result.notice.message} Saved as ${result.filename}.`
-              : `Exported ${result.filename}`,
-            tone: result.notice?.tone ?? "default",
-          });
+          try {
+            await copyConversationExport(result);
+            markCopySuccess();
+            setBatchFeedback(buildExportFeedback(result, "copy"));
+          } catch (error) {
+            setBatchFeedback({
+              message: "Generated export could not be copied to the clipboard.",
+              tone: "error",
+              title: result.notice?.title,
+              detail:
+                result.notice?.detail ||
+                getErrorMessage(error),
+              technicalSummary: result.notice?.technicalSummary,
+              hint: result.notice?.hint
+                ? `${result.notice.hint} Check clipboard permissions or use Download instead.`
+                : "Check clipboard permissions or use Download instead.",
+            });
+          }
         }
       } catch (error) {
         setBatchFeedback({
-          message: getErrorMessage(error),
+          message:
+            action === "copy"
+              ? "Generated export could not be copied to the clipboard."
+              : getErrorMessage(error),
           tone: "error",
+          detail:
+            action === "copy"
+              ? getErrorMessage(error)
+              : undefined,
+          hint:
+            action === "copy"
+              ? "Check clipboard permissions or use Download instead."
+              : undefined,
         });
       } finally {
         setBatchActionKey(null);
       }
     },
-    [closePanel, exportMode, selectedConversations]
+    [
+      buildExportFeedback,
+      clearCopySuccess,
+      closePanel,
+      exportMode,
+      markCopySuccess,
+      selectedConversations,
+      selectedExportFormat,
+    ]
+  );
+
+  const handleDownload = useCallback(() => {
+    void runExportAction("download");
+  }, [runExportAction]);
+
+  const handleCopy = useCallback(() => {
+    void runExportAction("copy");
+  }, [runExportAction]);
+
+  const handleExportModeChange = useCallback(
+    (mode: ConversationExportContentMode) => {
+      clearCopySuccess();
+      setExportMode(mode);
+    },
+    [clearCopySuccess]
+  );
+
+  const handleExportFormatChange = useCallback(
+    (format: ConversationExportFormat) => {
+      clearCopySuccess();
+      setSelectedExportFormat(format);
+    },
+    [clearCopySuccess]
   );
 
   const handleConfirmDelete = useCallback(async () => {
@@ -348,6 +476,7 @@ export function TimelinePage({
   const handleSelectFromMenu = (id: number) => {
     setDeleteConfirmValue("");
     setBatchFeedback(null);
+    clearCopySuccess();
     armSuppressNextReaderOpen();
     enterBatchMode(id);
   };
@@ -522,19 +651,24 @@ export function TimelinePage({
           <BatchActionBar
             mode={activeBatchMode}
             exportMode={exportMode}
+            selectedExportFormat={selectedExportFormat}
             selectedCount={selectedCount}
             totalCount={totalCount}
             actionKey={batchActionKey}
             deleteConfirmValue={deleteConfirmValue}
+            clipboardAvailable={clipboardAvailable}
+            copyJustSucceeded={copyJustSucceeded}
             feedback={batchFeedback}
             onDeleteConfirmValueChange={setDeleteConfirmValue}
-            onExportModeChange={setExportMode}
+            onExportModeChange={handleExportModeChange}
+            onExportFormatChange={handleExportFormatChange}
             onSelectAll={isAllSelected ? handleClearSelection : selectAll}
             onClearSelection={handleClearSelection}
             onToggleExportPanel={handleToggleExportPanel}
             onToggleDeletePanel={handleToggleDeletePanel}
             onClosePanel={handleClosePanel}
-            onChooseExportFormat={handleChooseExportFormat}
+            onDownload={handleDownload}
+            onCopy={handleCopy}
             onConfirmDelete={handleConfirmDelete}
             onExit={handleExitBatchMode}
           />
