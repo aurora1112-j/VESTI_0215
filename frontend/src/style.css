@@ -3136,6 +3136,23 @@
   color: inherit;
 }
 
+.reader-ast-math-shell {
+  position: relative;
+}
+
+.reader-ast-math-shell-inline {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.reader-ast-math-shell-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
 .reader-ast-math-block {
   display: block;
   margin: 4px 0;
@@ -3151,6 +3168,56 @@
 .reader-ast-math-fallback {
   color: hsl(var(--text-secondary));
   font-family: var(--font-mono);
+}
+
+.reader-ast-math-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border-default));
+  background-color: hsl(var(--bg-surface));
+  color: hsl(var(--text-secondary));
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  transition: opacity 160ms ease, color 160ms ease, border-color 160ms ease,
+    background-color 160ms ease, transform 160ms ease;
+}
+
+.reader-ast-math-copy.is-inline {
+  position: absolute;
+  top: -14px;
+  right: -6px;
+  padding: 4px 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+}
+
+.reader-ast-math-shell-inline:hover .reader-ast-math-copy.is-inline,
+.reader-ast-math-shell-inline:focus-within .reader-ast-math-copy.is-inline {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.reader-ast-math-copy.is-block {
+  padding: 5px 8px;
+}
+
+.reader-ast-math-copy:hover {
+  border-color: hsl(var(--border-strong));
+  color: hsl(var(--text-primary));
+  background-color: hsl(var(--bg-secondary));
+  transform: translateY(-1px);
+}
+
+.reader-ast-math-copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--border-focus));
+  opacity: 1;
 }
 
 @layer utilities {

@@ -13,6 +13,7 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
@@ -514,10 +515,15 @@ export class ChatGPTParser implements IParser {
 
     const contentEl = this.resolveContentElement(node, role);
     const sanitizedContent = this.sanitizeContentElement(contentEl);
-    const textContent = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
     const ast = extractAstFromElement(sanitizedContent, {
       platform: "ChatGPT",
       perfMode,
+    });
+    const fallbackText = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
+    const textContent = resolveCanonicalMessageText({
+      fallbackText,
+      ast: ast.root,
+      normalizeAstText: (value: string) => this.cleanExtractedText(value),
     });
 
     return {

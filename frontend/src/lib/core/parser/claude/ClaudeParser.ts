@@ -12,6 +12,7 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
@@ -580,11 +581,16 @@ export class ClaudeParser implements IParser {
       platform: "Claude",
       perfMode,
     });
+    const textContent = resolveCanonicalMessageText({
+      fallbackText: snapshot.textContent,
+      ast: ast.root,
+      normalizeAstText: (value: string) => this.cleanExtractedText(value),
+    });
 
     return {
       message: {
         role,
-        textContent: snapshot.textContent,
+        textContent,
         contentAst: ast.root,
         contentAstVersion: ast.root ? "ast_v1" : null,
         degradedNodesCount: ast.degradedNodesCount,

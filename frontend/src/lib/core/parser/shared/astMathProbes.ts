@@ -1,6 +1,19 @@
 import type { Platform } from "../../../types";
 
-const PRIMARY_SELECTOR_BY_PLATFORM: Record<"ChatGPT" | "Claude" | "Gemini", string[]> = {
+type MathDomPlatform =
+  | "ChatGPT"
+  | "Claude"
+  | "Gemini"
+  | "Qwen"
+  | "DeepSeek"
+  | "Doubao";
+
+type MathNormalizationMode =
+  | "annotation-family"
+  | "gemini"
+  | "doubao";
+
+const PRIMARY_SELECTOR_BY_PLATFORM: Record<MathDomPlatform, string[]> = {
   ChatGPT: [
     "annotation[encoding='application/x-tex']",
     "script[type='math/tex']",
@@ -12,9 +25,29 @@ const PRIMARY_SELECTOR_BY_PLATFORM: Record<"ChatGPT" | "Claude" | "Gemini", stri
     "script[type='math/tex']",
   ],
   Gemini: [
+    ".math-block[data-math]",
+    ".math-inline[data-math]",
+    "[data-math]",
     "[data-formula]",
     "script[type='math/tex']",
     "annotation[encoding='application/x-tex']",
+  ],
+  Qwen: [
+    ".qwen-markdown-latex",
+    ".katex-mathml annotation",
+    "annotation[encoding='application/x-tex']",
+    "script[type='math/tex']",
+  ],
+  DeepSeek: [
+    ".ds-markdown-math",
+    ".katex-mathml annotation",
+    "annotation[encoding='application/x-tex']",
+    "script[type='math/tex']",
+  ],
+  Doubao: [
+    ".math-inline[data-custom-copy-text]",
+    ".math-block[data-custom-copy-text]",
+    "[data-custom-copy-text]",
   ],
 };
 
@@ -30,24 +63,76 @@ export interface MathProbeResult {
   source:
     | "annotation"
     | "script"
+    | "data-custom-copy-text"
+    | "data-math"
     | "data-formula"
     | "data-tex"
     | "regex-fallback";
 }
 
-function normalizeTex(raw: string): string {
-  let tex = raw.replace(/\u00a0/g, " ").trim();
-  if (!tex) return "";
+function isSupportedMathPlatform(platform: Platform): platform is MathDomPlatform {
+  return Object.prototype.hasOwnProperty.call(PRIMARY_SELECTOR_BY_PLATFORM, platform);
+}
 
-  if (tex.startsWith("$$") && tex.endsWith("$$")) {
-    tex = tex.slice(2, -2).trim();
-  } else if (tex.startsWith("\\[") && tex.endsWith("\\]")) {
-    tex = tex.slice(2, -2).trim();
-  } else if (tex.startsWith("\\(") && tex.endsWith("\\)")) {
-    tex = tex.slice(2, -2).trim();
+const HARD_ANCHOR_SELECTORS_BY_PLATFORM: Partial<Record<MathDomPlatform, string[]>> = {
+  ChatGPT: [
+    ".katex-mathml annotation[encoding='application/x-tex']",
+    "annotation[encoding='application/x-tex']",
+  ],
+  Claude: [
+    ".katex-mathml annotation[encoding='application/x-tex']",
+    "annotation[encoding='application/x-tex']",
+  ],
+  Qwen: [
+    ".katex-mathml annotation[encoding='application/x-tex']",
+    "annotation[encoding='application/x-tex']",
+  ],
+  DeepSeek: [
+    ".katex-mathml annotation[encoding='application/x-tex']",
+    "annotation[encoding='application/x-tex']",
+  ],
+  Gemini: ["[data-math]"],
+  Doubao: ["[data-custom-copy-text]"],
+};
+
+function collapseSerializedBackslashes(value: string): string {
+  return value.replace(/\\\\(?=[A-Za-z()[\]{}.,;!:=<>|+\-*/_^])/g, "\\");
+}
+
+function stripOuterMathDelimiters(value: string): string {
+  let tex = value.trim();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    if (tex.startsWith("$$") && tex.endsWith("$$")) {
+      tex = tex.slice(2, -2).trim();
+      changed = true;
+      continue;
+    }
+    if (tex.startsWith("\\[") && tex.endsWith("\\]")) {
+      tex = tex.slice(2, -2).trim();
+      changed = true;
+      continue;
+    }
+    if (tex.startsWith("\\(") && tex.endsWith("\\)")) {
+      tex = tex.slice(2, -2).trim();
+      changed = true;
+    }
   }
 
   return tex;
+}
+
+function normalizeTex(raw: string, mode: MathNormalizationMode): string {
+  let tex = raw.replace(/\u00a0/g, " ").trim();
+  if (!tex) return "";
+
+  if (mode === "annotation-family" || mode === "gemini") {
+    tex = collapseSerializedBackslashes(tex);
+  }
+
+  return stripOuterMathDelimiters(tex);
 }
 
 function inferDisplayMode(element: Element, raw: string): boolean {
@@ -125,11 +210,7 @@ export function isLikelyMathElement(element: Element, platform: Platform): boole
     return element.getAttribute("type") === "math/tex";
   }
 
-  if (
-    platform === "ChatGPT" ||
-    platform === "Claude" ||
-    platform === "Gemini"
-  ) {
+  if (isSupportedMathPlatform(platform)) {
     const selectors = PRIMARY_SELECTOR_BY_PLATFORM[platform];
     if (matchesAnyMathMarker(element, selectors)) {
       return true;
@@ -146,50 +227,112 @@ export function isLikelyMathElement(element: Element, platform: Platform): boole
     return true;
   }
 
-  if (element.getAttribute("data-formula") || element.getAttribute("data-tex")) {
+  if (
+    element.getAttribute("data-math") ||
+    element.getAttribute("data-formula") ||
+    element.getAttribute("data-tex") ||
+    element.getAttribute("data-custom-copy-text")
+  ) {
     return true;
   }
 
   return false;
 }
 
-function fromRaw(raw: string, element: Element, source: MathProbeResult["source"]): MathProbeResult | null {
-  const tex = normalizeTex(raw);
+export function hasHardMathAnchor(element: Element, platform: Platform): boolean {
+  if (!isSupportedMathPlatform(platform)) {
+    return false;
+  }
+
+  const selectors = HARD_ANCHOR_SELECTORS_BY_PLATFORM[platform] ?? [];
+  return selectors.some(
+    (selector) => element.matches(selector) || element.querySelector(selector) !== null,
+  );
+}
+
+function fromRaw(
+  raw: string,
+  element: Element,
+  source: MathProbeResult["source"],
+  mode: MathNormalizationMode,
+): MathProbeResult | null {
+  const normalizedRaw = mode === "annotation-family" || mode === "gemini"
+    ? collapseSerializedBackslashes(raw.replace(/\u00a0/g, " ").trim())
+    : raw.replace(/\u00a0/g, " ").trim();
+  const tex = normalizeTex(raw, mode);
   if (!tex) return null;
 
   return {
     tex,
-    display: inferDisplayMode(element, raw),
+    display: inferDisplayMode(element, normalizedRaw),
     source,
   };
 }
 
-function probeChatGptMath(root: Element): MathProbeResult | null {
+function probeAnnotationFamilyMath(
+  root: Element,
+  options: {
+    allowDataTex?: boolean;
+    allowRegexFallback?: boolean;
+  } = {},
+): MathProbeResult | null {
+  const katexAnnotation = readTextFromSelfOrDescendant(root, ".katex-mathml annotation");
+  if (katexAnnotation) {
+    return fromRaw(katexAnnotation, root, "annotation", "annotation-family");
+  }
+
   const annotation = readTextFromSelfOrDescendant(
     root,
     "annotation[encoding='application/x-tex']",
   );
   if (annotation) {
-    return fromRaw(annotation, root, "annotation");
+    return fromRaw(annotation, root, "annotation", "annotation-family");
   }
 
   const scriptTex = readTextFromSelfOrDescendant(root, "script[type='math/tex']");
   if (scriptTex) {
-    return fromRaw(scriptTex, root, "script");
+    return fromRaw(scriptTex, root, "script", "annotation-family");
   }
 
-  const dataTex = readAttrFromSelfOrDescendant(root, "[data-tex]", "data-tex");
-  if (dataTex) {
-    return fromRaw(dataTex, root, "data-tex");
+  if (options.allowDataTex) {
+    const dataTex = readAttrFromSelfOrDescendant(root, "[data-tex]", "data-tex");
+    if (dataTex) {
+      return fromRaw(dataTex, root, "data-tex", "annotation-family");
+    }
+  }
+
+  if (options.allowRegexFallback) {
+    const regexTex = extractRegexTex(root.textContent ?? "");
+    if (regexTex) {
+      return fromRaw(regexTex, root, "regex-fallback", "annotation-family");
+    }
   }
 
   return null;
+}
+
+function probeChatGptMath(root: Element): MathProbeResult | null {
+  return probeAnnotationFamilyMath(root, { allowDataTex: true });
 }
 
 function probeClaudeMath(root: Element): MathProbeResult | null {
-  const katexAnnotation = readTextFromSelfOrDescendant(root, ".katex-mathml annotation");
-  if (katexAnnotation) {
-    return fromRaw(katexAnnotation, root, "annotation");
+  return probeAnnotationFamilyMath(root, { allowRegexFallback: true });
+}
+
+function probeGeminiMath(root: Element): MathProbeResult | null {
+  const dataMath = readAttrFromSelfOrDescendant(root, "[data-math]", "data-math");
+  if (dataMath) {
+    return fromRaw(dataMath, root, "data-math", "gemini");
+  }
+
+  const dataFormula = readAttrFromSelfOrDescendant(root, "[data-formula]", "data-formula");
+  if (dataFormula) {
+    return fromRaw(dataFormula, root, "data-formula", "gemini");
+  }
+
+  const scriptTex = readTextFromSelfOrDescendant(root, "script[type='math/tex']");
+  if (scriptTex) {
+    return fromRaw(scriptTex, root, "script", "gemini");
   }
 
   const annotation = readTextFromSelfOrDescendant(
@@ -197,44 +340,33 @@ function probeClaudeMath(root: Element): MathProbeResult | null {
     "annotation[encoding='application/x-tex']",
   );
   if (annotation) {
-    return fromRaw(annotation, root, "annotation");
-  }
-
-  const scriptTex = readTextFromSelfOrDescendant(root, "script[type='math/tex']");
-  if (scriptTex) {
-    return fromRaw(scriptTex, root, "script");
+    return fromRaw(annotation, root, "annotation", "gemini");
   }
 
   const regexTex = extractRegexTex(root.textContent ?? "");
   if (regexTex) {
-    return fromRaw(regexTex, root, "regex-fallback");
+    return fromRaw(regexTex, root, "regex-fallback", "gemini");
   }
 
   return null;
 }
 
-function probeGeminiMath(root: Element): MathProbeResult | null {
-  const dataFormula = readAttrFromSelfOrDescendant(root, "[data-formula]", "data-formula");
-  if (dataFormula) {
-    return fromRaw(dataFormula, root, "data-formula");
-  }
+function probeQwenMath(root: Element): MathProbeResult | null {
+  return probeAnnotationFamilyMath(root);
+}
 
-  const scriptTex = readTextFromSelfOrDescendant(root, "script[type='math/tex']");
-  if (scriptTex) {
-    return fromRaw(scriptTex, root, "script");
-  }
+function probeDeepSeekMath(root: Element): MathProbeResult | null {
+  return probeAnnotationFamilyMath(root);
+}
 
-  const annotation = readTextFromSelfOrDescendant(
+function probeDoubaoMath(root: Element): MathProbeResult | null {
+  const copyText = readAttrFromSelfOrDescendant(
     root,
-    "annotation[encoding='application/x-tex']",
+    "[data-custom-copy-text]",
+    "data-custom-copy-text",
   );
-  if (annotation) {
-    return fromRaw(annotation, root, "annotation");
-  }
-
-  const regexTex = extractRegexTex(root.textContent ?? "");
-  if (regexTex) {
-    return fromRaw(regexTex, root, "regex-fallback");
+  if (copyText) {
+    return fromRaw(copyText, root, "data-custom-copy-text", "doubao");
   }
 
   return null;
@@ -249,6 +381,15 @@ export function probeMathTex(element: Element, platform: Platform): MathProbeRes
   }
   if (platform === "Gemini") {
     return probeGeminiMath(element);
+  }
+  if (platform === "Qwen") {
+    return probeQwenMath(element);
+  }
+  if (platform === "DeepSeek") {
+    return probeDeepSeekMath(element);
+  }
+  if (platform === "Doubao") {
+    return probeDoubaoMath(element);
   }
   return null;
 }

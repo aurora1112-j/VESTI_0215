@@ -6,6 +6,12 @@ import type {
   SummaryRecord,
   WeeklyReportRecord,
 } from "../types";
+import {
+  extractAstPlainText,
+  inspectAstStructure,
+  isAstRoot,
+  shouldPreferAstCanonicalText,
+} from "../utils/astText";
 
 export type ConversationRecord = Omit<Conversation, "id"> & { id?: number };
 export type MessageRecord = Omit<Message, "id" | "content_ast"> & {
@@ -408,60 +414,101 @@ export class MemoryHubDB extends Dexie {
           "++id, conversation_id, role, created_at, [conversation_id+created_at]",
         summaries: "++id, conversationId, createdAt",
         weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
-        topics:
-          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
-        vectors: "++id, conversation_id, text_hash",
-        notes: "++id, created_at, updated_at",
-        annotations:
-          "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
-        explore_sessions: "id, updatedAt, createdAt",
-        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
-      })
-      .upgrade(async (tx) => {
-        const conversationCreatedAt = new Map<number, number>();
+          topics:
+            "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+          vectors: "++id, conversation_id, text_hash",
+          notes: "++id, created_at, updated_at",
+          annotations:
+            "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
+          explore_sessions: "id, updatedAt, createdAt",
+          explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+        })
+        .upgrade(async (tx) => {
+          const conversationCreatedAt = new Map<number, number>();
 
-        await tx
-          .table("conversations")
-          .toCollection()
-          .each((record: Partial<ConversationRecord>) => {
-            if (typeof record.id !== "number" || typeof record.created_at !== "number") {
+          await tx
+            .table("conversations")
+            .toCollection()
+            .each((record: Partial<ConversationRecord>) => {
+              if (typeof record.id !== "number" || typeof record.created_at !== "number") {
+                return;
+              }
+              conversationCreatedAt.set(record.id, record.created_at);
+            });
+
+          await tx
+            .table("annotations")
+            .toCollection()
+            .modify((record: Record<string, unknown>) => {
+              const rawCreatedAt =
+                typeof record.created_at === "number" ? record.created_at : Date.now();
+              const conversationId =
+                typeof record.conversation_id === "number" ? record.conversation_id : null;
+              const conversationTs =
+                conversationId !== null
+                  ? conversationCreatedAt.get(conversationId) ?? rawCreatedAt
+                  : rawCreatedAt;
+              const daysAfter = Math.max(
+                0,
+                Math.floor((rawCreatedAt - conversationTs) / (24 * 60 * 60 * 1000))
+              );
+
+              const legacyContent =
+                typeof record.content_text === "string"
+                  ? record.content_text
+                  : typeof record.content === "string"
+                    ? record.content
+                    : "";
+
+              record.content_text = legacyContent;
+              record.created_at = rawCreatedAt;
+              record.days_after = daysAfter;
+              delete record.content;
+              delete record.updated_at;
+            });
+
+          await tx
+            .table("messages")
+            .toCollection()
+          .modify((record: Partial<MessageRecord>) => {
+            const normalizedDegradedCount = normalizePersistedDegradedNodesCount(
+              record.degraded_nodes_count
+            );
+            if (normalizedDegradedCount !== record.degraded_nodes_count) {
+              record.degraded_nodes_count = normalizedDegradedCount;
+            }
+
+            if (record.content_ast_version !== "ast_v1" || !isAstRoot(record.content_ast)) {
               return;
             }
-            conversationCreatedAt.set(record.id, record.created_at);
-          });
 
-        await tx
-          .table("annotations")
-          .toCollection()
-          .modify((record: Record<string, unknown>) => {
-            const rawCreatedAt =
-              typeof record.created_at === "number" ? record.created_at : Date.now();
-            const conversationId =
-              typeof record.conversation_id === "number" ? record.conversation_id : null;
-            const conversationTs =
-              conversationId !== null
-                ? conversationCreatedAt.get(conversationId) ?? rawCreatedAt
-                : rawCreatedAt;
-            const daysAfter = Math.max(
-              0,
-              Math.floor((rawCreatedAt - conversationTs) / (24 * 60 * 60 * 1000))
-            );
+            const astStats = inspectAstStructure(record.content_ast);
+            if (!astStats.hasMath) {
+              return;
+            }
 
-            const legacyContent =
-              typeof record.content_text === "string"
-                ? record.content_text
-                : typeof record.content === "string"
-                  ? record.content
-                  : "";
-
-            record.content_text = legacyContent;
-            record.created_at = rawCreatedAt;
-            record.days_after = daysAfter;
-            delete record.content;
-            delete record.updated_at;
+            const canonicalText = extractAstPlainText(record.content_ast);
+            if (
+              canonicalText &&
+              canonicalText !== record.content_text &&
+              shouldPreferAstCanonicalText({
+                root: record.content_ast,
+                fallbackText:
+                  typeof record.content_text === "string" ? record.content_text : "",
+              })
+            ) {
+              record.content_text = canonicalText;
+            }
           });
       });
   }
+}
+
+function normalizePersistedDegradedNodesCount(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(value));
 }
 
 export const db = new MemoryHubDB();

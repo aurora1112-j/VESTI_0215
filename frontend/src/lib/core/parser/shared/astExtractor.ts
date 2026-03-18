@@ -11,13 +11,20 @@ import type {
   AstTextNode,
 } from "../../../types/ast";
 import type { AstPerfMode } from "./astPerfMode";
-import { isLikelyMathElement, probeMathTex } from "./astMathProbes";
+import {
+  hasHardMathAnchor,
+  isLikelyMathElement,
+  probeMathTex,
+} from "./astMathProbes";
 import { extractTableNode } from "./astTableExtractor";
 
 const P1_SUPPORTED_PLATFORMS: ReadonlySet<Platform> = new Set([
   "ChatGPT",
   "Claude",
   "Gemini",
+  "Qwen",
+  "DeepSeek",
+  "Doubao",
 ]);
 
 const SKIP_TAGS = new Set([
@@ -454,7 +461,14 @@ class AstExtractor {
       return this.extractMathNode(element);
     }
 
-    if (!this.p1Enabled && !this.isInsideCode(element) && isLikelyMathElement(element, this.options.platform)) {
+    if (
+      !this.p1Enabled &&
+      !this.isInsideCode(element) &&
+      isLikelyMathElement(element, this.options.platform)
+    ) {
+      if (hasHardMathAnchor(element, this.options.platform)) {
+        return this.extractMathNode(element);
+      }
       return this.fallbackToText(element, true);
     }
 

@@ -11,6 +11,7 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
@@ -361,10 +362,15 @@ export class DeepSeekParser implements IParser {
     if (!role) return null;
 
     const contentEl = queryFirstWithin(node, SELECTORS.messageContent);
-    const textContent = this.cleanExtractedText(safeTextContent(contentEl ?? node));
     const ast = extractAstFromElement(contentEl ?? node, {
       platform: "DeepSeek",
       perfMode,
+    });
+    const fallbackText = this.cleanExtractedText(safeTextContent(contentEl ?? node));
+    const textContent = resolveCanonicalMessageText({
+      fallbackText,
+      ast: ast.root,
+      normalizeAstText: (value: string) => this.cleanExtractedText(value),
     });
 
     return {

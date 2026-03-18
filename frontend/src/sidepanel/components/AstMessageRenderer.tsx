@@ -1,7 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import katex from "katex";
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AstNode, AstRoot } from "~lib/types/ast";
+import { astNodeToPlainText } from "~lib/utils/astText";
 import "katex/dist/katex.min.css";
 import {
   buildAstNodeKey,
@@ -50,6 +51,8 @@ interface RenderContext {
 }
 
 function MathNodeView({ tex, display }: MathNodeViewProps) {
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
   const html = useMemo(() => {
     try {
       return katex.renderToString(tex, {
@@ -61,16 +64,78 @@ function MathNodeView({ tex, display }: MathNodeViewProps) {
     }
   }, [display, tex]);
 
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(tex).catch(() => {});
+    setCopied(true);
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      copyTimerRef.current = null;
+    }, COPY_FEEDBACK_MS);
+  };
+
+  const copyButton = (
+    <button
+      type="button"
+      className={`reader-ast-math-copy ${display ? "is-block" : "is-inline"}`}
+      onClick={handleCopy}
+      aria-label="Copy TeX"
+    >
+      {copied ? <Check className="h-3 w-3" strokeWidth={1.75} /> : <Copy className="h-3 w-3" strokeWidth={1.75} />}
+      {copied ? "Copied" : "Copy TeX"}
+    </button>
+  );
+
   if (!html) {
-    return <span className="reader-ast-math-fallback">{tex}</span>;
+    if (display) {
+      return (
+        <div className="reader-ast-math-shell reader-ast-math-shell-block">
+          {copyButton}
+          <span className="reader-ast-math-fallback">{tex}</span>
+        </div>
+      );
+    }
+
+    return (
+      <span className="reader-ast-math-shell reader-ast-math-shell-inline">
+        <span className="reader-ast-math-fallback">{tex}</span>
+        {copyButton}
+      </span>
+    );
   }
 
   const className = display ? "reader-ast-math-block" : "reader-ast-math-inline";
-  return (
+  const formulaNode = (
     <span
       className={className}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+
+  if (display) {
+    return (
+      <div className="reader-ast-math-shell reader-ast-math-shell-block">
+        {copyButton}
+        {formulaNode}
+      </div>
+    );
+  }
+
+  return (
+    <span className="reader-ast-math-shell reader-ast-math-shell-inline">
+      {formulaNode}
+      {copyButton}
+    </span>
   );
 }
 
@@ -210,44 +275,6 @@ function extractLanguageLeakToken(node: AstNode): string | null {
   }
   const text = astNodeToPlainText(node).trim();
   return normalizeLanguageToken(text);
-}
-
-function astNodeToPlainText(node: AstNode): string {
-  switch (node.type) {
-    case "text":
-      return node.text;
-    case "fragment":
-    case "p":
-    case "h1":
-    case "h2":
-    case "h3":
-    case "ul":
-    case "ol":
-    case "li":
-    case "strong":
-    case "em":
-    case "blockquote":
-      return node.children.map(astNodeToPlainText).join(" ");
-    case "br":
-      return "\n";
-    case "code_inline":
-      return node.text;
-    case "code_block":
-      return node.code;
-    case "table": {
-      const header = node.headers.join(" | ");
-      const rows = node.rows.map((row) => row.join(" | "));
-      return [header, ...rows].filter(Boolean).join("\n");
-    }
-    case "math":
-      return node.tex;
-    case "attachment":
-      return node.name;
-    default: {
-      const exhaustiveGuard: never = node;
-      return exhaustiveGuard;
-    }
-  }
 }
 
 function toParagraphNode(key: string, text: string): ReactNode {

@@ -12,6 +12,7 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
@@ -358,13 +359,21 @@ export class GeminiParser implements IParser {
 
     const contentEl = queryFirstWithin(node, SELECTORS.messageContent);
     const rawText = this.cleanExtractedText(safeTextContent(contentEl ?? node));
-    const textContent =
+    const fallbackText =
       role === "user" ? this.stripUserLabelPrefix(rawText) : rawText;
     const astResult = extractAstFromElement(contentEl ?? node, {
       platform: "Gemini",
       perfMode,
     });
     const contentAst = this.sanitizeUserAstPrefix(astResult.root, role);
+    const textContent = resolveCanonicalMessageText({
+      fallbackText,
+      ast: contentAst,
+      normalizeAstText: (value: string) =>
+        role === "user"
+          ? this.stripUserLabelPrefix(this.cleanExtractedText(value))
+          : this.cleanExtractedText(value),
+    });
 
     return {
       message: {

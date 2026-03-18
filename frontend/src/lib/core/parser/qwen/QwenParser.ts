@@ -11,6 +11,7 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
 import { logger } from "../../../utils/logger";
 
@@ -812,10 +813,15 @@ export class QwenParser implements IParser {
     }
 
     const sanitizedContent = this.sanitizeContentElement(contentEl ?? node);
-    const textContent = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
     const ast = extractAstFromElement(sanitizedContent, {
       platform: "Qwen",
       perfMode,
+    });
+    const fallbackText = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
+    const textContent = resolveCanonicalMessageText({
+      fallbackText,
+      ast: ast.root,
+      normalizeAstText: (value: string) => this.cleanExtractedText(value),
     });
 
     return {

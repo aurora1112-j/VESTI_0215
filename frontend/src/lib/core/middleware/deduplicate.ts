@@ -3,13 +3,22 @@ import { countAiTurns } from "../../capture/turn-metrics";
 import { db } from "../../db/schema";
 import type { ConversationRecord, MessageRecord } from "../../db/schema";
 import { enforceStorageWriteGuard } from "../../db/storageLimits";
+import { isAstRoot } from "../../utils/astText";
 
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
 function buildParsedSignatures(messages: ParsedMessage[]): string[] {
-  return messages.map((message) => `${message.role}|${normalizeText(message.textContent)}`);
+  return messages.map((message) =>
+    buildSignature({
+      role: message.role,
+      contentText: message.textContent,
+      contentAst: message.contentAst ?? null,
+      contentAstVersion: message.contentAstVersion ?? null,
+      degradedNodesCount: message.degradedNodesCount,
+    })
+  );
 }
 
 function buildStoredSignatures(messages: MessageRecord[]): string[] {
@@ -20,7 +29,15 @@ function buildStoredSignatures(messages: MessageRecord[]): string[] {
       const bId = b.id ?? 0;
       return aId - bId;
     })
-    .map((message) => `${message.role}|${normalizeText(message.content_text)}`);
+    .map((message) =>
+      buildSignature({
+        role: message.role,
+        contentText: message.content_text,
+        contentAst: isAstRoot(message.content_ast) ? message.content_ast : null,
+        contentAstVersion: message.content_ast_version ?? null,
+        degradedNodesCount: message.degraded_nodes_count,
+      })
+    );
 }
 
 function signaturesMatch(a: string[], b: string[]): boolean {
@@ -37,6 +54,24 @@ function normalizeDegradedNodesCount(value: number | undefined): number {
     return 0;
   }
   return Math.max(0, Math.floor(value));
+}
+
+function buildSignature(params: {
+  role: "user" | "ai";
+  contentText: string;
+  contentAst: unknown | null;
+  contentAstVersion: string | null | undefined;
+  degradedNodesCount: number | undefined;
+}): string {
+  const { role, contentText, contentAst, contentAstVersion, degradedNodesCount } = params;
+  const astSignature = contentAst ? JSON.stringify(contentAst) : "";
+  return [
+    role,
+    normalizeText(contentText),
+    contentAstVersion ?? "",
+    normalizeDegradedNodesCount(degradedNodesCount),
+    astSignature,
+  ].join("|");
 }
 
 function resolveSourceCreatedAt(

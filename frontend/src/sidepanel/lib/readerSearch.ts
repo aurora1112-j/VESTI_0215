@@ -1,9 +1,16 @@
 import type { Message, Platform } from "~lib/types";
 import type { AstNode, AstRoot } from "~lib/types/ast";
+import {
+  astNodeToPlainText,
+  extractAstPlainText,
+  inspectAstStructure,
+  type AstStructureStats,
+} from "~lib/utils/astText";
 import type { ReaderOccurrence } from "../types/threadsSearch";
 
 const MIN_QUERY_LENGTH = 1;
 const MIN_AST_COVERAGE_RATIO = 0.55;
+const MIN_MATH_AST_COVERAGE_RATIO = 0.2;
 const MIN_TEXT_LENGTH_FOR_AST_CHECK = 120;
 const CLAUDE_RICH_AST_COVERAGE_FLOOR = 0.22;
 const GEMINI_USER_PREFIX_PATTERN = /^[\s\u200B\uFEFF]*you said(?:\s*[:\-])?\s*/i;
@@ -51,15 +58,6 @@ export interface FallbackSegment {
 interface TextOccurrence {
   charOffset: number;
   length: number;
-}
-
-interface AstRenderStats {
-  blockNodes: number;
-  hasList: boolean;
-  hasTable: boolean;
-  hasCodeBlock: boolean;
-  hasMath: boolean;
-  hasBlockquote: boolean;
 }
 
 interface OccurrenceIndexRef {
@@ -212,12 +210,13 @@ export function resolveMessageRenderPlan(
   const renderAst = sanitizeAstForRender(rawAst, message.role, platform);
   const sourceTextLen = normalizeForCoverage(message.content_text).length;
   const astTextLen = normalizeForCoverage(extractAstPlainText(renderAst)).length;
-  const astStats = inspectAst(renderAst);
+  const astStats = inspectAstStructure(renderAst);
   const astCoverageRatio = sourceTextLen > 0 ? astTextLen / sourceTextLen : 1;
   const hasRenderableAst = renderAst.children.length > 0;
   const shouldUseAst =
     hasRenderableAst &&
     (sourceTextLen < MIN_TEXT_LENGTH_FOR_AST_CHECK ||
+      (astStats.hasMath && astCoverageRatio >= MIN_MATH_AST_COVERAGE_RATIO) ||
       astCoverageRatio >= resolveCoverageFloor(platform, astStats));
 
   return {
@@ -252,44 +251,6 @@ export function sanitizeRootForRender(root: AstRoot): AstRoot {
     ...root,
     children: sanitizeLanguageLeakage(root.children),
   };
-}
-
-export function astNodeToPlainText(node: AstNode): string {
-  switch (node.type) {
-    case "text":
-      return node.text;
-    case "fragment":
-    case "p":
-    case "h1":
-    case "h2":
-    case "h3":
-    case "ul":
-    case "ol":
-    case "li":
-    case "strong":
-    case "em":
-    case "blockquote":
-      return node.children.map(astNodeToPlainText).join(" ");
-    case "br":
-      return "\n";
-    case "code_inline":
-      return node.text;
-    case "code_block":
-      return node.code;
-    case "table": {
-      const header = node.headers.join(" | ");
-      const rows = node.rows.map((row) => row.join(" | "));
-      return [header, ...rows].filter(Boolean).join("\n");
-    }
-    case "math":
-      return node.tex;
-    case "attachment":
-      return node.name;
-    default: {
-      const exhaustiveGuard: never = node;
-      return exhaustiveGuard;
-    }
-  }
 }
 
 function appendAstOccurrences(
@@ -428,64 +389,9 @@ function normalizeForCoverage(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function inspectAst(root: AstRoot): AstRenderStats {
-  const stats: AstRenderStats = {
-    blockNodes: 0,
-    hasList: false,
-    hasTable: false,
-    hasCodeBlock: false,
-    hasMath: false,
-    hasBlockquote: false,
-  };
-
-  const walk = (node: AstNode): void => {
-    switch (node.type) {
-      case "p":
-      case "h1":
-      case "h2":
-      case "h3":
-      case "blockquote":
-      case "code_block":
-      case "table":
-      case "ul":
-      case "ol":
-      case "li":
-        stats.blockNodes += 1;
-        break;
-      default:
-        break;
-    }
-
-    if (node.type === "ul" || node.type === "ol") stats.hasList = true;
-    if (node.type === "table") stats.hasTable = true;
-    if (node.type === "code_block") stats.hasCodeBlock = true;
-    if (node.type === "math") stats.hasMath = true;
-    if (node.type === "blockquote") stats.hasBlockquote = true;
-
-    if (
-      node.type === "fragment" ||
-      node.type === "p" ||
-      node.type === "h1" ||
-      node.type === "h2" ||
-      node.type === "h3" ||
-      node.type === "ul" ||
-      node.type === "ol" ||
-      node.type === "li" ||
-      node.type === "strong" ||
-      node.type === "em" ||
-      node.type === "blockquote"
-    ) {
-      node.children.forEach(walk);
-    }
-  };
-
-  root.children.forEach(walk);
-  return stats;
-}
-
 function resolveCoverageFloor(
   platform: Platform,
-  stats: AstRenderStats | null
+  stats: AstStructureStats | null
 ): number {
   if (!stats) {
     return MIN_AST_COVERAGE_RATIO;
@@ -507,49 +413,6 @@ function resolveCoverageFloor(
 
   return richClaudeAst ? CLAUDE_RICH_AST_COVERAGE_FLOOR : MIN_AST_COVERAGE_RATIO;
 }
-
-function extractAstPlainText(root: AstRoot): string {
-  return root.children.map(extractAstNodeText).join(" ");
-}
-
-function extractAstNodeText(node: AstNode): string {
-  switch (node.type) {
-    case "text":
-      return node.text;
-    case "fragment":
-    case "p":
-    case "h1":
-    case "h2":
-    case "h3":
-    case "ul":
-    case "ol":
-    case "li":
-    case "strong":
-    case "em":
-    case "blockquote":
-      return node.children.map(extractAstNodeText).join(" ");
-    case "br":
-      return "\n";
-    case "code_inline":
-      return node.text;
-    case "code_block":
-      return node.code;
-    case "table": {
-      const headerText = node.headers.join(" ");
-      const rowText = node.rows.map((row) => row.join(" ")).join(" ");
-      return `${headerText} ${rowText}`;
-    }
-    case "math":
-      return node.tex;
-    case "attachment":
-      return node.name;
-    default: {
-      const exhaustiveGuard: never = node;
-      return exhaustiveGuard;
-    }
-  }
-}
-
 function sanitizeAstForRender(
   root: AstRoot,
   role: Message["role"],
