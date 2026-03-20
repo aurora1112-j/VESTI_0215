@@ -23,6 +23,9 @@ export type {
 } from "./notion-integration";
 export type {
   ArtifactMetaData,
+  AstNode,
+  AstRoot,
+  AstVersion,
   ChatSummaryData,
   Platform,
   UiThemeMode,
@@ -31,6 +34,9 @@ export type {
   GardenerStep,
   GardenerResult,
   RagResponse,
+  Message,
+  MessageArtifact,
+  MessageCitation,
   ExportFormat,
   AsyncStatus,
   StorageUsageSnapshot,

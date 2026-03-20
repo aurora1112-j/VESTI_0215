@@ -3,6 +3,7 @@ import type {
   Conversation,
   ExportPayload,
   Message,
+  MessageArtifact,
   MessageCitation,
   SummaryRecord,
   WeeklyReportRecord,
@@ -216,6 +217,38 @@ function formatExportCitationLines(citations: MessageCitation[], format: "txt" |
   return citations.map((citation) => `- ${citation.label} — ${citation.href}`);
 }
 
+function formatArtifactSummary(artifact: MessageArtifact): string {
+  const parts = [artifact.kind];
+
+  if (artifact.captureMode) {
+    parts.push(`mode=${artifact.captureMode}`);
+  }
+
+  if (artifact.renderDimensions) {
+    parts.push(`${artifact.renderDimensions.width}x${artifact.renderDimensions.height}`);
+  }
+
+  return parts.join(", ");
+}
+
+function formatExportArtifactLines(artifacts: MessageArtifact[], format: "txt" | "md"): string[] {
+  if (artifacts.length === 0) {
+    return [];
+  }
+
+  if (format === "md") {
+    return artifacts.map((artifact) => {
+      const title = artifact.label ?? artifact.kind;
+      return `- **${title}** (${formatArtifactSummary(artifact)})`;
+    });
+  }
+
+  return artifacts.map((artifact) => {
+    const title = artifact.label ?? artifact.kind;
+    return `- ${title} (${formatArtifactSummary(artifact)})`;
+  });
+}
+
 function groupAnnotations(annotations: Annotation[]): Map<number, Annotation[]> {
   const byConversation = new Map<number, Annotation[]>();
   const sorted = [...annotations].sort((a, b) => a.created_at - b.created_at);
@@ -262,6 +295,8 @@ export function buildExportJsonV1(dataset: ExportDataset): ExportPayload {
         content_ast: item.content_ast ?? null,
         content_ast_version: item.content_ast_version ?? null,
         citations: item.citations ?? [],
+        artifacts: item.artifacts ?? [],
+        normalized_html_snapshot: item.normalized_html_snapshot ?? null,
         degraded_nodes_count:
           typeof item.degraded_nodes_count === "number" &&
           Number.isFinite(item.degraded_nodes_count)
@@ -327,6 +362,10 @@ export function buildExportTxtV1(dataset: ExportDataset): ExportPayload {
       if ((message.citations ?? []).length > 0) {
         lines.push("Sources:");
         lines.push(...formatExportCitationLines(message.citations ?? [], "txt"));
+      }
+      if ((message.artifacts ?? []).length > 0) {
+        lines.push("Artifacts:");
+        lines.push(...formatExportArtifactLines(message.artifacts ?? [], "txt"));
       }
       const messageAnnotations = annotationByMessage.get(message.id) ?? [];
       for (const annotation of messageAnnotations) {
@@ -413,6 +452,12 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
         lines.push("#### Sources");
         lines.push("");
         lines.push(...formatExportCitationLines(message.citations ?? [], "md"));
+      }
+      if ((message.artifacts ?? []).length > 0) {
+        lines.push("");
+        lines.push("#### Artifacts");
+        lines.push("");
+        lines.push(...formatExportArtifactLines(message.artifacts ?? [], "md"));
       }
       const messageAnnotations = annotationByMessage.get(message.id) ?? [];
       if (messageAnnotations.length > 0) {

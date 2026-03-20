@@ -16,7 +16,7 @@ import {
   isLikelyMathElement,
   probeMathTex,
 } from "./astMathProbes";
-import { extractTableNode } from "./astTableExtractor";
+import { extractDoubaoTableWrapperNode, extractTableNode } from "./astTableExtractor";
 
 const P1_SUPPORTED_PLATFORMS: ReadonlySet<Platform> = new Set([
   "ChatGPT",
@@ -457,6 +457,18 @@ class AstExtractor {
 
   private parseElement(element: Element): AstNode[] {
     const tag = element.tagName.toLowerCase();
+
+    if (
+      this.p1Enabled &&
+      this.options.platform === "Doubao" &&
+      tag === "div" &&
+      /\btable-wrapper\b/i.test(element.className?.toString() ?? "")
+    ) {
+      const wrappedTable = extractDoubaoTableWrapperNode(element, this.options.platform);
+      if (wrappedTable) {
+        return [wrappedTable];
+      }
+    }
 
     if (tag === "table") {
       if (this.p1Enabled) {

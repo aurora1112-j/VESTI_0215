@@ -4,9 +4,11 @@ export type Platform =
   | 'Gemini'
   | 'DeepSeek'
   | 'Qwen'
-  | 'Doubao';
+  | 'Doubao'
+  | 'Kimi'
+  | 'Yuanbao';
 
-export type AstVersion = 'ast_v1';
+export type AstVersion = 'ast_v1' | 'ast_v2';
 
 export interface AstRoot {
   type: 'root';
@@ -85,10 +87,36 @@ export interface AstEmphasisNode {
   children: AstNode[];
 }
 
-export interface AstTableNode {
+export type AstTableAlign = 'left' | 'center' | 'right' | null;
+
+export type AstTableNode = AstTableNodeLegacy | AstTableNodeV2;
+
+export interface AstTableNodeLegacy {
   type: 'table';
+  kind?: 'legacy';
   headers: string[];
   rows: string[][];
+}
+
+export interface AstTableColumnV2 {
+  align?: AstTableAlign;
+  header: AstNode[];
+}
+
+export interface AstTableCellV2 {
+  align?: AstTableAlign;
+  children: AstNode[];
+}
+
+export interface AstTableRowV2 {
+  cells: AstTableCellV2[];
+}
+
+export interface AstTableNodeV2 {
+  type: 'table';
+  kind: 'v2';
+  columns: AstTableColumnV2[];
+  rows: AstTableRowV2[];
 }
 
 export interface AstMathNode {
@@ -167,6 +195,42 @@ export interface RagResponse {
   sources: RelatedConversation[];
 }
 
+export type MessageCitationSourceType =
+  | 'inline_pill'
+  | 'search_card'
+  | 'reference_list'
+  | 'unknown';
+
+export interface MessageCitation {
+  label: string;
+  href: string;
+  host: string;
+  sourceType: MessageCitationSourceType;
+}
+
+export type MessageArtifactKind =
+  | 'canvas'
+  | 'preview'
+  | 'code_artifact'
+  | 'download_card'
+  | 'standalone_artifact'
+  | 'unknown';
+
+export type MessageArtifactCaptureMode =
+  | 'presence_only'
+  | 'embedded_dom_snapshot'
+  | 'standalone_artifact';
+
+export interface MessageArtifact {
+  kind: MessageArtifactKind;
+  label?: string;
+  captureMode?: MessageArtifactCaptureMode;
+  renderDimensions?: { width: number; height: number };
+  plainText?: string;
+  markdownSnapshot?: string;
+  normalizedHtmlSnapshot?: string;
+}
+
 export interface Message {
   id: number;
   conversation_id: number;
@@ -175,6 +239,9 @@ export interface Message {
   content_ast?: AstRoot | null;
   content_ast_version?: AstVersion | null;
   degraded_nodes_count?: number;
+  citations?: MessageCitation[];
+  artifacts?: MessageArtifact[];
+  normalized_html_snapshot?: string | null;
   created_at: number;
 }
 

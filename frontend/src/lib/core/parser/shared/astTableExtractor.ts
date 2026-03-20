@@ -165,22 +165,15 @@ function readBodyRowsLegacy(tableEl: Element, hasHeaderRow: boolean): string[][]
     .filter((cells) => cells.length > 0);
 }
 
-function extractTableNodeV2(tableEl: Element, platform: Platform): AstTableNode | null {
-  const headerRows = Array.from(tableEl.querySelectorAll("thead > tr"));
-  const firstRow = headerRows[0] ?? tableEl.querySelector("tr");
-  const headerCells =
-    firstRow ? Array.from(firstRow.querySelectorAll(":scope > th, :scope > td")) : [];
-
+function buildTableNodeV2(
+  headerCells: Element[],
+  dataRows: Element[],
+  platform: Platform,
+): AstTableNode | null {
   const columns = headerCells.map((cell) => ({
     align: readCellAlign(cell),
     header: parseCellChildren(cell.childNodes, platform),
   }));
-
-  const tbodyRows = Array.from(tableEl.querySelectorAll("tbody > tr"));
-  const candidateRows = tbodyRows.length > 0 ? tbodyRows : Array.from(tableEl.querySelectorAll("tr"));
-  const dataRows = candidateRows.filter(
-    (row, index) => !(headerCells.length > 0 && index === 0 && tbodyRows.length === 0),
-  );
 
   const rows: AstTableRowV2[] = dataRows
     .map((row) => {
@@ -205,6 +198,50 @@ function extractTableNodeV2(tableEl: Element, platform: Platform): AstTableNode 
     columns,
     rows,
   };
+}
+
+function extractTableNodeV2(tableEl: Element, platform: Platform): AstTableNode | null {
+  const headerRows = Array.from(tableEl.querySelectorAll("thead > tr"));
+  const firstRow = headerRows[0] ?? tableEl.querySelector("tr");
+  const headerCells =
+    firstRow ? Array.from(firstRow.querySelectorAll(":scope > th, :scope > td")) : [];
+
+  const tbodyRows = Array.from(tableEl.querySelectorAll("tbody > tr"));
+  const candidateRows = tbodyRows.length > 0 ? tbodyRows : Array.from(tableEl.querySelectorAll("tr"));
+  const dataRows = candidateRows.filter(
+    (row, index) => !(headerCells.length > 0 && index === 0 && tbodyRows.length === 0),
+  );
+
+  return buildTableNodeV2(headerCells, dataRows, platform);
+}
+
+export function extractDoubaoTableWrapperNode(
+  containerEl: Element,
+  platform: Platform,
+): AstTableNode | null {
+  const nestedTable = containerEl.querySelector("[class*='table-body'] table");
+  if (nestedTable) {
+    return extractTableNode(nestedTable, platform);
+  }
+
+  const tableBody = containerEl.querySelector("[class*='table-body']");
+  if (!tableBody) {
+    return null;
+  }
+
+  const rows = Array.from(tableBody.children).filter(
+    (child): child is Element => child instanceof Element && child.childElementCount > 0,
+  );
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const headerCells = Array.from(rows[0].children).filter(
+    (child): child is Element => child instanceof Element,
+  );
+  const dataRows = rows.slice(1);
+
+  return buildTableNodeV2(headerCells, dataRows, platform);
 }
 
 export function extractTableNode(tableEl: Element, platform: Platform): AstTableNode | null {

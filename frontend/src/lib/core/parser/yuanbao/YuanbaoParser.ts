@@ -520,17 +520,24 @@ export class YuanbaoParser implements IParser {
     const artifacts = [];
 
     if (queryFirstWithin(root, SELECTORS.artifactPreview)) {
-      artifacts.push(createMessageArtifact({ kind: "preview", label: "Yuanbao preview" }));
+      const artifact = createMessageArtifact({ kind: "preview", label: "Yuanbao preview" });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     if (isLatestAiRoot && queryFirst(SELECTORS.artifactCanvas)) {
-      artifacts.push(createMessageArtifact({ kind: "canvas", label: "Yuanbao canvas" }));
+      const artifact = createMessageArtifact({ kind: "canvas", label: "Yuanbao canvas" });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     if (isLatestAiRoot && queryFirst(SELECTORS.artifactCodePane)) {
-      artifacts.push(
-        createMessageArtifact({ kind: "code_artifact", label: "Yuanbao split pane" }),
-      );
+      const artifact = createMessageArtifact({
+        kind: "code_artifact",
+        label: "Yuanbao split pane",
+      });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     return artifacts;
