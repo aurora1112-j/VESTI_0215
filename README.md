@@ -34,7 +34,9 @@
 
   <br>
 
-https://github.com/user-attachments/assets/c860092c-9ab1-4773-8b8c-063e22912672
+
+https://github.com/user-attachments/assets/7d9affef-5a97-4959-aada-c4ef916b80dc
+
 
   <b>🎥 视频演示-心迹双层系统架构：Chrome扩展捕获引擎与独立知识库记忆看板</b>
 
