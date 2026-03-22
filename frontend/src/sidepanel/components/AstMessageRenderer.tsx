@@ -200,19 +200,22 @@ function TableNodeView({ node, path, context }: TableNodeViewProps) {
           <tbody>
             {node.rows.map((row, rowIndex) => (
               <tr key={`row-${rowIndex}`}>
-                {row.cells.map((cell, cellIndex) => (
-                  <td
-                    key={`cell-${rowIndex}-${cellIndex}`}
-                    style={cell.align ? { textAlign: cell.align } : undefined}
-                  >
-                    {renderNodes(
-                      toEntries(cell.children),
-                      `table-cell-${rowIndex}-${cellIndex}`,
-                      [...path, `row[${rowIndex}]`, `cell[${cellIndex}]`],
-                      context,
-                    )}
-                  </td>
-                ))}
+                {row.cells.map((cell, cellIndex) => {
+                  const align = cell.align ?? normalizedHeaders[cellIndex]?.align ?? null;
+                  return (
+                    <td
+                      key={`cell-${rowIndex}-${cellIndex}`}
+                      style={align ? { textAlign: align } : undefined}
+                    >
+                      {renderNodes(
+                        toEntries(cell.children),
+                        `table-cell-${rowIndex}-${cellIndex}`,
+                        [...path, `row[${rowIndex}]`, `cell[${cellIndex}]`],
+                        context,
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
