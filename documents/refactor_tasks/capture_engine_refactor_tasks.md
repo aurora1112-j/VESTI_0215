@@ -133,7 +133,12 @@ Audience: Parser maintainers, runtime engineers, QA
 
 下一轮优先级：
 
-1. artifact replay planning without changing current sidecar storage shape
-2. `semantic_ast_v2` 扩展到更完整的 math / code / pseudo-table case
-3. `Kimi / Yuanbao` fallback / shadow-path exploration
-4. weekly bridge 和更深的 prompt/runtime package-native rollout
+1. artifact-first continuation:
+   - unify shipped artifact contract usage across prompt/export/reader/web
+   - keep existing sidecar schema and excerpt priority
+2. AST / canonical-text hardening only where frozen text cases or domestic DOM companions still leave ambiguity
+3. weekly bridge:
+   - keep `weekly_lite.v1` unchanged
+   - bridge package-aware summaries into weekly
+   - do not rewrite weekly runtime in the same slice
+4. `Kimi / Yuanbao` fallback / shadow-path exploration after the frozen gate remains stable

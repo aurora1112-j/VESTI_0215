@@ -103,6 +103,8 @@ Audience: Reader maintainers, export/compression owners, web contributors
 
 当前建议顺序：
 
-1. package-aware summary-to-weekly bridge
-2. artifact replay planning with the current sidecar contract
-3. full package-native runtime planning for `E0/E1/E2/E3`
+1. artifact-first continuation on the shipped sidecar contract
+2. AST/canonical-text cleanup only where frozen text cases or domestic DOM companions still leave ambiguity
+3. package-aware summary-to-weekly bridge
+4. artifact replay planning with the current sidecar contract after the bridge is stable
+5. full package-native runtime planning for `E0/E1/E2/E3`
