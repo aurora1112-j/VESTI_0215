@@ -1,7 +1,7 @@
 # Export Compression Current Architecture
 
 Status: Transition note  
-Last Updated: 2026-03-17  
+Last Updated: 2026-03-21  
 Audience: Frontend, prompt engineering, release owner
 
 ## Positioning
@@ -53,17 +53,95 @@ This file no longer serves as the canonical source for:
 - export-specific drift policy
 - long-term prompt inventory
 
+## 2026-03 shipped adapter note
+
+The shipped runtime now contains a **prompt-ready ingestion adapter** between stored messages and
+prompt assembly.
+
+Practical effects:
+- `message.content_text` is no longer the only prompt input surface
+- prompt assembly can now consume:
+  - canonical body text behavior
+  - structure signals (`hasTable / hasMath / hasCode / hasCitations / hasArtifacts`)
+  - sidecar summary lines from `citations[] / artifacts[]`
+  - artifact refs derived from sidecars first, regex fallback second
+- export compression fallback heuristics and validation now reason over prompt-ready messages,
+  not only raw transcript text
+
+This is still a **compatibility-enhanced** stage, not a full package-native prompt runtime.
+
+## Frozen acceptance gate
+
+The following four operator text samples are now mandatory prompt/runtime acceptance references:
+- `SEARCH_CITATION_001`
+- `CLAUDE_ARTIFACT_001`
+- `CLAUDE_TITLE_001`
+- `TABLE_FIDELITY_001`
+
+They should be read as frozen contract checks, not as open-ended bug memos.
+
+Prompt/runtime consequences:
+- `SEARCH_CITATION_001`
+  - `hasCitations` stays true when citations exist
+  - citation summary lines stay available in sidecar summaries
+  - citation text stays out of `bodyText`
+- `CLAUDE_ARTIFACT_001`
+  - `hasArtifacts` stays true for standalone artifacts
+  - artifact summary lines stay sidecar-derived
+  - excerpt priority remains `markdownSnapshot -> plainText -> normalizedHtmlSnapshot`
+- `CLAUDE_TITLE_001`
+  - title provenance remains upstream app-shell metadata
+  - summary/export consumers do not infer title from body headings
+- `TABLE_FIDELITY_001`
+  - `hasTable / hasMath / hasCode` stay grounded in AST-aware canonical body behavior
+  - renderer-polluted text must not become the canonical prompt body
+
 ## 2026-03 limitation note
 
-The current shipped compression path remains meaningfully text-centric.
+The current shipped compression path is now less text-centric, but not fully package-native.
 
 Practical implications:
-- transcript assembly still depends heavily on `message.content_text`
-- title is not yet formally documented here as app-shell-only metadata
-- `citations[]` and `artifacts[]` are not yet first-class prompt inputs
-- rich table / math / code fidelity still depends on how clean `content_text` already is upstream
+- prompt-ready body text still ultimately derives from the stored message package, not from direct
+  AST prompt serialization
+- title still depends on upstream app-shell capture quality
+- `citations[] / artifacts[]` enter prompt runtime as bounded sidecar summaries, not as full free-form payloads
+- weekly/insight consumers are still in the compatibility phase, not the final package-native phase
 
 So this path should be understood as:
 - shipped and operational
 - compatible with current export UX
+- materially safer than the earlier raw-text-only path
 - not yet the final package-aware consumer model defined by newer capture / reader docs
+
+## 2026-03 artifact-first note
+
+Week 4 tightened the shipped runtime around artifact sidecars without changing the storage shape.
+
+Practical effects:
+- artifact summaries now prefer sidecar content in this order:
+  - `markdownSnapshot`
+  - `plainText`
+  - `normalizedHtmlSnapshot`
+- prompt/runtime consumers now treat artifact summary lines as sidecar-only context
+- export and reader/web consumers now show bounded artifact excerpts instead of body-tail reconstruction
+
+This is still intentionally bounded:
+- no artifact replay
+- no interactive preview
+- no weekly digest rewrite in the same slice
+
+## Weekly defer boundary
+
+`weekly digest` is not the active implementation target in this stage.
+
+The expected next bridge is:
+
+- package-aware summary outputs
+- then summary-to-weekly adaptation
+
+It should not regress back to direct raw-transcript dependence while artifact work is being expanded.
+
+Explicit defer notes for this stage:
+- artifact replay is still deferred
+- weekly digest is bridged, not rewritten
+- overseas live sampling remains out of current acceptance scope

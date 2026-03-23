@@ -1,3 +1,4 @@
+import { formatArtifactDescriptor, getArtifactExcerptText } from "@vesti/ui";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Copy, Check, ChevronDown, Link2 } from "lucide-react";
 import type { Message, Platform } from "~lib/types";
@@ -222,6 +223,43 @@ export function MessageBubble({
                   </div>
                 </a>
               ))}
+            </div>
+          </DisclosureSection>
+        </div>
+      ) : null}
+
+      {(message.artifacts ?? []).length > 0 ? (
+        <div className="mt-3">
+          <DisclosureSection
+            title="Artifacts"
+            description={`${message.artifacts?.length ?? 0} captured artifact${(message.artifacts?.length ?? 0) === 1 ? "" : "s"}`}
+          >
+            <div className="space-y-2">
+              {(message.artifacts ?? []).map((artifact, index) => {
+                const excerpt = getArtifactExcerptText(artifact, {
+                  maxLines: 2,
+                  maxCharsPerLine: 100,
+                });
+
+                return (
+                  <div
+                    key={`${artifact.kind}-${artifact.label ?? index}`}
+                    className="rounded-lg border border-border-subtle bg-bg-primary/80 px-3 py-2"
+                  >
+                    <div className="text-[12px] font-medium text-text-primary">
+                      {artifact.label || artifact.kind}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-text-tertiary">
+                      {formatArtifactDescriptor(artifact)}
+                    </div>
+                    {excerpt ? (
+                      <div className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-text-secondary">
+                        {excerpt}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </DisclosureSection>
         </div>

@@ -235,11 +235,22 @@ export type MessageArtifactKind =
   | "preview"
   | "code_artifact"
   | "download_card"
+  | "standalone_artifact"
   | "unknown";
+
+export type MessageArtifactCaptureMode =
+  | "presence_only"
+  | "embedded_dom_snapshot"
+  | "standalone_artifact";
 
 export interface MessageArtifact {
   kind: MessageArtifactKind;
   label?: string;
+  captureMode?: MessageArtifactCaptureMode;
+  renderDimensions?: { width: number; height: number };
+  plainText?: string;
+  markdownSnapshot?: string;
+  normalizedHtmlSnapshot?: string;
 }
 
 export interface Message {
@@ -252,6 +263,7 @@ export interface Message {
   degraded_nodes_count?: number;
   citations?: MessageCitation[];
   artifacts?: MessageArtifact[];
+  normalized_html_snapshot?: string | null;
   created_at: number;
 }
 

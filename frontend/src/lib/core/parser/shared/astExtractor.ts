@@ -16,7 +16,7 @@ import {
   isLikelyMathElement,
   probeMathTex,
 } from "./astMathProbes";
-import { extractTableNode } from "./astTableExtractor";
+import { extractDoubaoTableWrapperNode, extractTableNode } from "./astTableExtractor";
 
 const P1_SUPPORTED_PLATFORMS: ReadonlySet<Platform> = new Set([
   "ChatGPT",
@@ -143,6 +143,14 @@ function countAstNodes(nodes: AstNode[]): number {
       node.type === "blockquote"
     ) {
       count += countAstNodes(node.children);
+      continue;
+    }
+
+    if (node.type === "table" && node.kind === "v2") {
+      count += countAstNodes(node.columns.flatMap((column) => column.header));
+      count += countAstNodes(
+        node.rows.flatMap((row) => row.cells.flatMap((cell) => cell.children)),
+      );
     }
   }
   return count;
@@ -450,6 +458,18 @@ class AstExtractor {
   private parseElement(element: Element): AstNode[] {
     const tag = element.tagName.toLowerCase();
 
+    if (
+      this.p1Enabled &&
+      this.options.platform === "Doubao" &&
+      tag === "div" &&
+      /\btable-wrapper\b/i.test(element.className?.toString() ?? "")
+    ) {
+      const wrappedTable = extractDoubaoTableWrapperNode(element, this.options.platform);
+      if (wrappedTable) {
+        return [wrappedTable];
+      }
+    }
+
     if (tag === "table") {
       if (this.p1Enabled) {
         return this.extractTable(element);
@@ -639,7 +659,7 @@ class AstExtractor {
 
   private extractTable(element: Element): AstNode[] {
     try {
-      const tableNode = extractTableNode(element);
+      const tableNode = extractTableNode(element, this.options.platform);
       if (!tableNode) {
         return this.fallbackToText(element, true);
       }

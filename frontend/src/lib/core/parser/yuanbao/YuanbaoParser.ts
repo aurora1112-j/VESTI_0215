@@ -42,9 +42,18 @@ const SELECTORS = {
   uiNoiseSelectors: [
     ".agent-chat__conv--ai__toolbar",
     ".agent-chat__conv--human__toolbar",
+    ".agent-chat__question-toolbar",
+    ".agent-chat__question-toolbar__copy-wrapper",
+    ".agent-chat__toolbar",
+    ".agent-chat__toolbar__left",
+    ".agent-chat__toolbar__right",
     ".ToolbarCopy_copyIconWrap__PfQIm",
+    ".ToolbarCopy_icon__5Odjl",
+    ".ToolbarCopy_arrowIconWrap__GR0vU",
     ".Toolbar_icon__xGP8b",
     ".Repeat_icon__oL8u_",
+    ".hyc-common-markdown__replace-appCard",
+    ".hyc-common-markdown__replace-appCard-container",
     ".hyc-component-deepsearch-cot__think__header-container",
     ".hyc-component-deepsearch-cot__think__header__toggle",
     ".hyc-component-deepsearch-cot__think__content__item-search",
@@ -332,7 +341,7 @@ export class YuanbaoParser implements IParser {
         role: "user",
         textContent,
         contentAst: ast.root,
-        contentAstVersion: ast.root ? "ast_v1" : null,
+        contentAstVersion: ast.root ? "ast_v2" : null,
         degradedNodesCount: ast.degradedNodesCount,
         htmlContent: sanitized.innerHTML,
       },
@@ -411,7 +420,7 @@ export class YuanbaoParser implements IParser {
         role: "ai",
         textContent,
         contentAst: ast.root,
-        contentAstVersion: ast.root ? "ast_v1" : null,
+        contentAstVersion: ast.root ? "ast_v2" : null,
         degradedNodesCount: ast.degradedNodesCount,
         artifacts: this.collectArtifacts(root, isLatestAiRoot),
         htmlContent: merged.innerHTML,
@@ -519,21 +528,43 @@ export class YuanbaoParser implements IParser {
   private collectArtifacts(root: Element, isLatestAiRoot: boolean) {
     const artifacts = [];
 
-    if (queryFirstWithin(root, SELECTORS.artifactPreview)) {
-      artifacts.push(createMessageArtifact({ kind: "preview", label: "Yuanbao preview" }));
+    if (this.hasMeaningfulArtifactPreview(root)) {
+      const artifact = createMessageArtifact({ kind: "preview", label: "Yuanbao preview" });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     if (isLatestAiRoot && queryFirst(SELECTORS.artifactCanvas)) {
-      artifacts.push(createMessageArtifact({ kind: "canvas", label: "Yuanbao canvas" }));
+      const artifact = createMessageArtifact({ kind: "canvas", label: "Yuanbao canvas" });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     if (isLatestAiRoot && queryFirst(SELECTORS.artifactCodePane)) {
-      artifacts.push(
-        createMessageArtifact({ kind: "code_artifact", label: "Yuanbao split pane" }),
-      );
+      const artifact = createMessageArtifact({
+        kind: "code_artifact",
+        label: "Yuanbao split pane",
+      });
+      artifact.captureMode = "presence_only";
+      artifacts.push(artifact);
     }
 
     return artifacts;
+  }
+
+  private hasMeaningfulArtifactPreview(root: Element): boolean {
+    const preview = queryFirstWithin(root, SELECTORS.artifactPreview);
+    if (!preview) {
+      return false;
+    }
+
+    const className = preview.className?.toString() ?? "";
+    const text = this.cleanExtractedText(this.extractVisibleText(preview));
+    if (className.includes("--hidden") || preview.getAttribute("aria-hidden") === "true") {
+      return text.length > 0;
+    }
+
+    return text.length > 0 || preview.childElementCount > 0;
   }
 
   private cleanTitle(rawTitle: string): string {

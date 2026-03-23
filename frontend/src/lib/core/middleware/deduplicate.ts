@@ -4,6 +4,7 @@ import { db } from "../../db/schema";
 import type { ConversationRecord, MessageRecord } from "../../db/schema";
 import { enforceStorageWriteGuard } from "../../db/storageLimits";
 import { isAstRoot } from "../../utils/astText";
+import { buildRichOnlyNormalizedHtmlSnapshot } from "../../utils/normalizedHtmlSnapshot";
 import { normalizeMessageArtifacts } from "../../utils/messageArtifacts";
 import { normalizeMessageCitations } from "../../utils/messageCitations";
 
@@ -21,6 +22,7 @@ function buildParsedSignatures(messages: ParsedMessage[]): string[] {
       degradedNodesCount: message.degradedNodesCount,
       citations: message.citations ?? [],
       artifacts: message.artifacts ?? [],
+      normalizedHtmlSnapshot: message.normalizedHtmlSnapshot ?? null,
     })
   );
 }
@@ -42,6 +44,7 @@ function buildStoredSignatures(messages: MessageRecord[]): string[] {
         degradedNodesCount: message.degraded_nodes_count,
         citations: message.citations ?? [],
         artifacts: message.artifacts ?? [],
+        normalizedHtmlSnapshot: message.normalized_html_snapshot ?? null,
       })
     );
 }
@@ -52,7 +55,10 @@ function signaturesMatch(a: string[], b: string[]): boolean {
 }
 
 function sanitizeIncomingMessages(messages: ParsedMessage[]): ParsedMessage[] {
-  return messages.filter((message) => normalizeText(message.textContent).length > 0);
+  return messages.filter(
+    (message) =>
+      normalizeText(message.textContent).length > 0 || (message.artifacts?.length ?? 0) > 0,
+  );
 }
 
 function normalizeDegradedNodesCount(value: number | undefined): number {
@@ -70,6 +76,7 @@ function buildSignature(params: {
   degradedNodesCount: number | undefined;
   citations: unknown;
   artifacts: unknown;
+  normalizedHtmlSnapshot: string | null;
 }): string {
   const {
     role,
@@ -79,6 +86,7 @@ function buildSignature(params: {
     degradedNodesCount,
     citations,
     artifacts,
+    normalizedHtmlSnapshot,
   } = params;
   const astSignature = contentAst ? JSON.stringify(contentAst) : "";
   const citationSignature = JSON.stringify(
@@ -93,8 +101,14 @@ function buildSignature(params: {
     normalizeMessageArtifacts(artifacts).map((artifact) => ({
       kind: artifact.kind,
       label: artifact.label ?? "",
+      captureMode: artifact.captureMode ?? null,
+      renderDimensions: artifact.renderDimensions ?? null,
+      plainText: artifact.plainText ?? null,
+      markdownSnapshot: artifact.markdownSnapshot ?? null,
+      normalizedHtmlSnapshot: artifact.normalizedHtmlSnapshot ?? null,
     }))
   );
+  const snapshotSignature = normalizedHtmlSnapshot ?? "";
   return [
     role,
     normalizeText(contentText),
@@ -103,6 +117,7 @@ function buildSignature(params: {
     astSignature,
     citationSignature,
     artifactSignature,
+    snapshotSignature,
   ].join("|");
 }
 
@@ -180,6 +195,14 @@ export async function deduplicateAndSave(
         degraded_nodes_count: normalizeDegradedNodesCount(message.degradedNodesCount),
         citations: normalizeMessageCitations(message.citations ?? []),
         artifacts: normalizeMessageArtifacts(message.artifacts ?? []),
+        normalized_html_snapshot:
+          message.normalizedHtmlSnapshot ??
+          buildRichOnlyNormalizedHtmlSnapshot({
+            html: message.htmlContent ?? null,
+            ast: message.contentAst ?? null,
+            hasCitations: (message.citations ?? []).length > 0,
+            hasArtifacts: (message.artifacts ?? []).length > 0,
+          }),
         created_at: message.timestamp ?? baseTimestamp + index,
       }));
 
@@ -240,6 +263,14 @@ export async function deduplicateAndSave(
       degraded_nodes_count: normalizeDegradedNodesCount(message.degradedNodesCount),
       citations: normalizeMessageCitations(message.citations ?? []),
       artifacts: normalizeMessageArtifacts(message.artifacts ?? []),
+      normalized_html_snapshot:
+        message.normalizedHtmlSnapshot ??
+        buildRichOnlyNormalizedHtmlSnapshot({
+          html: message.htmlContent ?? null,
+          ast: message.contentAst ?? null,
+          hasCitations: (message.citations ?? []).length > 0,
+          hasArtifacts: (message.artifacts ?? []).length > 0,
+        }),
       created_at: message.timestamp ?? baseTimestamp + index,
     }));
 

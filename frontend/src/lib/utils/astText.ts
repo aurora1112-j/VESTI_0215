@@ -1,4 +1,4 @@
-import type { AstNode, AstRoot } from "../types/ast";
+import type { AstNode, AstRoot, AstTableNode } from "../types/ast";
 
 const MIN_AST_CANONICAL_COVERAGE_RATIO = 0.55;
 const MIN_MATH_CANONICAL_COVERAGE_RATIO = 0.2;
@@ -49,8 +49,7 @@ export function astNodeToPlainText(node: AstNode): string {
     case "code_block":
       return node.code;
     case "table": {
-      const header = node.headers.join(" | ");
-      const rows = node.rows.map((row) => row.join(" | "));
+      const { header, rows } = renderTablePlainText(node);
       return [header, ...rows].filter(Boolean).join("\n");
     }
     case "math":
@@ -124,6 +123,12 @@ export function inspectAstStructure(root: AstRoot): AstStructureStats {
       node.type === "blockquote"
     ) {
       node.children.forEach(walk);
+      return;
+    }
+
+    if (node.type === "table" && node.kind === "v2") {
+      node.columns.forEach((column) => column.header.forEach(walk));
+      node.rows.forEach((row) => row.cells.forEach((cell) => cell.children.forEach(walk)));
     }
   };
 
@@ -178,6 +183,25 @@ export function shouldPreferAstCanonicalText(params: {
 
 function joinInlineText(children: AstNode[]): string {
   return children.map(astNodeToPlainText).filter(Boolean).join(" ");
+}
+
+function renderTablePlainText(node: AstTableNode): {
+  header: string;
+  rows: string[];
+} {
+  if (node.kind === "v2") {
+    const header = node.columns
+      .map((column) => joinInlineText(column.header))
+      .join(" | ");
+    const rows = node.rows.map((row) =>
+      row.cells.map((cell) => joinInlineText(cell.children)).join(" | ")
+    );
+    return { header, rows };
+  }
+
+  const header = node.headers.join(" | ");
+  const rows = node.rows.map((row) => row.join(" | "));
+  return { header, rows };
 }
 
 function normalizeCanonicalPlainText(value: string): string {

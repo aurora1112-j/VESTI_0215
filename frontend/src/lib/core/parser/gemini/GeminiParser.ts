@@ -380,7 +380,7 @@ export class GeminiParser implements IParser {
         role,
         textContent,
         contentAst,
-        contentAstVersion: contentAst ? "ast_v1" : null,
+        contentAstVersion: contentAst ? "ast_v2" : null,
         degradedNodesCount: astResult.degradedNodesCount,
         htmlContent: contentEl ? contentEl.innerHTML : undefined,
       },

@@ -60,11 +60,51 @@ Audience: Reader maintainers, export/compression owners, web contributors
   - summary prompt grounding
 - 不把 `citations[] / artifacts[]` 强行塞进 prompt，先定义影响边界
 
+## Week 2 Shipped State
+
+- completed:
+  - export 成为 package-aware consumer
+  - web/library detail 不再停留在纯 `content_text` transcript
+  - `Sources` / `Artifacts` disclosure 已进入 sidepanel 和 web package contract
+  - web rich reader 已具备 table / math / code 的第一批 AST rendering
+  - week2 regression manifest/checklist 已冻结
+- still deferred:
+  - `insights / compression` package-aware implementation
+  - artifact replay / deep web preview
+  - richer web search / graph surfaces that consume package sidecars
+
+## Week 3 Shipped State
+
+- completed:
+  - shipped export runtime now uses prompt-ready package ingestion
+  - conversation summary / insight generation no longer depend only on raw `content_text`
+  - prompt-side sample-to-signal mapping and runtime checklist are frozen in-repo
+- still deferred:
+  - full package-native `E0/E1/E2/E3` runtimeization
+  - weekly digest full package-aware rollout
+  - artifact replay / prompt-time artifact deep inspection
+
+## Week 4 Shipped State
+
+- completed:
+  - `Artifacts` disclosure in sidepanel and web now shows metadata plus excerpt
+  - shipped export `Artifacts` sections now prefer excerpt sources in this order:
+    - `markdownSnapshot`
+    - `plainText`
+    - `normalizedHtmlSnapshot`
+  - prompt-ready artifact summary lines now stay sidecar-first and no longer reconstruct from body tail
+  - artifact-first prompt sample manifest and regression checklist are frozen in-repo
+- still deferred:
+  - weekly digest mainline rewrite
+  - artifact replay / deep preview UI
+  - fully package-native prompt/runtime chain beyond current compatibility layer
+
 ## Current Slice Recommendation
 
 当前建议顺序：
 
-1. 统一 helper 与 schema / 类型
-2. `reader / web / export`
-3. `citations[] / artifacts[] / semantic_ast_v2` 的 renderer contract
-4. `insights / compression` 兼容阶段
+1. artifact-first continuation on the shipped sidecar contract
+2. AST/canonical-text cleanup only where frozen text cases or domestic DOM companions still leave ambiguity
+3. package-aware summary-to-weekly bridge
+4. artifact replay planning with the current sidecar contract after the bridge is stable
+5. full package-native runtime planning for `E0/E1/E2/E3`

@@ -1,4 +1,4 @@
-export type AstVersion = "ast_v1";
+export type AstVersion = "ast_v1" | "ast_v2";
 
 export interface AstRoot {
   type: "root";
@@ -77,10 +77,36 @@ export interface AstEmphasisNode {
   children: AstNode[];
 }
 
-export interface AstTableNode {
+export type AstTableAlign = "left" | "center" | "right" | null;
+
+export type AstTableNode = AstTableNodeLegacy | AstTableNodeV2;
+
+export interface AstTableNodeLegacy {
   type: "table";
+  kind?: "legacy";
   headers: string[];
   rows: string[][];
+}
+
+export interface AstTableColumnV2 {
+  align?: AstTableAlign;
+  header: AstNode[];
+}
+
+export interface AstTableCellV2 {
+  align?: AstTableAlign;
+  children: AstNode[];
+}
+
+export interface AstTableRowV2 {
+  cells: AstTableCellV2[];
+}
+
+export interface AstTableNodeV2 {
+  type: "table";
+  kind: "v2";
+  columns: AstTableColumnV2[];
+  rows: AstTableRowV2[];
 }
 
 export interface AstMathNode {

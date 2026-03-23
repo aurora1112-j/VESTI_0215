@@ -202,7 +202,8 @@ export function resolveMessageRenderPlan(
   if (
     !rawAst ||
     rawAst.type !== "root" ||
-    message.content_ast_version !== "ast_v1"
+    (message.content_ast_version !== "ast_v1" &&
+      message.content_ast_version !== "ast_v2")
   ) {
     return { mode: "fallback", renderAst: null };
   }

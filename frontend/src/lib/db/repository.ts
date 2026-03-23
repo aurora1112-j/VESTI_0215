@@ -359,6 +359,10 @@ function toMessage(record: MessageRecord): Message {
     degraded_nodes_count: degradedNodesCount,
     citations: normalizeMessageCitations(record.citations),
     artifacts: normalizeMessageArtifacts(record.artifacts),
+    normalized_html_snapshot:
+      typeof record.normalized_html_snapshot === "string"
+        ? record.normalized_html_snapshot
+        : null,
   };
 }
 

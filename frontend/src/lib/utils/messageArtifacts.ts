@@ -26,6 +26,11 @@ export function normalizeMessageArtifacts(value: unknown): MessageArtifact[] {
     const record = item as {
       kind?: unknown;
       label?: unknown;
+      captureMode?: unknown;
+      renderDimensions?: unknown;
+      plainText?: unknown;
+      markdownSnapshot?: unknown;
+      normalizedHtmlSnapshot?: unknown;
     };
 
     const kind =
@@ -33,6 +38,7 @@ export function normalizeMessageArtifacts(value: unknown): MessageArtifact[] {
       record.kind === "preview" ||
       record.kind === "code_artifact" ||
       record.kind === "download_card"
+        || record.kind === "standalone_artifact"
         ? record.kind
         : "unknown";
 
@@ -41,7 +47,50 @@ export function normalizeMessageArtifacts(value: unknown): MessageArtifact[] {
       label: typeof record.label === "string" ? record.label : undefined,
     });
 
-    const signature = `${artifact.kind}|${artifact.label ?? ""}`;
+    if (
+      record.captureMode === "presence_only" ||
+      record.captureMode === "embedded_dom_snapshot" ||
+      record.captureMode === "standalone_artifact"
+    ) {
+      artifact.captureMode = record.captureMode;
+    }
+
+    if (
+      record.renderDimensions &&
+      typeof record.renderDimensions === "object" &&
+      typeof (record.renderDimensions as { width?: unknown }).width === "number" &&
+      typeof (record.renderDimensions as { height?: unknown }).height === "number"
+    ) {
+      artifact.renderDimensions = {
+        width: (record.renderDimensions as { width: number }).width,
+        height: (record.renderDimensions as { height: number }).height,
+      };
+    }
+
+    if (typeof record.plainText === "string") {
+      artifact.plainText = record.plainText;
+    }
+
+    if (typeof record.markdownSnapshot === "string") {
+      artifact.markdownSnapshot = record.markdownSnapshot;
+    }
+
+    if (typeof record.normalizedHtmlSnapshot === "string") {
+      artifact.normalizedHtmlSnapshot = record.normalizedHtmlSnapshot;
+    }
+
+    const renderSignature = artifact.renderDimensions
+      ? `${artifact.renderDimensions.width}x${artifact.renderDimensions.height}`
+      : "";
+    const signature = [
+      artifact.kind,
+      artifact.label ?? "",
+      artifact.captureMode ?? "",
+      renderSignature,
+      artifact.plainText ?? "",
+      artifact.markdownSnapshot ?? "",
+      artifact.normalizedHtmlSnapshot ?? "",
+    ].join("|");
     if (seen.has(signature)) {
       continue;
     }

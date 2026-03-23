@@ -1,7 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import katex from "katex";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AstNode, AstRoot } from "~lib/types/ast";
+import type { AstNode, AstRoot, AstTableNode } from "~lib/types/ast";
 import { astNodeToPlainText } from "~lib/utils/astText";
 import "katex/dist/katex.min.css";
 import {
@@ -35,8 +35,9 @@ interface CodeBlockViewProps {
 }
 
 interface TableNodeViewProps {
-  headers: string[];
-  rows: string[][];
+  node: AstTableNode;
+  path: string[];
+  context: RenderContext;
 }
 
 interface NodeEntry {
@@ -169,7 +170,62 @@ function CodeBlockView({ code, language }: CodeBlockViewProps) {
   );
 }
 
-function TableNodeView({ headers, rows }: TableNodeViewProps) {
+function TableNodeView({ node, path, context }: TableNodeViewProps) {
+  if (node.kind === "v2") {
+    const normalizedHeaders =
+      node.columns.length > 0
+        ? node.columns
+        : [{ header: [{ type: "text", text: "Column 1" }], align: null }];
+
+    return (
+      <div className="reader-ast-table-wrap">
+        <table className="reader-ast-table">
+          <thead>
+            <tr>
+              {normalizedHeaders.map((column, columnIndex) => (
+                <th
+                  key={`header-${columnIndex}`}
+                  style={column.align ? { textAlign: column.align } : undefined}
+                >
+                  {renderNodes(
+                    toEntries(column.header),
+                    `table-header-${columnIndex}`,
+                    [...path, `column[${columnIndex}]`, "header"],
+                    context,
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {node.rows.map((row, rowIndex) => (
+              <tr key={`row-${rowIndex}`}>
+                {row.cells.map((cell, cellIndex) => {
+                  const align = cell.align ?? normalizedHeaders[cellIndex]?.align ?? null;
+                  return (
+                    <td
+                      key={`cell-${rowIndex}-${cellIndex}`}
+                      style={align ? { textAlign: align } : undefined}
+                    >
+                      {renderNodes(
+                        toEntries(cell.children),
+                        `table-cell-${rowIndex}-${cellIndex}`,
+                        [...path, `row[${rowIndex}]`, `cell[${cellIndex}]`],
+                        context,
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  const headers = node.headers;
+  const rows = node.rows;
   const columnCount = Math.max(headers.length, ...rows.map((row) => row.length), 1);
   const normalizedHeaders =
     headers.length > 0
@@ -438,8 +494,9 @@ function renderNode(
       return (
         <TableNodeView
           key={key}
-          headers={node.headers}
-          rows={node.rows}
+          node={node}
+          path={path}
+          context={context}
         />
       );
     case "ul":

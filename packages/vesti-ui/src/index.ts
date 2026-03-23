@@ -16,6 +16,11 @@ export {
   setNotionSettings,
   selectNotionDatabase,
 } from "./notion-integration";
+export {
+  formatArtifactDescriptor,
+  getArtifactExcerptLines,
+  getArtifactExcerptText,
+} from "./lib/artifactSummary";
 export type { PipelineStageState } from "./components/SummaryPipelineProgress";
 export type {
   NotionDatabaseOption,
@@ -23,6 +28,9 @@ export type {
 } from "./notion-integration";
 export type {
   ArtifactMetaData,
+  AstNode,
+  AstRoot,
+  AstVersion,
   ChatSummaryData,
   Platform,
   UiThemeMode,
@@ -31,6 +39,9 @@ export type {
   GardenerStep,
   GardenerResult,
   RagResponse,
+  Message,
+  MessageArtifact,
+  MessageCitation,
   ExportFormat,
   AsyncStatus,
   StorageUsageSnapshot,

@@ -345,3 +345,75 @@ Rules:
 - `canonicalPlainText` is fallback body text, not the only structure source
 - `citations[]` and `artifacts[]` are message sidecars
 - `normalizedHtmlSnapshotRef` is expected only for rich-structure or artifact-bearing messages
+
+## 2026-03 shipped runtime adapter layer
+
+Before shipped prompt consumers build their final prompt text, they now pass through a bounded
+internal adapter layer.
+
+```ts
+interface PromptStructureSignals {
+  hasTable: boolean;
+  hasMath: boolean;
+  hasCode: boolean;
+  hasCitations: boolean;
+  hasArtifacts: boolean;
+}
+
+interface PromptReadyMessage {
+  id: number;
+  role: "user" | "ai";
+  created_at: number;
+  bodyText: string;
+  transcriptText: string;
+  structureSignals: PromptStructureSignals;
+  sidecarSummaryLines: string[];
+  artifactRefs: string[];
+}
+
+interface PromptReadyConversationContext {
+  messages: PromptReadyMessage[];
+  transcript: string;
+  bodyChars: number;
+}
+```
+
+Rules:
+- `bodyText` is the canonical prompt-facing body, not raw renderer-polluted transcript text
+- `transcriptText` may append bounded sidecar summaries, but must keep body and sidecars distinct
+- `artifactRefs` are resolved from sidecars first, regex fallback second
+- this adapter is a shipped runtime boundary for:
+  - export compression
+  - conversation summary
+  - insight generation
+
+Frozen gate implications:
+- `SEARCH_CITATION_001`
+  - citation summary lines may appear in `transcriptText`, but citation text must stay out of `bodyText`
+- `CLAUDE_ARTIFACT_001`
+  - artifact summary lines are sidecar-only and do not authorize body-tail reconstruction
+- `TABLE_FIDELITY_001`
+  - `bodyText` must remain AST-aware and free of renderer-polluted math/table/code noise
+- `CLAUDE_TITLE_001`
+  - upstream title provenance remains app-shell metadata, not body-heading inference
+
+## 2026-03 artifact-first shipped note
+
+Week 4 does not introduce a new artifact schema version. It tightens the shipped interpretation of
+the existing artifact sidecar.
+
+Shipped consumer rules:
+
+- artifact excerpt priority is:
+  - `markdownSnapshot`
+  - `plainText`
+  - `normalizedHtmlSnapshot`
+- sidepanel, web, export, and prompt-ready runtime all consume the same sidecar fields
+- body text must not be used to reconstruct artifact content when sidecar fields already exist
+
+Still deferred:
+
+- artifact replay
+- iframe / executable artifact rendering
+- full package-native weekly digest consumption
+- weekly rewrite; current weekly path remains a package-aware summary-to-weekly bridge

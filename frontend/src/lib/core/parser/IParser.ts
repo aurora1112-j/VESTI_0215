@@ -1,4 +1,4 @@
-import type { Platform } from "../../types";
+import type { MessageArtifact, MessageCitation, Platform } from "../../types";
 import type { AstRoot, AstVersion } from "../../types/ast";
 
 export interface ParsedMessage {
@@ -7,6 +7,9 @@ export interface ParsedMessage {
   contentAst?: AstRoot | null;
   contentAstVersion?: AstVersion | null;
   degradedNodesCount?: number;
+  citations?: MessageCitation[];
+  artifacts?: MessageArtifact[];
+  normalizedHtmlSnapshot?: string | null;
   htmlContent?: string;
   timestamp?: number;
 }

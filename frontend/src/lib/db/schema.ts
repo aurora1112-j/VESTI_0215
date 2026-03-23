@@ -478,7 +478,11 @@ export class MemoryHubDB extends Dexie {
               record.degraded_nodes_count = normalizedDegradedCount;
             }
 
-            if (record.content_ast_version !== "ast_v1" || !isAstRoot(record.content_ast)) {
+            if (
+              (record.content_ast_version !== "ast_v1" &&
+                record.content_ast_version !== "ast_v2") ||
+              !isAstRoot(record.content_ast)
+            ) {
               return;
             }
 

@@ -47,6 +47,7 @@ import {
   getNotionSettings,
   isNotionExportConfigured,
 } from "../notion-integration";
+import { RichMessageContent } from "../components/RichMessageContent";
 
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
@@ -2475,7 +2476,7 @@ export function LibraryTab({
                               </div>
 
                               <div
-                                className={`mt-3 text-base leading-relaxed whitespace-pre-wrap ${
+                                className={`mt-3 text-base leading-relaxed ${
                                   isUser
                                     ? "text-text-primary font-semibold"
                                     : "text-text-secondary"
@@ -2488,7 +2489,7 @@ export function LibraryTab({
                                       : "rounded-2xl bg-bg-surface-ai-message p-3"
                                   }
                                 >
-                                  {message.content_text}
+                                  <RichMessageContent message={message} />
                                 </div>
                               </div>
                             </div>

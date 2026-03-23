@@ -94,12 +94,51 @@ Audience: Parser maintainers, runtime engineers, QA
 - richer artifact / citation package beyond current MVP
 - full multimodal `content package` persistence contract
 
+## Week 2 Shipped State
+
+- completed:
+  - Claude `App Shell Interceptor`
+  - `semantic_ast_v2` minimum table path
+  - `citations[] / artifacts[] / rich-only normalized_html_snapshot`
+  - `Qwen / Yuanbao` live DOM realignment
+  - `Kimi / DeepSeek / Yuanbao / Qwen` parser regression cleanups
+  - Doubao wrapper-shell table noise cleanup
+  - frozen Week 2 DOM/text regression manifest
+- still deferred:
+  - `Kimi / Yuanbao` non-DOM fallback track
+  - richer artifact replay / markdown reconstruction
+  - multimodal image / upload capture
+  - historical repair migration
+
+## Week 4 Shipped State
+
+- completed:
+  - Claude standalone artifact second pass now preserves:
+    - `plainText`
+    - `normalizedHtmlSnapshot`
+    - safe `markdownSnapshot` derivation when possible
+  - prompt/export/reader/web artifact summaries now consume the same sidecar fields
+  - Qwen artifact-adjacent code/table chrome cleanup expanded to code-header and Monaco helper nodes
+  - Kimi artifact-adjacent action cleanup now excludes `segment-user-actions` and code/table header shells
+  - Yuanbao artifact presence became more stable by suppressing hidden preview false positives
+  - Doubao action overflow shell cleanup expanded without changing its main parser strategy
+  - artifact-first sample manifest and shipped regression checklist are frozen in-repo
+- still deferred:
+  - artifact replay / interactive preview
+  - `Kimi / Yuanbao` shadow-path / network-interception fallback track
+  - richer artifact extraction beyond current sidecar fields
+  - weekly digest runtime migration
+
 ## Current Slice Recommendation
 
 下一轮优先级：
 
-1. `App Shell Interceptor`
-2. `semantic_ast_v2`（table / math / code）
-3. `citations[] / artifacts[] / rich-only normalized_html_snapshot`
-4. `reader / web / export` 对接第一批 package 结构
-5. 最后再推进 `insights / compression / search`
+1. artifact-first continuation:
+   - unify shipped artifact contract usage across prompt/export/reader/web
+   - keep existing sidecar schema and excerpt priority
+2. AST / canonical-text hardening only where frozen text cases or domestic DOM companions still leave ambiguity
+3. weekly bridge:
+   - keep `weekly_lite.v1` unchanged
+   - bridge package-aware summaries into weekly
+   - do not rewrite weekly runtime in the same slice
+4. `Kimi / Yuanbao` fallback / shadow-path exploration after the frozen gate remains stable

@@ -142,6 +142,47 @@ Audience: Parser maintainers, QA, release owners, engineers doing DOM sampling o
 - reader / export / compression 没有明显断层
 - 历史线程冷打开时，manual capture 不因缺少新 mutation 而完全失效
 
+## 7.1 Frozen Text-Sample Verification Rules
+
+以下四个 operator text samples 现在是 frozen acceptance gate，不再当作开放问题 memo 使用：
+- `SEARCH_CITATION_001`
+- `CLAUDE_ARTIFACT_001`
+- `CLAUDE_TITLE_001`
+- `TABLE_FIDELITY_001`
+
+验证时必须逐项确认：
+
+### `SEARCH_CITATION_001`
+
+- citation label 收敛到第一条可见文本行
+- persisted / exported href 不含 `utm_*` tracking 参数
+- citation pill 文本不重新进入 `bodyText`
+- prompt/runtime 仍保留 citation sidecar summary lines
+
+### `CLAUDE_ARTIFACT_001`
+
+- standalone artifact 继续保持 sidecar-only
+- `plainText` 存在
+- `normalizedHtmlSnapshot` 存在
+- `markdownSnapshot` 仅在安全可导出时存在
+- export / reader / web / prompt 共享相同的 excerpt priority：
+  - `markdownSnapshot`
+  - `plainText`
+  - `normalizedHtmlSnapshot`
+
+### `CLAUDE_TITLE_001`
+
+- title 先来自 app shell metadata
+- sidebar fallback 只在 app-shell-first selector 失效时启用
+- body heading 不能覆盖 conversation title
+
+### `TABLE_FIDELITY_001`
+
+- true table 继续产出 `semantic_ast_v2`
+- table cell 内的 math 仍从语义锚点恢复，不从 renderer ghost text 回填
+- alignment 继续按结构抽取，不按视觉文本猜测
+- code / table / math signal 仍能传到 prompt-aware consumers
+
 ## 8. Practical Notes for the Next Refactor Cycle
 
 - DOM 采样的目标不是继续堆 selector，而是为 `platform normalization` 提供证据。

@@ -85,6 +85,7 @@ export interface ParsedMessage {
   degradedNodesCount?: number;
   citations?: MessageCitation[];
   artifacts?: MessageArtifact[];
+  normalizedHtmlSnapshot?: string | null;
   htmlContent?: string;
   timestamp?: number;
 }

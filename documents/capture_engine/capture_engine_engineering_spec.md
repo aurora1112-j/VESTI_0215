@@ -63,6 +63,28 @@ conversation title、session identity、page-level status 等 metadata 属于应
 
 换句话说，标题误捕获首先是 **app-shell metadata interception 失败**，不是 markdown parser 失败。
 
+### 2.6 Frozen Week 2 Text Acceptance Gate
+
+以下四个 operator text samples 现在是 **frozen acceptance gate**，不是继续开放的调查 memo：
+- `SEARCH_CITATION_001`
+- `CLAUDE_ARTIFACT_001`
+- `CLAUDE_TITLE_001`
+- `TABLE_FIDELITY_001`
+
+它们在当前 shipped code 中代表的稳定 contract 必须写死：
+- citation label 只持久化第一条可见文本行
+- citation URL 在持久化前剥离 `utm_*` tracking 参数
+- citation pill 必须先从正文 clone 中剥离，绝不能留在 `bodyText`
+- Claude standalone artifact 必须保持 sidecar object，不参与 body-tail reconstruction
+- Claude title 必须来自 app shell metadata，不得反向从正文 heading 推断
+- table / math / code fidelity 必须由 `semantic_ast_v2` 与语义 truth source 决定，而不是 renderer-polluted `innerText`
+
+本规格在这一轮不重新打开以下议题：
+- schema migration
+- artifact replay / iframe execution
+- weekly schema rewrite
+- overseas live sampling 扩边
+
 ## 3. Stable Baseline That Remains In Force
 
 以下既有治理语义继续有效，本规格不重写它们：
@@ -159,10 +181,13 @@ conversation title、session identity、page-level status 等 metadata 属于应
 - **citation**
   - 作为 message-level sidecar 提取
   - 必须先从正文 DOM clone 中物理剔除，再提取正文
+  - label 使用第一条可见文本行
+  - href 在持久化前剥离 `utm_*` tracking 参数
   - 不进入正文 AST 主干
 - **artifact**
   - 允许作为 sidecar object 独立于正文 AST 存在
   - 对独立 Artifact，允许提取 `renderDimensions / plainText / markdownSnapshot / normalizedHtmlSnapshot`
+  - standalone artifact 不得回落为正文尾部重建来源
 
 shared AST 不应继续承担平台私有 DOM 猜测。
 

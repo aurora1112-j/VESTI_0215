@@ -1,5 +1,5 @@
 import type { IParser, ParsedMessage } from "../IParser";
-import type { Platform } from "../../../types";
+import type { MessageArtifact, Platform } from "../../../types";
 import {
   closestAnySelector,
   extractEarliestTimeFromSelectors,
@@ -12,9 +12,12 @@ import {
   uniqueNodesInDocumentOrder,
 } from "../shared/selectorUtils";
 import { extractAstFromElement } from "../shared/astExtractor";
+import { queryShallowestAppShellText } from "../shared/appShellInterceptor";
 import { resolveCanonicalMessageText } from "../shared/canonicalMessageText";
 import { astPerfModeController, type AstPerfMode } from "../shared/astPerfMode";
+import { createMessageArtifact } from "../../../utils/messageArtifacts";
 import { logger } from "../../../utils/logger";
+import { serializeAstRootToMarkdown } from "../../../utils/astMarkdown";
 
 const SELECTORS = {
   userPrimaryNodes: ["[data-testid='user-message']", "[data-testid*='user-message']"],
@@ -66,6 +69,42 @@ const SELECTORS = {
     "[data-testid*='assistant-message'] .markdown",
     "[data-testid*='assistant-message'] .prose",
   ],
+  artifactRoots: [
+    "#markdown-artifact",
+    "[data-testid='markdown-artifact']",
+    "[data-testid*='artifact-root']",
+    "[data-testid*='artifact-panel']",
+  ],
+  artifactFallbackRoots: [
+    "[data-testid*='artifact']",
+    "[data-testid*='preview']",
+    "[aria-label*='artifact' i]",
+    "[aria-label*='preview' i]",
+    "[id*='artifact']",
+    "[id*='preview']",
+    "[class*='artifact']",
+    "[class*='preview']",
+  ],
+  artifactContentSignals: [
+    ".standard-markdown",
+    ".progressive-markdown",
+    "table",
+    "pre code",
+    ".katex",
+    "blockquote",
+    "ul",
+    "ol",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "iframe",
+    "canvas",
+  ],
+  appShellTitle: ["div.truncate.font-base-bold"],
+  sidebarTitle: ["span.truncate.text-sm.whitespace-nowrap"],
   title: ["nav h1", "h1", "title"],
   generating: [
     "[data-is-streaming='true']",
@@ -118,6 +157,7 @@ const SELECTORS = {
     "[class*='toolbar']",
     "[class*='group/status']",
     "[class*='group/row']",
+    "#markdown-artifact",
     ".sr-only",
     "[contenteditable='true']",
   ],
@@ -167,6 +207,19 @@ interface ContentSnapshot {
   contentEl: Element | null;
   sanitizedContent: Element;
   textContent: string;
+  artifacts: MessageArtifact[];
+}
+
+interface ClaudeArtifactSnapshot {
+  renderDimensions: { width: number; height: number };
+  plainText: string;
+  normalizedHtmlSnapshot: string;
+  markdownSnapshot: string | null;
+}
+
+interface ResolvedClaudeArtifact {
+  root: Element;
+  snapshot: ClaudeArtifactSnapshot;
 }
 
 
@@ -180,6 +233,28 @@ export class ClaudeParser implements IParser {
   }
 
   getConversationTitle(): string {
+    const appShellTitle = queryShallowestAppShellText(SELECTORS.appShellTitle, {
+      excludeWithinSelectors: [
+        "main article",
+        ".standard-markdown",
+        ".progressive-markdown",
+        "[data-testid*='message-content']",
+      ],
+    });
+    const cleanedAppShellTitle = this.cleanTitle(appShellTitle ?? "");
+    if (cleanedAppShellTitle) return cleanedAppShellTitle;
+
+    const sidebarTitle = queryShallowestAppShellText(SELECTORS.sidebarTitle, {
+      excludeWithinSelectors: [
+        "main article",
+        ".standard-markdown",
+        ".progressive-markdown",
+        "[data-testid*='message-content']",
+      ],
+    });
+    const cleanedSidebarTitle = this.cleanTitle(sidebarTitle ?? "");
+    if (cleanedSidebarTitle) return cleanedSidebarTitle;
+
     const titleEl = queryFirst(SELECTORS.title);
     const title = this.cleanTitle(safeTextContent(titleEl));
     if (title) return title;
@@ -295,7 +370,7 @@ export class ClaudeParser implements IParser {
 
       const role: MessageRole = this.hasUserMarker(block) ? "user" : "ai";
       const snapshot = this.getContentSnapshot(block, role);
-      if (!snapshot.textContent) {
+      if (!this.hasSnapshotSignal(snapshot)) {
         droppedNoise += 1;
         continue;
       }
@@ -425,7 +500,7 @@ export class ClaudeParser implements IParser {
         droppedUnknownRole += 1;
         continue;
       }
-      if (!parsed.message.textContent.trim()) {
+      if (!this.hasParsedMessageSignal(parsed.message)) {
         droppedNoise += 1;
         continue;
       }
@@ -558,7 +633,7 @@ export class ClaudeParser implements IParser {
     if (!role) return null;
 
     const snapshot = this.getContentSnapshot(node, role);
-    if (!snapshot.textContent) {
+    if (!this.hasSnapshotSignal(snapshot)) {
       return null;
     }
 
@@ -592,8 +667,9 @@ export class ClaudeParser implements IParser {
         role,
         textContent,
         contentAst: ast.root,
-        contentAstVersion: ast.root ? "ast_v1" : null,
+        contentAstVersion: ast.root ? "ast_v2" : null,
         degradedNodesCount: ast.degradedNodesCount,
+        artifacts: snapshot.artifacts,
         htmlContent: astSource ? astSource.innerHTML : undefined,
       },
       degradedNodesCount: ast.degradedNodesCount,
@@ -601,7 +677,11 @@ export class ClaudeParser implements IParser {
     };
   }
 
-  private resolveContentElement(node: Element, role: MessageRole): Element | null {
+  private resolveContentElement(
+    node: Element,
+    role: MessageRole,
+    excludedArtifactRoot: Element | null = null,
+  ): Element | null {
     if (role === "user") {
       return (
         queryFirstWithin(node, SELECTORS.userPrimaryNodes) ||
@@ -609,16 +689,22 @@ export class ClaudeParser implements IParser {
       );
     }
 
-    const preferred = queryFirstWithin(node, [
-      ".standard-markdown",
-      ".progressive-markdown",
-      "[class*='font-claude-response-body']",
-    ]);
+    const preferred = this.pickContentCandidate(
+      node,
+      [
+        ".standard-markdown",
+        ".progressive-markdown",
+        "[class*='font-claude-response-body']",
+      ],
+      excludedArtifactRoot,
+    );
     if (preferred) {
       return preferred;
     }
 
-    const aiLeafNodes = queryAllWithinUnique(node, SELECTORS.aiContentLeaves);
+    const aiLeafNodes = queryAllWithinUnique(node, SELECTORS.aiContentLeaves).filter(
+      (candidate) => !this.isArtifactSubtreeCandidate(candidate, excludedArtifactRoot),
+    );
     if (aiLeafNodes.length > 1) {
       return this.findSharedContentContainer(aiLeafNodes, node) ?? node;
     }
@@ -626,7 +712,35 @@ export class ClaudeParser implements IParser {
       return aiLeafNodes[0];
     }
 
-    return queryFirstWithin(node, SELECTORS.messageContent) ?? node;
+    return this.pickContentCandidate(node, SELECTORS.messageContent, excludedArtifactRoot) ?? node;
+  }
+
+  private pickContentCandidate(
+    root: Element,
+    selectors: string[],
+    excludedArtifactRoot: Element | null,
+  ): Element | null {
+    for (const candidate of queryAllWithinUnique(root, selectors)) {
+      if (!this.isArtifactSubtreeCandidate(candidate, excludedArtifactRoot)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  private isArtifactSubtreeCandidate(
+    candidate: Element,
+    excludedArtifactRoot: Element | null,
+  ): boolean {
+    if (!excludedArtifactRoot) {
+      return false;
+    }
+
+    return (
+      candidate === excludedArtifactRoot ||
+      excludedArtifactRoot.contains(candidate) ||
+      candidate.contains(excludedArtifactRoot)
+    );
   }
 
   private findSharedContentContainer(nodes: Element[], boundary: Element): Element | null {
@@ -666,17 +780,33 @@ export class ClaudeParser implements IParser {
     return safeTextContent(element);
   }
 
-  private sanitizeContentElement(source: Element): Element {
+  private sanitizeContentElement(source: Element, excludedRoots: Element[] = []): Element {
     const clone = source.cloneNode(true) as Element;
+    for (const excludedRoot of excludedRoots) {
+      this.removeMirroredDescendant(source, clone, excludedRoot);
+    }
     const selector = SELECTORS.removableContentSelectors.join(", ");
     clone.querySelectorAll(selector).forEach((node) => node.remove());
     return clone;
   }
 
   private getContentSnapshot(node: Element, role: MessageRole): ContentSnapshot {
-    const contentEl = this.resolveContentElement(node, role);
+    const initialContentEl = this.resolveContentElement(node, role);
+    const resolvedArtifact =
+      role === "ai" ? this.resolveStandaloneArtifact(node, initialContentEl) : null;
+    const contentEl =
+      role === "ai"
+        ? this.resolveContentElement(node, role, resolvedArtifact?.root ?? null)
+        : initialContentEl;
     const baseEl = contentEl ?? node;
-    const sanitizedContent = this.sanitizeContentElement(baseEl);
+    const artifacts =
+      role === "ai" && resolvedArtifact
+        ? [this.createStandaloneArtifact(resolvedArtifact.snapshot)]
+        : [];
+    const sanitizedContent = this.sanitizeContentElement(
+      baseEl,
+      resolvedArtifact ? [resolvedArtifact.root] : [],
+    );
     const rawText = this.cleanExtractedText(this.extractVisibleText(sanitizedContent));
     const textContent = this.isNoiseText(rawText) ? "" : rawText;
 
@@ -684,11 +814,321 @@ export class ClaudeParser implements IParser {
       contentEl,
       sanitizedContent,
       textContent,
+      artifacts,
     };
   }
 
   private extractMessageText(node: Element, role: MessageRole): string {
     return this.getContentSnapshot(node, role).textContent;
+  }
+
+  private resolveStandaloneArtifact(
+    messageRoot: Element,
+    contentEl: Element | null,
+  ): ResolvedClaudeArtifact | null {
+    const explicitMatch = this.pickBestArtifactCandidate(
+      queryAllWithinUnique(messageRoot, SELECTORS.artifactRoots),
+      {
+        messageRoot,
+        contentEl,
+        allowContentOverlap: true,
+      },
+    );
+    if (explicitMatch) {
+      return explicitMatch;
+    }
+
+    return this.pickBestArtifactCandidate(
+      queryAllWithinUnique(messageRoot, SELECTORS.artifactFallbackRoots),
+      {
+        messageRoot,
+        contentEl,
+        allowContentOverlap: false,
+      },
+    );
+  }
+
+  private pickBestArtifactCandidate(
+    candidates: Element[],
+    options: {
+      messageRoot: Element;
+      contentEl: Element | null;
+      allowContentOverlap: boolean;
+    },
+  ): ResolvedClaudeArtifact | null {
+    let best: { match: ResolvedClaudeArtifact; score: number } | null = null;
+
+    for (const candidate of uniqueNodesInDocumentOrder(candidates).slice(0, 16)) {
+      if (!this.isArtifactCandidate(candidate, options)) {
+        continue;
+      }
+
+      const snapshot = this.sanitizeClaudeArtifact(candidate);
+      if (!this.hasArtifactPayload(snapshot)) {
+        continue;
+      }
+
+      const score = this.scoreArtifactCandidate(candidate, snapshot);
+      if (!best || score > best.score) {
+        best = {
+          match: {
+            root: candidate,
+            snapshot,
+          },
+          score,
+        };
+      }
+    }
+
+    return best?.match ?? null;
+  }
+
+  private isArtifactCandidate(
+    candidate: Element,
+    options: {
+      messageRoot: Element;
+      contentEl: Element | null;
+      allowContentOverlap: boolean;
+    },
+  ): boolean {
+    const { messageRoot, contentEl, allowContentOverlap } = options;
+    if (candidate === messageRoot) {
+      return false;
+    }
+
+    if (
+      SELECTORS.noiseContainers.some((selector) => candidate.matches(selector) || candidate.closest(selector))
+    ) {
+      return false;
+    }
+
+    if (contentEl) {
+      const overlapsContent =
+        candidate === contentEl || candidate.contains(contentEl) || contentEl.contains(candidate);
+      if (overlapsContent && !allowContentOverlap) {
+        return false;
+      }
+
+      const swallowsContent = candidate === contentEl || candidate.contains(contentEl);
+      if (swallowsContent && !this.hasStrongArtifactSignal(candidate)) {
+        return false;
+      }
+    }
+
+    if (!this.hasArtifactSignal(candidate)) {
+      return false;
+    }
+
+    if (!this.hasArtifactContentSignal(candidate)) {
+      return false;
+    }
+
+    if (
+      candidate instanceof HTMLElement &&
+      candidate.offsetHeight < 16 &&
+      candidate.offsetWidth < 16 &&
+      this.cleanExtractedText(this.extractVisibleText(candidate)).length < 40
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private hasArtifactSignal(candidate: Element): boolean {
+    return /(artifact|preview)/i.test(this.getArtifactSignalText(candidate));
+  }
+
+  private hasStrongArtifactSignal(candidate: Element): boolean {
+    const signal = this.getArtifactSignalText(candidate);
+    return /artifact/i.test(signal) || candidate.id === "markdown-artifact";
+  }
+
+  private getArtifactSignalText(candidate: Element): string {
+    return [
+      candidate.id,
+      candidate.getAttribute("data-testid"),
+      candidate.getAttribute("aria-label"),
+      candidate.className?.toString() ?? "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  private hasArtifactContentSignal(candidate: Element): boolean {
+    if (queryFirstWithin(candidate, SELECTORS.artifactContentSignals)) {
+      return true;
+    }
+
+    const plainText = this.cleanExtractedText(this.extractVisibleText(candidate));
+    if (plainText.length >= 80) {
+      return true;
+    }
+
+    return candidate.innerHTML.replace(/\s+/g, "").length >= 180;
+  }
+
+  private scoreArtifactCandidate(candidate: Element, snapshot: ClaudeArtifactSnapshot): number {
+    let score = 0;
+    const signal = this.getArtifactSignalText(candidate);
+
+    if (candidate.id === "markdown-artifact") {
+      score += 40;
+    }
+    if (/artifact/i.test(signal)) {
+      score += 12;
+    }
+    if (/preview/i.test(signal)) {
+      score += 6;
+    }
+    if (queryFirstWithin(candidate, [".standard-markdown", ".progressive-markdown"])) {
+      score += 10;
+    }
+    if (candidate.querySelector("table")) {
+      score += 4;
+    }
+    if (candidate.querySelector("pre code")) {
+      score += 4;
+    }
+    if (candidate.querySelector(".katex")) {
+      score += 4;
+    }
+    if (candidate.querySelector("iframe, canvas")) {
+      score += 3;
+    }
+    if (snapshot.markdownSnapshot) {
+      score += 5;
+    }
+    if (snapshot.plainText.trim()) {
+      score += Math.min(6, Math.ceil(snapshot.plainText.length / 160));
+    }
+    if (snapshot.normalizedHtmlSnapshot.trim()) {
+      score += Math.min(6, Math.ceil(snapshot.normalizedHtmlSnapshot.length / 400));
+    }
+
+    return score;
+  }
+
+  private hasArtifactPayload(snapshot: ClaudeArtifactSnapshot): boolean {
+    return (
+      snapshot.plainText.trim().length > 0 || snapshot.normalizedHtmlSnapshot.trim().length > 0
+    );
+  }
+
+  private createStandaloneArtifact(snapshot: ClaudeArtifactSnapshot): MessageArtifact {
+    const artifact = createMessageArtifact({
+      kind: "standalone_artifact",
+      label: this.inferArtifactLabel(snapshot.plainText),
+    });
+
+    artifact.captureMode = "standalone_artifact";
+    artifact.renderDimensions = snapshot.renderDimensions;
+    artifact.plainText = snapshot.plainText;
+    artifact.normalizedHtmlSnapshot = snapshot.normalizedHtmlSnapshot;
+    if (snapshot.markdownSnapshot) {
+      artifact.markdownSnapshot = snapshot.markdownSnapshot;
+    }
+
+    return artifact;
+  }
+
+  private sanitizeClaudeArtifact(source: Element): ClaudeArtifactSnapshot {
+    const clone = source.cloneNode(true) as Element;
+
+    clone.querySelectorAll("button, svg, .h-8, [role='button'], [aria-label*='copy' i]").forEach((node) => {
+      node.remove();
+    });
+
+    clone.querySelectorAll(".katex").forEach((node) => {
+      const katex = node as Element;
+      const annotation = katex.querySelector("annotation[encoding='application/x-tex']");
+      if (!annotation?.textContent?.trim()) {
+        return;
+      }
+      const tex = annotation.textContent.trim();
+      const container = katex.closest(".katex-display") ?? katex;
+      const textNode = document.createTextNode(
+        container.classList.contains("katex-display") ? `\n$$\n${tex}\n$$\n` : `$${tex}$`,
+      );
+      container.parentNode?.replaceChild(textNode, container);
+    });
+
+    clone.querySelectorAll("pre").forEach((pre) => {
+      const code = pre.querySelector("code");
+      if (!code) {
+        return;
+      }
+
+      const className = code.className ?? "";
+      const languageClass = className
+        .split(/\s+/)
+        .find((token) => token.startsWith("language-"));
+      const language = languageClass ? languageClass.replace("language-", "") : "";
+      const codeText = code.textContent ?? "";
+      const wrapper = pre.closest("[class*='copy'], [class*='code']") ?? pre;
+      const textNode = document.createTextNode(`\n\`\`\`${language}\n${codeText}\n\`\`\`\n`);
+      wrapper.parentNode?.replaceChild(textNode, wrapper);
+    });
+
+    const plainText = this.cleanExtractedText(this.extractVisibleText(clone));
+    const artifactAst = extractAstFromElement(clone, {
+      platform: "Claude",
+      perfMode: "full",
+    });
+    const markdownSnapshot = artifactAst.root
+      ? this.cleanExtractedTextPreservingMarkdown(serializeAstRootToMarkdown(artifactAst.root))
+      : null;
+    const width = Math.max(source.clientWidth || 0, source.scrollWidth || 0);
+    const height = Math.max(source.clientHeight || 0, source.scrollHeight || 0);
+
+    return {
+      renderDimensions: { width, height },
+      plainText,
+      normalizedHtmlSnapshot: clone.innerHTML,
+      markdownSnapshot: markdownSnapshot && markdownSnapshot.length > 0 ? markdownSnapshot : null,
+    };
+  }
+
+  private inferArtifactLabel(plainText: string): string | undefined {
+    const firstLine = plainText.split("\n").map((line) => line.trim()).find(Boolean);
+    return firstLine ? firstLine.slice(0, 80) : undefined;
+  }
+
+  private removeMirroredDescendant(source: Element, clone: Element, target: Element): void {
+    if (source === target) {
+      clone.innerHTML = "";
+      return;
+    }
+
+    const path: number[] = [];
+    let current: Element | null = target;
+
+    while (current && current !== source) {
+      const parent = current.parentElement;
+      if (!parent) {
+        return;
+      }
+      const index = Array.from(parent.children).indexOf(current);
+      if (index === -1) {
+        return;
+      }
+      path.push(index);
+      current = parent;
+    }
+
+    if (current !== source) {
+      return;
+    }
+
+    let mirrored: Element | null = clone;
+    for (const index of path.reverse()) {
+      mirrored = mirrored?.children.item(index) as Element | null;
+      if (!mirrored) {
+        return;
+      }
+    }
+
+    mirrored.remove();
   }
 
   private inferRole(node: Element): MessageRole | null {
@@ -798,6 +1238,15 @@ export class ClaudeParser implements IParser {
     return text;
   }
 
+  private cleanExtractedTextPreservingMarkdown(rawText: string): string {
+    return rawText
+      .replace(/\r/g, "")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t\f\v]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
   private cleanTitle(rawTitle: string): string {
     return rawTitle
       .replace(/\s+/g, " ")
@@ -805,17 +1254,23 @@ export class ClaudeParser implements IParser {
       .trim();
   }
 
+  private hasSnapshotSignal(snapshot: ContentSnapshot): boolean {
+    return snapshot.textContent.trim().length > 0 || snapshot.artifacts.length > 0;
+  }
+
+  private hasParsedMessageSignal(message: ParsedMessage): boolean {
+    return message.textContent.trim().length > 0 || (message.artifacts?.length ?? 0) > 0;
+  }
+
   private dedupeNearDuplicates(messages: ParsedMessage[]): ParsedMessage[] {
     const deduped: ParsedMessage[] = [];
 
     for (const message of messages) {
-      const signature = `${message.role}|${message.textContent.replace(/\s+/g, " ").trim()}`;
+      const signature = this.buildMessageSignature(message);
       const isRecentDuplicate = deduped
         .slice(Math.max(0, deduped.length - 2))
         .some((existing) => {
-          const existingSignature = `${existing.role}|${existing.textContent
-            .replace(/\s+/g, " ")
-            .trim()}`;
+          const existingSignature = this.buildMessageSignature(existing);
           return existingSignature === signature;
         });
 
@@ -825,6 +1280,24 @@ export class ClaudeParser implements IParser {
     }
 
     return deduped;
+  }
+
+  private buildMessageSignature(message: ParsedMessage): string {
+    const normalizedText = message.textContent.replace(/\s+/g, " ").trim();
+    const artifactSignature = (message.artifacts ?? [])
+      .map((artifact) =>
+        [
+          artifact.kind,
+          artifact.label ?? "",
+          artifact.captureMode ?? "",
+          artifact.plainText ?? "",
+          artifact.markdownSnapshot ?? "",
+          artifact.normalizedHtmlSnapshot ?? "",
+        ].join("::"),
+      )
+      .join("||");
+
+    return [message.role, normalizedText, artifactSignature].join("|");
   }
 
   private logStats(stats: ParserStats, messages: ParsedMessage[]): void {

@@ -109,13 +109,21 @@ const INLINE_NOISE_SELECTORS = [
   "[class*='search-widget']",
   "[class*='reference-count']",
   "[class*='references-count']",
+  "[class*='table-header']",
+  "[class*='actions-']",
+  "[class*='action-btn']",
   "[class*='edit-history']",
   "[data-testid*='edit-history']",
   "[class*='history-switch']",
   "[class*='pager']",
   "[class*='pagination']",
   "[class*='action-bar']",
+  "[class*='message-action-button']",
+  "[class*='overflow-list']",
+  "[class*='tool-button']",
   "[class*='operation']",
+  "[class*='dropdown-tooltip']",
+  "[data-popupid]",
   "button",
   "svg",
 ];
@@ -570,7 +578,7 @@ export class DoubaoParser implements IParser {
         role,
         textContent,
         contentAst: ast.root,
-        contentAstVersion: ast.root ? "ast_v1" : null,
+        contentAstVersion: ast.root ? "ast_v2" : null,
         degradedNodesCount: ast.degradedNodesCount,
         htmlContent: sanitizedContent.innerHTML,
       },
@@ -724,6 +732,22 @@ export class DoubaoParser implements IParser {
     for (const selector of SELECTORS.inlineNoiseSelectors) {
       clone.querySelectorAll(selector).forEach((node) => node.remove());
     }
+
+    clone.querySelectorAll("[class*='table-wrapper']").forEach((node) => {
+      if (!(node instanceof Element)) {
+        return;
+      }
+
+      const nestedTable = node.querySelector("[class*='table-body'] table");
+      if (!nestedTable) {
+        return;
+      }
+
+      const replacement =
+        nestedTable.closest("[class*='table-container'], [class*='table-scroll-container']") ??
+        nestedTable;
+      node.replaceWith(replacement.cloneNode(true));
+    });
 
     for (const selector of SELECTORS.dividerSelectors) {
       clone.querySelectorAll(selector).forEach((divider) => {

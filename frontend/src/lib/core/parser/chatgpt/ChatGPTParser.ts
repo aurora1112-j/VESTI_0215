@@ -592,7 +592,7 @@ export class ChatGPTParser implements IParser {
         role,
         textContent,
         contentAst: ast.root,
-        contentAstVersion: ast.root ? "ast_v1" : null,
+        contentAstVersion: ast.root ? "ast_v2" : null,
         degradedNodesCount: ast.degradedNodesCount,
         citations: sanitized.citations ?? [],
         htmlContent: sanitizedContent.innerHTML,
