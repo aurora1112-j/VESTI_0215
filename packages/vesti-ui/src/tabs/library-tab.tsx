@@ -48,6 +48,8 @@ import {
   isNotionExportConfigured,
 } from "../notion-integration";
 import { RichMessageContent } from "../components/RichMessageContent";
+import { ReaderTimestampFooter } from "../components/ReaderTimestampFooter";
+import { buildReaderTimestampFooterModel } from "../lib/reader-timestamps";
 
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
@@ -601,9 +603,12 @@ export function LibraryTab({
     renameNoteTrimmed &&
     renameNoteTrimmed !== renameNoteTarget.title
   );
-  const messageCount = messages.length;
-  const messageDate =
-    messages.length > 0 ? messages[0].created_at : selectedConversation?.updated_at;
+  const messageCount = selectedConversation?.message_count ?? messages.length;
+  const timestampFooter = useMemo(
+    () =>
+      selectedConversation ? buildReaderTimestampFooterModel(selectedConversation) : null,
+    [selectedConversation]
+  );
   const renderedNoteContent = useMemo(() => {
     if (!noteContent.trim()) return "";
     const html = marked.parse(noteContent, { gfm: true, breaks: true }) as string;
@@ -939,15 +944,6 @@ export function LibraryTab({
       window.alert((error as Error)?.message ?? "Failed to rename note.");
     }
   };
-
-  function formatDate(timestamp?: number): string {
-    if (!timestamp) return "Unknown date";
-    return new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(new Date(timestamp));
-  }
 
   function formatAnnotationTimestamp(annotation: Annotation): string {
     const createdAt = annotation.created_at;
@@ -1974,13 +1970,11 @@ export function LibraryTab({
                 >
                   {getPlatformLabel(selectedConversation.platform)}
                 </span>
-                <span>·</span>
-                <span>{formatDate(messageDate)}</span>
-                <span>·</span>
+                <span>|</span>
                 <span>{messageCount} messages</span>
                 {selectedConversation.url && (
                   <>
-                    <span>·</span>
+                    <span>|</span>
                     <button
                       onClick={() => window.open(selectedConversation.url, "_blank", "noopener,noreferrer")}
                       className="inline-flex items-center gap-1 text-accent-primary hover:text-accent-primary/80 transition-colors"
@@ -2335,29 +2329,36 @@ export function LibraryTab({
             <div className="mt-6">
               {/* 默认预览条 - 折叠时显示 */}
               {!isConversationExpanded && (
-                <div className="flex items-start justify-between gap-4">
-                  <p className="text-[13px] font-sans text-text-secondary leading-relaxed line-clamp-2 flex-1">
-                    {messagesLoading
-                      ? "Loading..."
-                      : messages.length === 0
-                        ? "No messages captured yet."
-                        : `${messages[0]?.content_text?.slice(0, 120) ?? ""}${
-                            (messages[0]?.content_text?.length ?? 0) > 120 ? "..." : ""
-                          }`}
-                  </p>
-                  {messageCount > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setIsConversationExpanded((prev) => !prev)}
-                      className="shrink-0 text-[12px] font-sans text-text-tertiary hover:text-text-secondary transition-colors whitespace-nowrap"
-                    >
-                      Show all {messageCount} messages ↓
-                    </button>
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="text-[13px] font-sans text-text-secondary leading-relaxed line-clamp-2 flex-1">
+                      {messagesLoading
+                        ? "Loading..."
+                        : messages.length === 0
+                          ? "No messages captured yet."
+                          : `${messages[0]?.content_text?.slice(0, 120) ?? ""}${
+                              (messages[0]?.content_text?.length ?? 0) > 120 ? "..." : ""
+                            }`}
+                    </p>
+                    {messageCount > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsConversationExpanded((prev) => !prev)}
+                        className="shrink-0 text-[12px] font-sans text-text-tertiary hover:text-text-secondary transition-colors whitespace-nowrap"
+                      >
+                        Show all {messageCount} messages
+                      </button>
+                    )}
+                  </div>
+                  {timestampFooter && (
+                    <ReaderTimestampFooter
+                      model={timestampFooter}
+                      className="border-t border-border-subtle pt-4"
+                    />
                   )}
                 </div>
               )}
 
-              {/* 展开后的完整消息流 */}
               <div
                 className={`transition-all duration-300 ease-in-out overflow-hidden ${
                   isConversationExpanded
@@ -2377,7 +2378,7 @@ export function LibraryTab({
                         onClick={() => setIsConversationExpanded(false)}
                         className="text-[12px] font-sans text-text-tertiary hover:text-text-secondary transition-colors whitespace-nowrap"
                       >
-                        Hide ↑
+                        Hide
                       </button>
                     </div>
                   )}
@@ -2515,6 +2516,13 @@ export function LibraryTab({
                           {renderAnnotationPanelContent()}
                         </div>
                       )}
+
+                    {timestampFooter && (
+                      <ReaderTimestampFooter
+                        model={timestampFooter}
+                        className="mt-6 border-t border-border-subtle pt-4"
+                      />
+                    )}
                   </div>
                 </div>
               </div>

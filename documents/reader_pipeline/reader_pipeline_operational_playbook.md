@@ -55,9 +55,10 @@ reader fidelity、导出检查、compression 检查和 web parity 检查。
 
 必检项：
 
-- 主日期显示 `originAt`
-- metadata 同时展示 `Source Time / First Captured / Last Captured / Last Modified`
-- sidepanel 与 web 使用同一套 helper
+- header 不显示时间 metadata
+- 底部折叠 footer 摘要显示 `Started + Last updated`
+- footer 展开后只显示去重后的 `Started / Last updated / conditional Captured / conditional Source Time`
+- sidepanel 与 web 使用同一套 footer helper 语义
 
 ### 3.5 Export, Compression, and Weekly
 

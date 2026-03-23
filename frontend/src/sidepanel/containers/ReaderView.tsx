@@ -2,14 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import type { Conversation, Message } from "~lib/types";
 import {
-  getConversationCaptureFreshnessAt,
-  getConversationFirstCapturedAt,
-  getConversationOriginAt,
-  getConversationSourceCreatedAt,
+  buildReaderTimestampFooterModel,
 } from "~lib/conversations/timestamps";
 import { getMessages } from "~lib/services/storageService";
 import { PlatformTag } from "../components/PlatformTag";
 import { MessageBubble } from "../components/MessageBubble";
+import { ReaderTimestampFooter } from "../components/ReaderTimestampFooter";
 import { ChatBubbleLineIcon } from "../components/ThreadSearchIcons";
 import {
   buildOccurrenceIndexMap,
@@ -38,24 +36,6 @@ interface ReaderViewProps {
   dispatch: (event: ThreadsEvent) => void;
 }
 
-function formatDate(value: number): string {
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function formatDateTime(value: number): string {
-  return new Date(value).toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 export function ReaderView({
   conversation,
   onBack,
@@ -77,7 +57,10 @@ export function ReaderView({
   const isLoading = mode === "reader_loading_messages";
   const isBuilding = mode === "reader_building_index";
   const isReady = mode === "reader_ready";
-  const sourceCreatedAt = getConversationSourceCreatedAt(conversation);
+  const timestampFooter = useMemo(
+    () => buildReaderTimestampFooterModel(conversation),
+    [conversation]
+  );
 
   const occurrenceIndexMap = useMemo<OccurrenceIndexMap>(() => {
     if (!searchModel || searchModel.occurrences.length === 0) {
@@ -178,28 +161,6 @@ export function ReaderView({
         </span>
       </header>
 
-      <div className="border-b border-border-subtle px-4 pb-3 text-vesti-xs text-text-tertiary">
-        <div className="flex flex-wrap items-center gap-2">
-          <span>Started {formatDate(getConversationOriginAt(conversation))}</span>
-          <span className="text-text-quaternary">|</span>
-          <span>
-            Last captured {formatDateTime(getConversationCaptureFreshnessAt(conversation))}
-          </span>
-        </div>
-        <div className="mt-2 grid gap-1 sm:grid-cols-2">
-          {sourceCreatedAt !== null && (
-            <span>Source Time: {formatDateTime(sourceCreatedAt)}</span>
-          )}
-          <span>
-            First Captured: {formatDateTime(getConversationFirstCapturedAt(conversation))}
-          </span>
-          <span>
-            Last Captured: {formatDateTime(getConversationCaptureFreshnessAt(conversation))}
-          </span>
-          <span>Last Modified: {formatDateTime(conversation.updated_at)}</span>
-        </div>
-      </div>
-
       {hasQuery ? (
         <div className="reader-view-nav">
           <button
@@ -258,7 +219,7 @@ export function ReaderView({
             ))}
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex min-h-[240px] items-center justify-center">
             <p className="text-vesti-sm text-text-tertiary">No messages yet</p>
           </div>
         ) : (
@@ -275,6 +236,7 @@ export function ReaderView({
             ))}
           </div>
         )}
+        <ReaderTimestampFooter model={timestampFooter} />
       </div>
     </div>
   );
