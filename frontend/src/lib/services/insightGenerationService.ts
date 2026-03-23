@@ -432,7 +432,14 @@ function buildRepairPrompt(
     kind === "summary" ? insightSchemaHints.summary_v2 : insightSchemaHints.weekly_lite;
 
   return `Fix the output below into a valid JSON object.
-Return JSON only.
+Return JSON only. No markdown fences. No \`\`\`json wrapper.
+
+Critical rules:
+- speaker must be exactly "User" or "AI"
+- real_world_anchor must be null (not "") when no anchor exists
+- depth_level must be one of: "superficial", "moderate", "deep"
+- All array fields that are missing should be []
+- insufficient_data must be a boolean (true/false), not a string
 
 Target schema: ${JSON.stringify(schemaHint)}
 Validation errors: ${validationErrors.join("; ") || "JSON parse failed"}
@@ -664,10 +671,21 @@ function validateSummaryDensity(
   const unresolvedCount = summary.unresolved_threads.length;
   const nextStepsCount = summary.actionable_next_steps.length;
   const triggered = evidenceScore >= SUMMARY_DENSITY_EVIDENCE_SCORE_THRESHOLD;
+
+  // Adaptive density: for shorter conversations (< 20 messages) or lower
+  // evidence scores, accept 1 item in each list instead of requiring 2.
+  // This prevents the density gate from rejecting perfectly valid summaries
+  // for simpler/shorter conversations where the LLM correctly identified
+  // fewer unresolved threads or next steps.
+  const adaptiveMinItems =
+    messageCount < 20 || evidenceScore < 3
+      ? 1
+      : SUMMARY_DENSITY_MIN_ITEMS;
+
   const passed =
     !triggered ||
-    (unresolvedCount >= SUMMARY_DENSITY_MIN_ITEMS &&
-      nextStepsCount >= SUMMARY_DENSITY_MIN_ITEMS);
+    (unresolvedCount >= adaptiveMinItems &&
+      nextStepsCount >= adaptiveMinItems);
 
   return createDefaultDensityValidation({
     triggered,
@@ -884,16 +902,18 @@ Compacted skeleton:
 ${compactedContext}
 
 Constraints:
-1) Output JSON object only.
+1) Output JSON object only. No markdown fences. No \`\`\`json wrapper.
 2) Do not introduce facts absent from the compacted skeleton.
-3) If evidence is missing for a field, use [] or null.
+3) If evidence is missing for a field, use [] or null (not "" empty string).
 4) thinking_journey assertion must be 2-3 complete sentences per step.
 5) Each assertion should include: why this step appears now + what it opens next.
-6) real_world_anchor must be plain-language and understandable by non-technical readers.
-7) Keep [User]/[AI] speaker ownership aligned with the compacted skeleton.
-8) meta_observations should use natural user-facing phrases, not technical labels.
-9) unresolved_threads and actionable_next_steps must be complete phrases, not fragments.
-10) When evidence is sufficient, target 2-4 items for unresolved_threads and actionable_next_steps; when sparse, 1 item or [] is acceptable.`;
+6) real_world_anchor: use null when no anchor exists (not "").
+7) speaker must be exactly "User" or "AI" (case-sensitive).
+8) Keep [User]/[AI] speaker ownership aligned with the compacted skeleton.
+9) meta_observations should use natural user-facing phrases, not technical labels.
+10) depth_level must be one of: "superficial", "moderate", "deep" (lowercase only).
+11) unresolved_threads and actionable_next_steps must be complete phrases, not fragments.
+12) When evidence is sufficient, target 2-4 items for unresolved_threads and actionable_next_steps; when sparse, 1 item or [] is acceptable.`;
 }
 
 async function runCompaction(

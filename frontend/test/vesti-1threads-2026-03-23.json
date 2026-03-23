@@ -1,0 +1,870 @@
+{
+  "exported_at": "2026-03-23T15:44:20.062Z",
+  "count": 1,
+  "content_mode": "full",
+  "compact_variant": null,
+  "conversations": [
+    {
+      "id": 3,
+      "title": "MS-S1 A100",
+      "platform": "Kimi",
+      "url": "https://www.kimi.com/chat/19d110b1-2122-8dc0-8000-09baa9f1aa4b?chat_enter_method=history",
+      "source_created_at": null,
+      "origin_at": 1774280606110,
+      "first_captured_at": 1774280606110,
+      "last_captured_at": 1774280606116,
+      "created_at": 1774280606116,
+      "updated_at": 1774280606124,
+      "snippet": "amg ms-s1 max 的价格？",
+      "message_count": 6,
+      "messages": [
+        {
+          "conversation_id": 3,
+          "role": "user",
+          "content_text": "amg ms-s1 max 的价格？",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "amg ms-s1 max 的价格？"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 0,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": null,
+          "created_at": 1774280606117,
+          "id": 27
+        },
+        {
+          "conversation_id": 3,
+          "role": "ai",
+          "content_text": "根据搜索结果，您询问的应该是铭凡（Minisforum）MS-S1 MAX迷你主机的价格：铭凡 MS-S1 MAX 价格配置价格128GB RAM + 2TB SSD首发价 ¥14,999 / 日常价 ¥15,999价格详情首发预售价格：14,999元（定金500元）日常售价：15,999元 首销优惠价：14,899元（券后）主要配置亮点处理器：AMD 锐龙 AI Max+ 395（Zen5架构，16核32线程，最高5.1GHz）内存：128GB LPDDR5X 8000MHz（可作为显存使用，支持本地运行1280亿参数大模型）存储：2TB SSD（支持扩展至8TB）AI算力：126 TOPS（NPU 50 TOPS + GPU）散热：六热管+双涡轮风扇，支持160W峰值性能释放特色：支持两台组成集群，可运行2350亿参数模型；支持2U机架部署 该产品定位为AI工作站迷你主机，专为本地大模型运行、视频渲染、3D建模等高性能场景设计。目前在京东平台销售，提供三年质保服务。",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "根据搜索结果，您询问的应该是"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡（Minisforum）MS-S1 MAX"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "迷你主机的价格："
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡 MS-S1 MAX 价格"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "配置价格128GB RAM + 2TB SSD首发价 ¥14,999 / 日常价 ¥15,999"
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "价格详情"
+                  }
+                ]
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "首发预售价格"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：14,999元（定金500元）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "日常售价"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：15,999元"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "首销优惠价"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：14,899元（券后）"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "主要配置亮点"
+                  }
+                ]
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "处理器"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：AMD 锐龙 AI Max+ 395（Zen5架构，16核32线程，最高5.1GHz）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "内存"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：128GB LPDDR5X 8000MHz（可作为显存使用，支持本地运行1280亿参数大模型）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "存储"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：2TB SSD（支持扩展至8TB）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "AI算力"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：126 TOPS（NPU 50 TOPS + GPU）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "散热"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：六热管+双涡轮风扇，支持160W峰值性能释放"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "特色"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "：支持两台组成集群，可运行2350亿参数模型；支持2U机架部署"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "该产品定位为AI工作站迷你主机，专为本地大模型运行、视频渲染、3D建模等高性能场景设计。目前在京东平台销售，提供三年质保服务。"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 1,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": "<div class=\"paragraph\">根据搜索结果，您询问的应该是<strong>铭凡（Minisforum）MS-S1 MAX</strong>迷你主机的价格：</div><h2>铭凡 MS-S1 MAX 价格</h2><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">配置</th><th data-v-5c5bdb04=\"\" align=\"left\">价格</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\">128GB RAM + 2TB SSD</td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">首发价 ¥14,999</strong> / 日常价 ¥15,999</td></tr></tbody></table></div></div><h3>价格详情</h3><ul start=\"1\"><li><div class=\"paragraph\"><strong>首发预售价格</strong>：14,999元（定金500元）<!----><!----></div></li><li><div class=\"paragraph\"><strong>日常售价</strong>：15,999元 <!----><!----></div></li><li><div class=\"paragraph\"><strong>首销优惠价</strong>：14,899元（券后）<!----><!----></div></li></ul><h3>主要配置亮点</h3><ul start=\"1\"><li><div class=\"paragraph\"><strong>处理器</strong>：AMD 锐龙 AI Max+ 395（Zen5架构，16核32线程，最高5.1GHz）</div></li><li><div class=\"paragraph\"><strong>内存</strong>：128GB LPDDR5X 8000MHz（可作为显存使用，支持本地运行1280亿参数大模型）</div></li><li><div class=\"paragraph\"><strong>存储</strong>：2TB SSD（支持扩展至8TB）</div></li><li><div class=\"paragraph\"><strong>AI算力</strong>：126 TOPS（NPU 50 TOPS + GPU）</div></li><li><div class=\"paragraph\"><strong>散热</strong>：六热管+双涡轮风扇，支持160W峰值性能释放</div></li><li><div class=\"paragraph\"><strong>特色</strong>：支持两台组成集群，可运行2350亿参数模型；支持2U机架部署 <!----><!----></div></li></ul><div class=\"paragraph\">该产品定位为AI工作站迷你主机，专为本地大模型运行、视频渲染、3D建模等高性能场景设计。目前在京东平台销售，提供三年质保服务。</div>",
+          "created_at": 1774280606118,
+          "id": 28
+        },
+        {
+          "conversation_id": 3,
+          "role": "user",
+          "content_text": "这个和A100价格怎么样？",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "这个和A100价格怎么样？"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 0,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": null,
+          "created_at": 1774280606119,
+          "id": 29
+        },
+        {
+          "conversation_id": 3,
+          "role": "ai",
+          "content_text": "根据搜索结果，以下是铭凡 MS-S1 MAX与NVIDIA A100的价格对比：价格对比表产品配置价格区间铭凡 MS-S1 MAX128GB RAM + 2TB SSD¥14,999 - ¥15,999NVIDIA A100 40GB单卡¥8万 - ¥15万NVIDIA A100 80GB单卡¥12万 - ¥15万8卡A100服务器整机¥80万 - ¥95万详细价格分析铭凡 MS-S1 MAX首发价：¥14,999日常价：¥15,999包含：完整主机（CPU+128GB内存+2TB SSD+集显）NVIDIA A100 单卡价格40GB PCIe版：约 ¥8-15万元（工包定制版可低至6-7万元）80GB SXM/PCIe版：约 ¥12-15万元2025年价格已较2023-2024年大幅回落，跌幅超50%8卡A100服务器整机NF5488M6型号（8×A100 40GB）：约 ¥80-95万元/台关键差异对比维度铭凡 MS-S1 MAXNVIDIA A100价格~¥1.5万（整机）~¥8-15万（单卡）显存/内存128GB LPDDR5X（可分配为显存）40GB/80GB HBM2eAI算力126 TOPS624 TOPS (INT8) / 312 TFLOPS (FP16)定位个人/小型团队本地AI工作站数据中心/企业级训练集群适用场景本地70B-128B模型推理、轻量微调大规模训练、万卡集群性价比结论铭凡 MS-S1 MAX 的价格仅为 A100单卡的1/5到1/10，但定位完全不同：MS-S1 MAX 适合个人开发者、学生、小型团队进行本地大模型推理和轻量微调A100 适合企业级大规模训练、数据中心部署如果预算有限且主要需求是本地运行大模型推理（如70B-128B参数模型），MS-S1 MAX 是极具性价比的选择；如果需要大规模分布式训练或万卡集群，A100/H100 仍是行业标准。",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "根据搜索结果，以下是"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡 MS-S1 MAX"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "与"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "NVIDIA A100"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "的价格对比："
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "价格对比表"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "产品配置价格区间铭凡 MS-S1 MAX128GB RAM + 2TB SSD¥14,999 - ¥15,999NVIDIA A100 40GB单卡¥8万 - ¥15万NVIDIA A100 80GB单卡¥12万 - ¥15万8卡A100服务器整机¥80万 - ¥95万"
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "详细价格分析"
+                  }
+                ]
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡 MS-S1 MAX"
+                  }
+                ]
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "首发价：¥14,999"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "日常价：¥15,999"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "包含：完整主机（CPU+128GB内存+2TB SSD+集显）"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "NVIDIA A100 单卡价格"
+                  }
+                ]
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "40GB PCIe版：约 ¥8-15万元（工包定制版可低至6-7万元）"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "80GB SXM/PCIe版：约 ¥12-15万元"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "2025年价格已较2023-2024年大幅回落，跌幅超50%"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "8卡A100服务器整机"
+                  }
+                ]
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "NF5488M6型号（8×A100 40GB）：约 ¥80-95万元/台"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "关键差异"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "对比维度铭凡 MS-S1 MAXNVIDIA A100价格~¥1.5万（整机）~¥8-15万（单卡）显存/内存128GB LPDDR5X（可分配为显存）40GB/80GB HBM2eAI算力126 TOPS624 TOPS (INT8) / 312 TFLOPS (FP16)定位个人/小型团队本地AI工作站数据中心/企业级训练集群适用场景本地70B-128B模型推理、轻量微调大规模训练、万卡集群"
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "性价比结论"
+                  }
+                ]
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡 MS-S1 MAX"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " 的价格仅为 "
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "A100单卡的1/5到1/10"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "，但定位完全不同："
+              },
+              {
+                "type": "ul",
+                "children": [
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "MS-S1 MAX 适合"
+                      },
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "个人开发者、学生、小型团队"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "进行本地大模型推理和轻量微调"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "li",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "A100 适合"
+                      },
+                      {
+                        "type": "strong",
+                        "children": [
+                          {
+                            "type": "text",
+                            "text": "企业级大规模训练、数据中心部署"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "如果预算有限且主要需求是"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "本地运行大模型推理"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "（如70B-128B参数模型），MS-S1 MAX 是极具性价比的选择；如果需要"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "大规模分布式训练"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "或"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "万卡集群"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "，A100/H100 仍是行业标准。"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 2,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": "<div class=\"paragraph\">根据搜索结果，以下是<strong>铭凡 MS-S1 MAX</strong>与<strong>NVIDIA A100</strong>的价格对比：</div><h2>价格对比表</h2><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">产品</th><th data-v-5c5bdb04=\"\" align=\"left\">配置</th><th data-v-5c5bdb04=\"\" align=\"left\">价格区间</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">铭凡 MS-S1 MAX</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">128GB RAM + 2TB SSD</td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">¥14,999 - ¥15,999</strong></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">NVIDIA A100 40GB</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">单卡</td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">¥8万 - ¥15万</strong></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">NVIDIA A100 80GB</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">单卡</td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">¥12万 - ¥15万</strong></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">8卡A100服务器</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">整机</td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">¥80万 - ¥95万</strong></td></tr></tbody></table></div></div><h3>详细价格分析</h3><div class=\"paragraph\"><strong>铭凡 MS-S1 MAX</strong><!----><!----></div><ul start=\"1\"><li><div class=\"paragraph\">首发价：¥14,999</div></li><li><div class=\"paragraph\">日常价：¥15,999</div></li><li><div class=\"paragraph\">包含：完整主机（CPU+128GB内存+2TB SSD+集显）</div></li></ul><div class=\"paragraph\"><strong>NVIDIA A100 单卡价格</strong><!----><!----></div><ul start=\"1\"><li><div class=\"paragraph\">40GB PCIe版：约 ¥8-15万元（工包定制版可低至6-7万元）</div></li><li><div class=\"paragraph\">80GB SXM/PCIe版：约 ¥12-15万元</div></li><li><div class=\"paragraph\">2025年价格已较2023-2024年大幅回落，跌幅超50%</div></li></ul><div class=\"paragraph\"><strong>8卡A100服务器整机</strong><!----><!----></div><ul start=\"1\"><li><div class=\"paragraph\">NF5488M6型号（8×A100 40GB）：约 ¥80-95万元/台</div></li></ul><h3>关键差异</h3><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">对比维度</th><th data-v-5c5bdb04=\"\" align=\"left\">铭凡 MS-S1 MAX</th><th data-v-5c5bdb04=\"\" align=\"left\">NVIDIA A100</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">价格</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">~¥1.5万（整机）</td><td data-v-5c5bdb04=\"\" align=\"left\">~¥8-15万（单卡）</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">显存/内存</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">128GB LPDDR5X（可分配为显存）</td><td data-v-5c5bdb04=\"\" align=\"left\">40GB/80GB HBM2e</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">AI算力</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">126 TOPS</td><td data-v-5c5bdb04=\"\" align=\"left\">624 TOPS (INT8) / 312 TFLOPS (FP16)</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">定位</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">个人/小型团队本地AI工作站</td><td data-v-5c5bdb04=\"\" align=\"left\">数据中心/企业级训练集群</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">适用场景</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">本地70B-128B模型推理、轻量微调</td><td data-v-5c5bdb04=\"\" align=\"left\">大规模训练、万卡集群</td></tr></tbody></table></div></div><h3>性价比结论</h3><div class=\"paragraph\"><strong>铭凡 MS-S1 MAX</strong> 的价格仅为 <strong>A100单卡的1/5到1/10</strong>，但定位完全不同：</div><ul start=\"1\"><li><div class=\"paragraph\">MS-S1 MAX 适合<strong>个人开发者、学生、小型团队</strong>进行本地大模型推理和轻量微调</div></li><li><div class=\"paragraph\">A100 适合<strong>企业级大规模训练、数据中心部署</strong></div></li></ul><div class=\"paragraph\">如果预算有限且主要需求是<strong>本地运行大模型推理</strong>（如70B-128B参数模型），MS-S1 MAX 是极具性价比的选择；如果需要<strong>大规模分布式训练</strong>或<strong>万卡集群</strong>，A100/H100 仍是行业标准。</div>",
+          "created_at": 1774280606120,
+          "id": 30
+        },
+        {
+          "conversation_id": 3,
+          "role": "user",
+          "content_text": "那用它来训练大模型？",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "那用它来训练大模型？"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 0,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": null,
+          "created_at": 1774280606121,
+          "id": 31
+        },
+        {
+          "conversation_id": 3,
+          "role": "ai",
+          "content_text": "我来详细分析用铭凡 MS-S1 MAX训练大模型的可行性和局限性：核心结论：适合轻量微调，不适合从头预训练一、硬件能力边界指标MS-S1 MAX对比参考GPU显存最大可分配96GB（从128GB内存中划分）A100 80GB HBM2eAI算力126 TOPS（NPU 50 TOPS + iGPU）A100: 312 TFLOPS (FP16)内存带宽~256 GB/s（LPDDR5X）A100: 2 TB/s (HBM2e)功耗释放160W峰值 A100单卡: 400W关键瓶颈：LPDDR5X内存带宽仅为HBM2e的1/8，这是训练大模型的最大限制。二、能做什么？（实际可行场景）✅ 适合的任务场景可行性说明70B-128B模型推理⭐⭐⭐⭐⭐官方宣传核心卖点，本地运行流畅 7B-13B模型LoRA微调⭐⭐⭐⭐96GB显存足够，适合领域适配小模型全参数微调（<3B）⭐⭐⭐⭐如Phi-2、TinyLlama等模型量化部署（INT4/INT8）⭐⭐⭐⭐⭐可运行2350亿参数模型（双机集群）AI应用开发/原型验证⭐⭐⭐⭐⭐低成本本地开发环境❌ 不适合的任务场景原因从头预训练大模型（>7B）算力和带宽不足，训练时间不可接受大规模多卡分布式训练仅单节点，无NVLink互联长序列大batch训练内存带宽瓶颈导致GPU利用率低三、与A100训练对比对比项MS-S1 MAX8×A100服务器价格¥1.5万¥80-95万 总显存96GB（可分配）640GB (8×80GB)训练7B模型全参数不可行或极慢可行，数小时/天训练70B模型LoRA可行，本地完成轻松完成训练效率低（内存带宽限制）高（HBM+NVLink）四、实际使用建议如果您只有MS-S1 MAX：# 推荐配置方案1. 使用 Unsloth / LLaMA-Factory 等高效微调框架\n2. 采用 QLoRA / LoRA 方法，冻结大部分参数\n3. 选择 4-bit/8-bit 量化减少显存占用\n4. 训练数据控制在万级以内，避免过长序列训练策略：模型规模推荐方法预期效果1B-3B全参数微调领域适配良好7B-13BLoRA/QLoRA指令微调可行70B+仅推理/量化本地部署体验五、总结MS-S1 MAX的定位是\"个人AI工作站\"，而非\"训练服务器\"维度评价性价比极高（仅为A100单卡1/10价格）训练能力仅限轻量微调和推理适用人群个人开发者、学生、小团队原型验证替代场景无法替代A100/H100用于生产级训练建议：如果目标是生产级大模型训练，仍需租用/购买A100/H100集群；如果目标是本地开发、学习、轻量微调，MS-S1 MAX是极具性价比的选择。",
+          "content_ast": {
+            "type": "root",
+            "children": [
+              {
+                "type": "text",
+                "text": "我来详细分析用"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "铭凡 MS-S1 MAX"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "训练大模型的可行性和局限性："
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "核心结论：适合轻量微调，不适合从头预训练"
+                  }
+                ]
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "一、硬件能力边界"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "指标MS-S1 MAX对比参考GPU显存最大可分配96GB（从128GB内存中划分）A100 80GB HBM2eAI算力126 TOPS（NPU 50 TOPS + iGPU）A100: 312 TFLOPS (FP16)内存带宽~256 GB/s（LPDDR5X）A100: 2 TB/s (HBM2e)功耗释放160W峰值 A100单卡: 400W"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "关键瓶颈"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "：LPDDR5X内存带宽仅为HBM2e的"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "1/8"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "，这是训练大模型的最大限制。"
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "二、能做什么？（实际可行场景）"
+                  }
+                ]
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "✅ 适合的任务"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "场景可行性说明70B-128B模型推理⭐⭐⭐⭐⭐官方宣传核心卖点，本地运行流畅 7B-13B模型LoRA微调⭐⭐⭐⭐96GB显存足够，适合领域适配小模型全参数微调（<3B）⭐⭐⭐⭐如Phi-2、TinyLlama等模型量化部署（INT4/INT8）⭐⭐⭐⭐⭐可运行2350亿参数模型（双机集群）AI应用开发/原型验证⭐⭐⭐⭐⭐低成本本地开发环境"
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "❌ 不适合的任务"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "场景原因从头预训练大模型（>7B）算力和带宽不足，训练时间不可接受大规模多卡分布式训练仅单节点，无NVLink互联长序列大batch训练内存带宽瓶颈导致GPU利用率低"
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "三、与A100训练对比"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "对比项MS-S1 MAX8×A100服务器价格¥1.5万¥80-95万 总显存96GB（可分配）640GB (8×80GB)训练7B模型全参数不可行或极慢可行，数小时/天训练70B模型LoRA可行，本地完成轻松完成训练效率低（内存带宽限制）高（HBM+NVLink）"
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "四、实际使用建议"
+                  }
+                ]
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "如果您只有MS-S1 MAX："
+                  }
+                ]
+              },
+              {
+                "type": "code_block",
+                "code": "# 推荐配置方案1. 使用 Unsloth / LLaMA-Factory 等高效微调框架\n2. 采用 QLoRA / LoRA 方法，冻结大部分参数\n3. 选择 4-bit/8-bit 量化减少显存占用\n4. 训练数据控制在万级以内，避免过长序列",
+                "language": "python"
+              },
+              {
+                "type": "h3",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "训练策略："
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "模型规模推荐方法预期效果1B-3B全参数微调领域适配良好7B-13BLoRA/QLoRA指令微调可行70B+仅推理/量化本地部署体验"
+              },
+              {
+                "type": "h2",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "五、总结"
+                  }
+                ]
+              },
+              {
+                "type": "blockquote",
+                "children": [
+                  {
+                    "type": "strong",
+                    "children": [
+                      {
+                        "type": "text",
+                        "text": "MS-S1 MAX的定位是\"个人AI工作站\"，而非\"训练服务器\""
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "维度评价性价比极高（仅为A100单卡1/10价格）训练能力仅限轻量微调和推理适用人群个人开发者、学生、小团队原型验证替代场景无法替代A100/H100用于生产级训练"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "建议"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "：如果目标是"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "生产级大模型训练"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "，仍需租用/购买A100/H100集群；如果目标是"
+              },
+              {
+                "type": "strong",
+                "children": [
+                  {
+                    "type": "text",
+                    "text": "本地开发、学习、轻量微调"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "，MS-S1 MAX是极具性价比的选择。"
+              }
+            ]
+          },
+          "content_ast_version": "ast_v2",
+          "degraded_nodes_count": 6,
+          "citations": [],
+          "artifacts": [],
+          "normalized_html_snapshot": "<div class=\"paragraph\">我来详细分析用<strong>铭凡 MS-S1 MAX</strong>训练大模型的可行性和局限性：</div><h2>核心结论：适合轻量微调，不适合从头预训练</h2><h2>一、硬件能力边界</h2><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">指标</th><th data-v-5c5bdb04=\"\" align=\"left\">MS-S1 MAX</th><th data-v-5c5bdb04=\"\" align=\"left\">对比参考</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">GPU显存</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">最大可分配<strong data-v-5c5bdb04=\"\">96GB</strong>（从128GB内存中划分）<!----><!----></td><td data-v-5c5bdb04=\"\" align=\"left\">A100 80GB HBM2e</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">AI算力</strong></td><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">126 TOPS</strong>（NPU 50 TOPS + iGPU）<!----><!----></td><td data-v-5c5bdb04=\"\" align=\"left\">A100: 312 TFLOPS (FP16)</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">内存带宽</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">~256 GB/s（LPDDR5X）</td><td data-v-5c5bdb04=\"\" align=\"left\">A100: 2 TB/s (HBM2e)</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">功耗释放</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">160W峰值 <!----><!----></td><td data-v-5c5bdb04=\"\" align=\"left\">A100单卡: 400W</td></tr></tbody></table></div></div><div class=\"paragraph\"><strong>关键瓶颈</strong>：LPDDR5X内存带宽仅为HBM2e的<strong>1/8</strong>，这是训练大模型的最大限制。</div><h2>二、能做什么？（实际可行场景）</h2><h3>✅ 适合的任务</h3><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">场景</th><th data-v-5c5bdb04=\"\" align=\"left\">可行性</th><th data-v-5c5bdb04=\"\" align=\"left\">说明</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">70B-128B模型推理</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">⭐⭐⭐⭐⭐</td><td data-v-5c5bdb04=\"\" align=\"left\">官方宣传核心卖点，本地运行流畅 <!----><!----></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">7B-13B模型LoRA微调</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">⭐⭐⭐⭐</td><td data-v-5c5bdb04=\"\" align=\"left\">96GB显存足够，适合领域适配</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">小模型全参数微调（&lt;3B）</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">⭐⭐⭐⭐</td><td data-v-5c5bdb04=\"\" align=\"left\">如Phi-2、TinyLlama等</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">模型量化部署（INT4/INT8）</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">⭐⭐⭐⭐⭐</td><td data-v-5c5bdb04=\"\" align=\"left\">可运行2350亿参数模型（双机集群）<!----><!----></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">AI应用开发/原型验证</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">⭐⭐⭐⭐⭐</td><td data-v-5c5bdb04=\"\" align=\"left\">低成本本地开发环境</td></tr></tbody></table></div></div><h3>❌ 不适合的任务</h3><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">场景</th><th data-v-5c5bdb04=\"\" align=\"left\">原因</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">从头预训练大模型（&gt;7B）</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">算力和带宽不足，训练时间不可接受</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">大规模多卡分布式训练</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">仅单节点，无NVLink互联</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">长序列大batch训练</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">内存带宽瓶颈导致GPU利用率低</td></tr></tbody></table></div></div><h2>三、与A100训练对比</h2><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">对比项</th><th data-v-5c5bdb04=\"\" align=\"left\">MS-S1 MAX</th><th data-v-5c5bdb04=\"\" align=\"left\">8×A100服务器</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">价格</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">¥1.5万</td><td data-v-5c5bdb04=\"\" align=\"left\">¥80-95万 <!----><!----></td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">总显存</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">96GB（可分配）</td><td data-v-5c5bdb04=\"\" align=\"left\">640GB (8×80GB)</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">训练7B模型全参数</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">不可行或极慢</td><td data-v-5c5bdb04=\"\" align=\"left\">可行，数小时/天</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">训练70B模型LoRA</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">可行，本地完成</td><td data-v-5c5bdb04=\"\" align=\"left\">轻松完成</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">训练效率</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">低（内存带宽限制）</td><td data-v-5c5bdb04=\"\" align=\"left\">高（HBM+NVLink）</td></tr></tbody></table></div></div><h2>四、实际使用建议</h2><h3>如果您只有MS-S1 MAX：</h3><div data-v-782faaad=\"\" data-v-7bd7ca31=\"\" class=\"segment-code\"><div data-v-efb858b9=\"\" data-v-782faaad=\"\" class=\"syntax-highlighter light segment-code-content\"><pre data-v-efb858b9=\"\" class=\"language-python\"><code class=\"language-python\"><span class=\"token comment\"># 推荐配置方案</span><span class=\"token number\">1.</span> 使用 Unsloth <span class=\"token operator\">/</span> LLaMA<span class=\"token operator\">-</span>Factory 等高效微调框架\n<span class=\"token number\">2.</span> 采用 QLoRA <span class=\"token operator\">/</span> LoRA 方法，冻结大部分参数\n<span class=\"token number\">3.</span> 选择 <span class=\"token number\">4</span><span class=\"token operator\">-</span>bit<span class=\"token operator\">/</span><span class=\"token number\">8</span><span class=\"token operator\">-</span>bit 量化减少显存占用\n<span class=\"token number\">4.</span> 训练数据控制在万级以内，避免过长序列</code></pre></div></div><h3>训练策略：</h3><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">模型规模</th><th data-v-5c5bdb04=\"\" align=\"left\">推荐方法</th><th data-v-5c5bdb04=\"\" align=\"left\">预期效果</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\">1B-3B</td><td data-v-5c5bdb04=\"\" align=\"left\">全参数微调</td><td data-v-5c5bdb04=\"\" align=\"left\">领域适配良好</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\">7B-13B</td><td data-v-5c5bdb04=\"\" align=\"left\">LoRA/QLoRA</td><td data-v-5c5bdb04=\"\" align=\"left\">指令微调可行</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\">70B+</td><td data-v-5c5bdb04=\"\" align=\"left\">仅推理/量化</td><td data-v-5c5bdb04=\"\" align=\"left\">本地部署体验</td></tr></tbody></table></div></div><h2>五、总结</h2><blockquote><div class=\"paragraph\"><strong>MS-S1 MAX的定位是\"个人AI工作站\"，而非\"训练服务器\"</strong></div></blockquote><div data-v-5c5bdb04=\"\" data-v-7bd7ca31=\"\" class=\"table markdown-table\"><div data-v-5c5bdb04=\"\" class=\"table-container\"><table data-v-5c5bdb04=\"\"><thead data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><th data-v-5c5bdb04=\"\" align=\"left\">维度</th><th data-v-5c5bdb04=\"\" align=\"left\">评价</th></tr></thead><tbody data-v-5c5bdb04=\"\"><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">性价比</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">极高（仅为A100单卡1/10价格）</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">训练能力</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">仅限轻量微调和推理</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">适用人群</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">个人开发者、学生、小团队原型验证</td></tr><tr data-v-5c5bdb04=\"\"><td data-v-5c5bdb04=\"\" align=\"left\"><strong data-v-5c5bdb04=\"\">替代场景</strong></td><td data-v-5c5bdb04=\"\" align=\"left\">无法替代A100/H100用于生产级训练</td></tr></tbody></table></div></div><div class=\"paragraph\"><strong>建议</strong>：如果目标是<strong>生产级大模型训练</strong>，仍需租用/购买A100/H100集群；如果目标是<strong>本地开发、学习、轻量微调</strong>，MS-S1 MAX是极具性价比的选择。</div>",
+          "created_at": 1774280606122,
+          "id": 32
+        }
+      ]
+    }
+  ]
+}

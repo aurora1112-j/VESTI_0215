@@ -8,13 +8,13 @@ const CONVERSATION_SUMMARY_SYSTEM = `You are Vesti's thread-summary mapper.
 
 Your output target is the conversation_summary.v2 contract with this exact JSON shape:
 {
-  "core_question": "string",
+  "core_question": "string (max 180 chars)",
   "thinking_journey": [
     {
       "step": 1,
-      "speaker": "User | AI",
+      "speaker": "User",
       "assertion": "string (2-3 sentences, include: why this step appears now + what it opens next)",
-      "real_world_anchor": "string | null"
+      "real_world_anchor": "string or null"
     }
   ],
   "key_insights": [
@@ -33,18 +33,20 @@ Your output target is the conversation_summary.v2 contract with this exact JSON 
 }
 
 Hard rules:
-1) Return JSON only. No markdown fences.
+1) Return JSON only. No markdown fences. No \`\`\`json wrapper.
 2) Do not invent facts not present in the transcript.
 3) Keep thinking_journey assertions as 2-3 sentence mini-paragraphs, not one-line telegrams.
-4) real_world_anchor must be plain-language and understandable by non-technical readers.
-5) meta_observations must use natural user-facing phrases, not technical labels like "deductive" or "precise".
-6) If locale is zh, write user-facing text in natural Chinese.
-7) key_insights can be [] when evidence is sparse.
-8) Optional <think>...</think> is allowed before JSON; it will be stripped by runtime.
-9) unresolved_threads and actionable_next_steps must be complete phrases, not 1-3 character fragments.
-10) When evidence is sufficient, unresolved_threads and actionable_next_steps should each contain 2-4 items.
-11) When evidence is insufficient, 1 item or [] is acceptable.
-12) Map from available evidence only; do not add unsupported facts.`;
+4) real_world_anchor: use null (not "" empty string) when no anchor exists. Must be plain-language.
+5) speaker: must be exactly "User" or "AI" (capital-sensitive).
+6) meta_observations must use natural user-facing phrases, not technical labels like "deductive" or "precise".
+7) If locale is zh, write user-facing text in natural Chinese.
+8) key_insights can be [] when evidence is sparse.
+9) Optional <think>...</think> is allowed before JSON; it will be stripped by runtime.
+10) unresolved_threads and actionable_next_steps must be complete phrases, not 1-3 character fragments.
+11) When evidence is sufficient, unresolved_threads and actionable_next_steps should each contain 2-4 items.
+12) When evidence is insufficient, 1 item or [] is acceptable.
+13) Map from available evidence only; do not add unsupported facts.
+14) depth_level must be one of: "superficial", "moderate", "deep" (lowercase, no other values).`;
 
 const LEGACY_SUMMARY_JSON_SCHEMA_HINT = {
   topic_title: "string (max 80 chars)",
@@ -114,13 +116,15 @@ ${transcript}
 
 补充约束：
 - thinking_journey 每一步 assertion 必须 2-3 句话。
-- assertion 不能只复述结论，必须体现“为何出现 + 推动了下一步什么问题”。
-- real_world_anchor 写成普通读者可懂的“现实落点/实证案例”描述。
-- meta_observations 必须写成自然短语（例如“逐步深挖，每一问都在收紧范围”），不要用术语标签。
+- assertion 不能只复述结论，必须体现”为何出现 + 推动了下一步什么问题”。
+- real_world_anchor 写成普通读者可懂的”现实落点/实证案例”描述；无锚点时写 null（不是空字符串 “”）。
+- speaker 只能是 “User” 或 “AI”（大小写敏感）。
+- meta_observations 必须写成自然短语（例如”逐步深挖，每一问都在收紧范围”），不要用术语标签。
+- depth_level 只能是 “superficial”、”moderate”、”deep” 之一。
 - unresolved_threads / actionable_next_steps 每条都必须是完整短句，不要输出 1-3 个字的残片。
 - 证据充足时 unresolved_threads / actionable_next_steps 各给 2-4 条；证据不足可降到 1 条或空。
 - 严格从已有证据映射，不得补充未出现的新事实。
-- 仅输出 JSON 对象，不要输出 markdown 或额外说明。`;
+- 仅输出 JSON 对象，不要输出 markdown 或额外说明。不要用 \`\`\`json 包裹。`;
 }
 
 function buildConversationFallbackPrompt(

@@ -66,34 +66,93 @@ const weeklySchema = z.object({
   tech_stack_detected: z.array(z.string().min(1)),
 });
 
+/**
+ * Permissive schema: truncates strings instead of rejecting, coerces empty
+ * strings to null for nullable fields, defaults missing arrays to [].
+ * This dramatically raises first-pass LLM output acceptance rate.
+ */
 const summaryV2SchemaNew = z.object({
-  core_question: z.string().min(1).max(MAX_META_LENGTH),
+  core_question: z.preprocess(
+    (v) => (typeof v === "string" ? v.slice(0, MAX_META_LENGTH) : v),
+    z.string().min(1).max(MAX_META_LENGTH)
+  ),
   thinking_journey: z
     .array(
       z.object({
-        step: z.number().int().min(1),
-        speaker: z.enum(["User", "AI"]),
-        assertion: z.string().min(1).max(MAX_ASSERTION_LENGTH),
-        real_world_anchor: z.string().min(1).max(MAX_ANCHOR_LENGTH).nullable(),
+        step: z.preprocess(
+          (v) => (typeof v === "string" ? Number(v) : v),
+          z.number().int().min(1)
+        ),
+        speaker: z.preprocess(
+          (v) => {
+            if (typeof v !== "string") return v;
+            const lower = v.trim().toLowerCase();
+            if (["ai", "assistant", "model", "bot", "agent"].includes(lower)) return "AI";
+            return "User";
+          },
+          z.enum(["User", "AI"])
+        ),
+        assertion: z.preprocess(
+          (v) => (typeof v === "string" ? v.slice(0, MAX_ASSERTION_LENGTH) : v),
+          z.string().min(1).max(MAX_ASSERTION_LENGTH)
+        ),
+        real_world_anchor: z.preprocess(
+          (v) => {
+            if (v === null || v === undefined) return null;
+            if (typeof v === "string") {
+              const trimmed = v.trim();
+              return trimmed ? trimmed.slice(0, MAX_ANCHOR_LENGTH) : null;
+            }
+            return v;
+          },
+          z.string().min(1).max(MAX_ANCHOR_LENGTH).nullable()
+        ),
       })
     )
     .min(1)
     .max(12),
-  key_insights: z
-    .array(
+  key_insights: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(
       z.object({
-        term: z.string().min(1).max(MAX_TERM_LENGTH),
-        definition: z.string().min(1).max(MAX_DEFINITION_LENGTH),
+        term: z.preprocess(
+          (v) => (typeof v === "string" ? v.slice(0, MAX_TERM_LENGTH) : v),
+          z.string().min(1).max(MAX_TERM_LENGTH)
+        ),
+        definition: z.preprocess(
+          (v) => (typeof v === "string" ? v.slice(0, MAX_DEFINITION_LENGTH) : v),
+          z.string().min(1).max(MAX_DEFINITION_LENGTH)
+        ),
       })
-    )
-    .max(8),
-  unresolved_threads: z.array(z.string().min(1)).max(8),
+    ).max(8)
+  ),
+  unresolved_threads: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(z.string().min(1)).max(8)
+  ),
   meta_observations: z.object({
-    thinking_style: z.string().min(1).max(MAX_META_LENGTH),
-    emotional_tone: z.string().min(1).max(MAX_META_LENGTH),
-    depth_level: z.enum(["superficial", "moderate", "deep"]),
+    thinking_style: z.preprocess(
+      (v) => (typeof v === "string" ? v.slice(0, MAX_META_LENGTH) : v),
+      z.string().min(1).max(MAX_META_LENGTH)
+    ),
+    emotional_tone: z.preprocess(
+      (v) => (typeof v === "string" ? v.slice(0, MAX_META_LENGTH) : v),
+      z.string().min(1).max(MAX_META_LENGTH)
+    ),
+    depth_level: z.preprocess(
+      (v) => {
+        if (typeof v !== "string") return v;
+        const lower = v.trim().toLowerCase();
+        if (lower === "superficial" || lower === "moderate" || lower === "deep") return lower;
+        return "moderate";
+      },
+      z.enum(["superficial", "moderate", "deep"])
+    ),
   }),
-  actionable_next_steps: z.array(z.string().min(1)).max(8),
+  actionable_next_steps: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(z.string().min(1)).max(8)
+  ),
 });
 
 const summaryV2SchemaLegacy = z.object({
@@ -117,29 +176,60 @@ const weeklyLiteSchema = z.object({
   time_range: z.object({
     start: z.string().min(1),
     end: z.string().min(1),
-    total_conversations: z.number().int().min(0),
+    total_conversations: z.preprocess(
+      (v) => (typeof v === "string" ? Number(v) : v),
+      z.number().int().min(0)
+    ),
   }),
   highlights: z.array(z.string().min(1)).min(1).max(8),
-  recurring_questions: z.array(z.string().min(1)).max(8),
-  cross_domain_echoes: z
-    .array(
+  recurring_questions: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(z.string().min(1)).max(8)
+  ),
+  cross_domain_echoes: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(
       z.object({
         domain_a: z.string().min(1),
         domain_b: z.string().min(1),
         shared_logic: z.string().min(1),
-        evidence_ids: z.array(z.number().int().min(0)).max(8),
+        evidence_ids: z.preprocess(
+          (v) => {
+            if (!Array.isArray(v)) return [];
+            return v.map((i) => (typeof i === "string" ? Number(i) : i));
+          },
+          z.array(z.number().int().min(0)).max(8)
+        ),
       })
-    )
-    .max(MAX_WEEKLY_CROSS_DOMAIN_ECHOES),
-  unresolved_threads: z.array(z.string().min(1)).max(8),
-  suggested_focus: z.array(z.string().min(1)).max(8),
-  evidence: z.array(
-    z.object({
-      conversation_id: z.number().int().min(0),
-      note: z.string().min(1),
-    })
-  ).max(10),
-  insufficient_data: z.boolean(),
+    ).max(MAX_WEEKLY_CROSS_DOMAIN_ECHOES)
+  ),
+  unresolved_threads: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(z.string().min(1)).max(8)
+  ),
+  suggested_focus: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(z.string().min(1)).max(8)
+  ),
+  evidence: z.preprocess(
+    (v) => (Array.isArray(v) ? v : []),
+    z.array(
+      z.object({
+        conversation_id: z.preprocess(
+          (v) => (typeof v === "string" ? Number(v) : v),
+          z.number().int().min(0)
+        ),
+        note: z.string().min(1),
+      })
+    ).max(10)
+  ),
+  insufficient_data: z.preprocess(
+    (v) => {
+      if (typeof v === "string") return v.toLowerCase() === "true";
+      return v;
+    },
+    z.boolean()
+  ),
 });
 
 function cleanItem(value: string, maxLength = MAX_LIST_ITEM_LENGTH): string {
@@ -654,8 +744,8 @@ function coerceConversationSummaryV2Candidate(value: unknown): unknown {
   const candidate: Record<string, unknown> = { ...source };
 
   candidate.core_question =
-    typeof source.core_question === "string"
-      ? source.core_question
+    typeof source.core_question === "string" && source.core_question.trim()
+      ? source.core_question.trim().slice(0, MAX_META_LENGTH)
       : "What is the core question you are trying to answer?";
 
   const hasLegacyJourney =
@@ -1125,31 +1215,26 @@ export function parseConversationSummaryV2Object(value: unknown): {
   errors: string[];
   errorCodes: string[];
 } {
-  const parsedNew = summaryV2SchemaNew.safeParse(value);
-  if (parsedNew.success) {
-    return {
-      success: true,
-      data: normalizeConversationSummaryV2(parsedNew.data),
-    };
-  }
-
-  const parsedLegacy = summaryV2SchemaLegacy.safeParse(value);
-  if (parsedLegacy.success) {
-    return {
-      success: true,
-      data: normalizeConversationSummaryV2Legacy(parsedLegacy.data),
-    };
-  }
-
+  // Strategy: always coerce first, then validate.
+  // LLM output is inherently noisy — coercion before validation dramatically
+  // raises first-pass acceptance rate.
   const coercedCandidate = coerceConversationSummaryV2Candidate(value);
+
+  // Try coerced + new schema first (highest success path)
+  // Note: z.preprocess makes TS infer optional fields, but runtime output is
+  // fully resolved. The cast to Parameters<typeof normalizeConversationSummaryV2>[0]
+  // is safe because safeParse guarantees all required fields are present.
   const parsedCoercedNew = summaryV2SchemaNew.safeParse(coercedCandidate);
   if (parsedCoercedNew.success) {
     return {
       success: true,
-      data: normalizeConversationSummaryV2(parsedCoercedNew.data),
+      data: normalizeConversationSummaryV2(
+        parsedCoercedNew.data as Parameters<typeof normalizeConversationSummaryV2>[0]
+      ),
     };
   }
 
+  // Try coerced + legacy schema
   const parsedCoercedLegacy = summaryV2SchemaLegacy.safeParse(coercedCandidate);
   if (parsedCoercedLegacy.success) {
     return {
@@ -1158,23 +1243,37 @@ export function parseConversationSummaryV2Object(value: unknown): {
     };
   }
 
+  // Try raw + new schema (already-clean LLM output)
+  const parsedNew = summaryV2SchemaNew.safeParse(value);
+  if (parsedNew.success) {
+    return {
+      success: true,
+      data: normalizeConversationSummaryV2(
+        parsedNew.data as Parameters<typeof normalizeConversationSummaryV2>[0]
+      ),
+    };
+  }
+
+  // Try raw + legacy schema
+  const parsedLegacy = summaryV2SchemaLegacy.safeParse(value);
+  if (parsedLegacy.success) {
+    return {
+      success: true,
+      data: normalizeConversationSummaryV2Legacy(parsedLegacy.data),
+    };
+  }
+
   const issuePaths = [
-    ...summarizeIssuePaths(parsedNew.error),
-    ...summarizeIssuePaths(parsedLegacy.error),
     ...summarizeIssuePaths(parsedCoercedNew.error),
     ...summarizeIssuePaths(parsedCoercedLegacy.error),
+    ...summarizeIssuePaths(parsedNew.error),
+    ...summarizeIssuePaths(parsedLegacy.error),
   ];
   const errorCodes = [...new Set(issuePaths.map((path) => mapSummaryV2IssueCode(path)))];
 
   return {
     success: false,
     errors: [
-      ...parsedNew.error.issues.map(
-        (issue) => `${issue.path.join(".") || "root"}: ${issue.message}`
-      ),
-      ...parsedLegacy.error.issues.map(
-        (issue) => `${issue.path.join(".") || "root"}: ${issue.message}`
-      ),
       ...parsedCoercedNew.error.issues.map(
         (issue) => `${issue.path.join(".") || "root"}: ${issue.message}`
       ),
@@ -1226,7 +1325,9 @@ export function parseWeeklyLiteReportObject(value: unknown): {
 
   return {
     success: true,
-    data: normalizeWeeklyLiteReport(parsed.data),
+    data: normalizeWeeklyLiteReport(
+      parsed.data as Parameters<typeof normalizeWeeklyLiteReport>[0]
+    ),
   };
 }
 
@@ -1368,28 +1469,33 @@ function tryParseJsonCandidate(candidate: string): unknown | null {
 }
 
 export function parseJsonObjectFromText(text: string): unknown {
-  const trimmed = text.trim();
+  // Pre-clean: strip <think> blocks and BOM that LLMs commonly emit
+  const preCleaned = text
+    .replace(/^\uFEFF/, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, " ")
+    .trim();
+
   const candidates: string[] = [];
 
-  if (trimmed) {
-    candidates.push(trimmed);
+  if (preCleaned) {
+    candidates.push(preCleaned);
   }
 
-  for (const block of extractFencedBlocks(trimmed)) {
+  for (const block of extractFencedBlocks(preCleaned)) {
     if (block) {
       candidates.push(block);
     }
   }
 
-  const balanced = extractBalancedJsonObject(trimmed);
+  const balanced = extractBalancedJsonObject(preCleaned);
   if (balanced) {
     candidates.push(balanced);
   }
 
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
+  const firstBrace = preCleaned.indexOf("{");
+  const lastBrace = preCleaned.lastIndexOf("}");
   if (firstBrace >= 0 && lastBrace > firstBrace) {
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+    candidates.push(preCleaned.slice(firstBrace, lastBrace + 1));
   }
 
   for (const candidate of candidates) {
