@@ -36,10 +36,11 @@ eval/reports/raw/
 eval/reports/latest.json
 eval/reports/diff-vs-baseline.md
 .pnpm-store/
-# Local-only agent/skills overlays
+# Local-only agent/private overlays
 agent.local.md
 agent.private.md
-skills/_local/
-skills/.local/
-skills/**/private/
+documents/_local/
+archive/_local/
+vesti-release/_local/
+/skills
 .playwright-auth/

@@ -1,15 +1,12 @@
-﻿# Backend Trials Archive
+# Backend Trials Archive
 
-Status: Archived historical backend trial assets  
+Status: Archived historical backend trial references  
 Audience: Maintainers, engineers tracing early backend experiments
 
 ## Purpose
 
-This directory preserves backend/core-engine trial projects that informed the current Vesti runtime architecture but are no longer treated as active top-level workspaces.
-
-## Why archived
-
-These projects remain historically useful, but the active implementation now lives elsewhere in the main repository.
+This directory preserves the public summary of backend/core-engine trials that informed the current Vesti runtime architecture.
+The full archived workspace snapshot is retained locally under `archive/_local/backend_trials/`.
 
 ## Current active replacements
 

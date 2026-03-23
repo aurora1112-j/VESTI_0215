@@ -1,4 +1,4 @@
-﻿# Repository Archive
+# Repository Archive
 
 Status: Active archive index  
 Audience: Maintainers, release owners, engineers reviewing historical assets
@@ -7,9 +7,8 @@ Audience: Maintainers, release owners, engineers reviewing historical assets
 
 `archive/` stores repository-level legacy code, prototypes, and experimental assets that are intentionally preserved but are no longer treated as active top-level engineering work.
 
-This directory is distinct from `documents/archive/`:
-- `documents/archive/` archives documentation only
-- `archive/` archives historical code, prototype projects, and experiment assets
+This tracked public surface now keeps only lightweight historical references.
+Full workspace snapshots may be retained locally under the ignored directory `archive/_local/`.
 
 ## Rules
 
@@ -20,5 +19,5 @@ This directory is distinct from `documents/archive/`:
 
 ## Subdirectories
 
-- `backend_trials/` — historical backend and core-engine trials
-- `frontend_prototypes/` — historical frontend prototypes and prototype-era prompting assets
+- `backend_trials/` — historical backend and core-engine trial references
+- `frontend_prototypes/` — historical frontend prototype references and prompt assets

@@ -1,15 +1,12 @@
-﻿# Frontend Prototypes Archive
+# Frontend Prototypes Archive
 
-Status: Archived historical frontend prototype assets  
+Status: Archived historical frontend prototype references  
 Audience: Maintainers, designers, frontend engineers tracing earlier prototype work
 
 ## Purpose
 
-This directory preserves earlier frontend prototypes and prototype-era prompting assets that influenced the current UI system.
-
-## Why archived
-
-These assets remain useful as historical design and prototyping references, but they are no longer active top-level engineering workspaces.
+This directory preserves lightweight public references for earlier frontend prototypes and prototype-era prompting assets.
+The full archived prototype workspace is retained locally under `archive/_local/frontend_prototypes/`.
 
 ## Current active replacements
 

@@ -1,21 +1,21 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, "..", "..");
 export const PLAYWRIGHT_ROOT = resolve(REPO_ROOT, ".playwright-auth");
-export const USER_DATA_DIR = resolve(PLAYWRIGHT_ROOT, "chromium-profile");
 export const STORAGE_STATE_DIR = resolve(PLAYWRIGHT_ROOT, "storage");
 export const SAMPLE_DIR = resolve(PLAYWRIGHT_ROOT, "samples");
+const LOCAL_APP_DATA = process.env.LOCALAPPDATA ?? null;
 const DEFAULT_BROWSER_CANDIDATES = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Users\\苏祎成\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Users\\苏祎成\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe",
-];
+  LOCAL_APP_DATA ? resolve(LOCAL_APP_DATA, "Google", "Chrome", "Application", "chrome.exe") : null,
+  LOCAL_APP_DATA ? resolve(LOCAL_APP_DATA, "Microsoft", "Edge", "Application", "msedge.exe") : null,
+].filter((candidate) => typeof candidate === "string");
 
 export const LOGIN_TARGETS = [
   { platform: "ChatGPT", url: "https://chatgpt.com/" },
@@ -27,6 +27,26 @@ export const LOGIN_TARGETS = [
   { platform: "Kimi", url: "https://www.kimi.com/" },
   { platform: "Yuanbao", url: "https://yuanbao.tencent.com/" },
 ];
+
+function resolveUserDataDir() {
+  const configuredDirName = process.env.PW_PROFILE_DIRNAME;
+  if (configuredDirName) {
+    return resolve(PLAYWRIGHT_ROOT, configuredDirName);
+  }
+
+  if (existsSync(PLAYWRIGHT_ROOT)) {
+    const reusableProfile = readdirSync(PLAYWRIGHT_ROOT, { withFileTypes: true }).find(
+      (entry) => entry.isDirectory() && entry.name.endsWith("-profile")
+    );
+    if (reusableProfile) {
+      return resolve(PLAYWRIGHT_ROOT, reusableProfile.name);
+    }
+  }
+
+  return resolve(PLAYWRIGHT_ROOT, "browser-profile");
+}
+
+export const USER_DATA_DIR = resolveUserDataDir();
 
 export function ensurePlaywrightDirs() {
   mkdirSync(USER_DATA_DIR, { recursive: true });
