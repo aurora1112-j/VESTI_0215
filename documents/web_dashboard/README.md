@@ -45,14 +45,17 @@ This directory is the stable entrypoint for:
   - forward roadmap for web-surface engineering evolution
 - `web_dashboard_reader_render_contract.md`
   - minimal web-facing schema draft and reader/web render contract draft
+- `web_dashboard_architecture_cleanup_checklist.md`
+  - prioritized cleanup checklist for reducing dashboard drift and legacy ambiguity
 
 ## Recommended reading order
 
 1. `web_dashboard_engineering_spec.md`
 2. `web_dashboard_current_architecture.md`
-3. `web_dashboard_reader_render_contract.md`
-4. `web_dashboard_rc8_repairs.md`
-5. `web_dashboard_technical_roadmap.md`
+3. `web_dashboard_architecture_cleanup_checklist.md`
+4. `web_dashboard_reader_render_contract.md`
+5. `web_dashboard_rc8_repairs.md`
+6. `web_dashboard_technical_roadmap.md`
 
 ## Primary source inputs
 
