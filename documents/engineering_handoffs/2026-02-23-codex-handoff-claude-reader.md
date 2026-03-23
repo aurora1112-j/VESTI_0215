@@ -1,7 +1,7 @@
 ﻿# Codex Handoff Memo (Claude Reader / Parser)
 
 Date: 2026-02-23
-Repo: d:\Python Code\Hackathon\vesti
+Repo: VESTI workspace
 
 ## 1) Objective at handoff
 
@@ -81,13 +81,12 @@ No commit has been created yet.
 
 ## 8) Workdir skeleton (quick map)
 
-Top-level directories in `d:\Python Code\Hackathon\vesti`:
+Top-level directories in the repo:
 - `.github` CI/workflows
 - `architecture` architecture notes
 - `documents` docs and prompt engineering material
 - `frontend` extension app (main active workspace)
 - `scripts` utility scripts
-- `skills` local repo skills (`parser-debugging`, `markdown-writing`, `ui-prototype-sidepanel`)
 - `release`, `vesti-release`, `archive`, `proxy-local`, `eval`, `.tmp`
 
 For this task, primary focus is:
@@ -95,17 +94,10 @@ For this task, primary focus is:
 - `frontend/src/sidepanel/components/MessageBubble.tsx`
 - `frontend/src/contents/capsule-ui.ts`
 
-## 9) Agent/skill instructions for next Codex
+## 9) Agent instructions for next Codex
 
 1. Read AGENTS instructions first (repo root thread instructions already include them).
-2. Current AGENTS declared session skills are system skills:
-   - `skill-creator`
-   - `skill-installer`
-   They are not required for this parser/render hotfix unless explicitly requested.
-3. Repo-local skills exist and are relevant for debugging reference:
-   - `skills/parser-debugging/SKILL.md` (recommended to read first for continuity)
-   - `skills/markdown-writing/SKILL.md`
-   - `skills/ui-prototype-sidepanel/SKILL.md`
+2. Keep this handoff focused on parser/render continuity rather than any local maintainer tooling.
 
 ## 10) Suggested first 5 commands for next Codex
 
