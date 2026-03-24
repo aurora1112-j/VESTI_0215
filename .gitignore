@@ -37,6 +37,8 @@ eval/reports/latest.json
 eval/reports/diff-vs-baseline.md
 .pnpm-store/
 # Local-only agent/private overlays
+/AGENTS.md
+/agent.md
 agent.local.md
 agent.private.md
 documents/_local/
