@@ -303,7 +303,7 @@ function dedupePreserveOrder(items: string[]): string[] {
 function normalizeList(values: string[] | undefined, limit = MAX_LIST_ITEMS): string[] {
   if (!values) return [];
   const cleaned = values
-    .map(cleanItem)
+    .map((item) => cleanItem(item))
     .filter((item) => item.length > 0)
     .slice(0, limit);
   return dedupePreserveOrder(cleaned).slice(0, limit);
