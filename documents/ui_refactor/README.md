@@ -1,36 +1,46 @@
 # Vesti UI Refactor Spec Package
 
-Status: Active canonical UI refactor directory.
+Status: Active canonical UI refactor directory
 Owner: Frontend + UI Design + QA
 
 ## What this directory covers
 
-This directory stores canonical UI interaction, state-machine, and UX refactor specifications for the extension surfaces owned by the frontend.
+This directory stores canonical UI interaction, information architecture, and state-topology specifications for extension-owned surfaces.
 
 It is the correct home for:
 - Threads / Reader interaction contracts
-- Sidepanel UI state topology
-- Feature-specific UI refactor specs and state-machine contracts
+- sidepanel UI state topology
+- feature-specific UI refactor specs and state-machine contracts
 - UI debugging and manual acceptance guidance
+- global IA and component-system rules
 
 It is not the correct home for:
-- capture/parser DOM normalization strategy (`documents/capture_engine/`)
-- web dashboard runtime/productization specs (`documents/web_dashboard/`)
+- capture / parser DOM normalization strategy (`documents/capture_engine/`)
+- web-surface-specific runtime/productization specs (`documents/web_dashboard/`)
+- cross-surface dynamic rendering governance (`documents/ui_runtime/`)
 - floating capsule feature specs (`documents/floating_capsule/`)
 
-## Active topic-based canonical entries
+## Active canonical entries
 
 - `threads_search_engineering_spec.md`
   - Canonical engineering spec for Threads search contract upgrade, list highlight, Reader navigation, and phased delivery boundaries.
 - `threads_search_state_machine_contract.md`
   - Canonical state topology and data contract for lifted `SearchSession`, lightweight offscreen summaries, and Reader occurrence navigation.
 
-## Supporting UI refactor references
+## Supporting references
 
 - `ui_refactor_debugging_playbook.md`
   - UI refactor debugging and regression workflow shared by engineering and QA.
 - `ui_refactor_manual_sampling_and_acceptance.md`
   - Manual sampling matrix, evidence expectations, and Go/No-Go gates.
+
+## Relationship with `ui_runtime/`
+
+动态渲染、状态门控、加载到 ready 的过渡纪律、以及 entity-scoped disclosure / local UI state reset，已经统一迁到 `documents/ui_runtime/`。
+
+判断方法：
+- 如果问题在问“这个 surface 应该先显示什么、后显示什么、何时允许 secondary metadata / overlay 出现”，去 `ui_runtime/`
+- 如果问题在问“这个功能的交互结构、信息架构、状态机边界是什么”，留在 `ui_refactor/`
 
 ## Existing versioned spec tracks
 
@@ -60,8 +70,5 @@ It is not the correct home for:
 - Release versions continue to use `vX.Y.Z` and `vX.Y.Z-rc.N`.
 - New canonical UI refactor documents should prefer topic-based filenames over new pseudo-release prefixes.
 - Existing `v1_4_*`, `v1_8_1_*`, and `v1_8_2_*` files remain as historical and still-valid versioned materials; they are not renamed in this pass.
-- New Threads search / Reader navigation docs intentionally use `threads_search_*` topic-based filenames rather than a new `v1.8.x` prefix.
 - Cross-domain parser/capture dependencies must reference `documents/capture_engine/`.
-- IA decisions in the global UI track still use `v1_4_information_architecture_contract.md` as source of truth.
-- Settings density/support semantics in the global UI track still use `v1_4_settings_information_density_contract.md` as source of truth.
-- Extension sans fonts remain local-only in `frontend/public/fonts/*`, built via `scripts/build-ui-fonts.ps1`.
+- Dynamic rendering governance must reference `documents/ui_runtime/`.

@@ -1,6 +1,6 @@
 # Documents Index
 
-Status: Active documentation navigation entry  
+Status: Active documentation navigation entry
 Audience: Engineers, QA, release owners, maintainers
 
 ## Purpose
@@ -9,8 +9,8 @@ Audience: Engineers, QA, release owners, maintainers
 
 当前文档结构遵循三层模型：
 - `documents/` 根目录：仓库级政策与通用操作文档
-- subsystem canonical directories：长期维护的工程规格与现状诊断
-- `documents/archive/`：历史快照、旧版阶段文档、退役资料
+- subsystem canonical directories：长期维护的工程规格、现状与运行契约
+- `documents/archive/`：历史快照、退役阶段材料、已不再作为当前决策入口的旧资料
 
 ## Directory Map
 
@@ -34,6 +34,15 @@ Canonical examples:
 - `reader_pipeline/reader_pipeline_current_architecture.md`
 - `reader_pipeline/reader_pipeline_operational_playbook.md`
 
+### `ui_runtime/`
+
+负责跨 sidepanel / web surface 的动态渲染治理、状态门控、过渡纪律与 entity-scoped UI state reset 规则。
+
+Canonical examples:
+- `ui_runtime/README.md`
+- `ui_runtime/ui_runtime_dynamic_rendering_contract.md`
+- `ui_runtime/ui_runtime_rendering_governance_checklist.md`
+
 ### `refactor_tasks/`
 
 负责 active implementation backlog。
@@ -44,14 +53,17 @@ Canonical examples:
 - `refactor_tasks/capture_engine_refactor_tasks.md`
 - `refactor_tasks/reader_pipeline_refactor_tasks.md`
 - `refactor_tasks/timestamp_semantics_rollout_tasks.md`
+- `refactor_tasks/dynamic_rendering_refactor_tasks.md`
 
 ### `web_dashboard/`
 
-负责 web dashboard / library / explore / network 等 web 面文档。
+负责 web dashboard / library / explore / network 等 web surface-specific 文档。
+当问题上升到跨端动态渲染治理时，应以 `ui_runtime/` 为入口；`web_dashboard/` 只保留 web surface-specific contract。
 
 ### `ui_refactor/`
 
-负责全局 UI / IA / component system 文档。
+负责全局 UI / IA / component system / interaction architecture 文档。
+动态渲染治理已迁到 `ui_runtime/`，这里继续保留全局交互与信息架构规则。
 
 ### `floating_capsule/`
 
@@ -76,7 +88,7 @@ Canonical examples:
 
 ### `archive/`
 
-负责保留历史文档、候选草稿、退役阶段资料。
+负责保留历史文档、候选草稿、退役阶段材料。
 
 重要规则：
 - archive 用来保留历史，而不是作为当前实现决策入口
@@ -98,20 +110,21 @@ Canonical examples:
 
 1. parser / DOM / capture / AST / normalization -> `capture_engine/`
 2. reader / export / compression / insight / timeline / schema consumer -> `reader_pipeline/`
-3. cross-subsystem rollout backlog / implementation task ledger -> `refactor_tasks/`
-4. web dashboard / library / explore / network -> `web_dashboard/`
-5. global UI / IA / component system -> `ui_refactor/`
-6. prompt / proxy / model routing -> `prompt_engineering/`
-7. dated handoff -> `engineering_handoffs/`
-8. superseded draft / retired phase material -> `archive/`
-9. repo-wide policy / deployment utility -> `documents/` root
+3. dynamic rendering / phase gating / loading-to-ready transition discipline / entity-scoped UI state reset -> `ui_runtime/`
+4. cross-subsystem rollout backlog / implementation task ledger -> `refactor_tasks/`
+5. web dashboard / library / explore / network surface-specific contract -> `web_dashboard/`
+6. global UI / IA / component system -> `ui_refactor/`
+7. prompt / proxy / model routing -> `prompt_engineering/`
+8. dated handoff -> `engineering_handoffs/`
+9. superseded draft / retired phase material -> `archive/`
+10. repo-wide policy / deployment utility -> `documents/` root
 
 ## Recommended Reading Order
 
 做当前工程工作时，推荐顺序是：
 
 1. 子系统 README
-2. 子系统 engineering spec
+2. 子系统 engineering spec / contract
 3. 子系统 current architecture
 4. 子系统 operational playbook / roadmap
 5. 只有在需要追溯时再看 handoff 与 archive
@@ -128,15 +141,18 @@ Canonical examples:
 3. `documents/reader_pipeline/reader_pipeline_current_architecture.md`
 4. `documents/reader_pipeline/reader_pipeline_operational_playbook.md`
 
-如果要落实施工，再去：
-1. `documents/refactor_tasks/README.md`
-2. 对应 task ledger
+针对动态渲染治理：
+1. `documents/ui_runtime/README.md`
+2. `documents/ui_runtime/ui_runtime_dynamic_rendering_contract.md`
+3. `documents/ui_runtime/ui_runtime_rendering_governance_checklist.md`
+4. `documents/refactor_tasks/dynamic_rendering_refactor_tasks.md`
 
 ## Naming Guidance
 
 推荐模式：
 - canonical spec: `<topic>_engineering_spec.md`
 - current baseline: `<topic>_current_architecture.md`
+- runtime contract: `<topic>_contract.md`
 - playbook: `<topic>_operational_playbook.md`
 - roadmap: `<topic>_technical_roadmap.md`
 - dated handoff: `YYYY-MM-DD-<topic>-handoff.md`

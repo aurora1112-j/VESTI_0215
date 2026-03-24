@@ -119,10 +119,9 @@ JSON export 较强，但 MD / TXT 和 compression prompt 过去更依赖 `conten
 | Threads 分组与排序 | `originAt` | 线程起点 |
 | Threads 卡片副文案 `Last captured ...` | `captureFreshnessAt` | 最近一次成功捕获 |
 | Threads 顶部 `first captured today` | `first_captured_at` | 今天首次被捕获的线程数 |
-| Reader 主日期 `Started ...` | `originAt` | 线程起点 |
-| Reader metadata | `source_created_at / first_captured_at / last_captured_at / updated_at` | 明细时间 |
+| Reader / Web footer 摘要 | `originAt + recordModifiedAt` | 线程起点 + 最后活跃时间 |
+| Reader / Web footer 展开明细 | `conditional captureFreshnessAt / conditional source_created_at` | 条件性元数据 |
 | Web card `Last captured ...` | `captureFreshnessAt` | 最近一次成功捕获 |
-| Web reader header | `originAt` + metadata | 起点时间 + 明细时间 |
 
 这意味着当前 UI 不是“一个时间方案”，而是“三钟并行”：
 

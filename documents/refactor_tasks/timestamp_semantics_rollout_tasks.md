@@ -35,9 +35,11 @@ Audience: Schema maintainers, capture owners, reader/web contributors, QA
 - 顶部 `X first captured today`
   - 统计 `first_captured_at` 落在今天的线程数
   - 明确表达 acquisition 语义，而不是“今天有捕获活动”
-- Reader / Web header
-  - 主时间表达线程起点
-  - metadata 明细继续展示 `Source Time / First Captured / Last Captured / Last Modified`
+- Reader / Web detailed reading
+  - header 不再承载时间 metadata
+  - 底部折叠 footer 摘要显示 `Started + Last updated`
+  - footer 展开后显示 `Started / Last updated / conditional Captured / conditional Source Time`
+  - `First Captured` 保留 acquisition 语义，但不再属于默认 reader metadata
 
 这样同一条线程可以同时满足：
 
@@ -149,7 +151,9 @@ Audience: Schema maintainers, capture owners, reader/web contributors, QA
 - Threads 顶部统计文案固定为“First captured today”或等价语义
 - 卡片文案固定为 `Last captured ...`
 - 分组与筛选固定为 `Started ...`
-- Reader / Web header 继续显式展示 `Source Time / First Captured / Last Captured / Last Modified`
+- Reader / Web 详细阅读面改为底部折叠 metadata
+- 折叠态固定显示 `Started + Last updated`
+- 展开态只显示去重后的 `Started / Last updated / conditional Captured / conditional Source Time`
 
 ### Track 5. QA
 

@@ -126,12 +126,15 @@ But the web layer should already behave as if the target contract exists.
 
 ### 4.2 Shared metadata rule
 
-Reader header must show:
-- `Started` = `originAt`
-- `Source Time` if present
-- `First Captured`
-- `Last Captured`
-- `Last Modified`
+Detailed-reading surfaces must use the same collapsed footer contract:
+- header must not show time metadata
+- collapsed footer shows `Started = originAt` and `Last updated = recordModifiedAt`
+- expanded footer shows:
+  - `Started`
+  - `Last updated`
+  - `Captured` only when `captureFreshnessAt` differs from `recordModifiedAt` at minute precision
+  - `Source Time` only when present and distinct from `originAt` at minute precision
+- `First Captured` remains data/export metadata, not default reader metadata
 
 Web and sidepanel must not diverge on the meaning of these fields.
 
