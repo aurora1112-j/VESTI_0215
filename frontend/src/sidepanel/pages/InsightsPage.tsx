@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Compass,
@@ -7,59 +6,62 @@ import {
   Loader2,
   Network,
   Pause,
-  Play,
-} from "lucide-react";
+  Play
+} from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+
+import { resolveTurnCount } from "~lib/capture/turn-metrics"
+import { getConversationOriginAt } from "~lib/conversations/timestamps"
+import type {
+  InsightPipelineProgressPayload,
+  InsightPipelineStage,
+  InsightPipelineStatus
+} from "~lib/messaging/protocol"
+import {
+  toChatSummaryData,
+  toWeeklySummaryData
+} from "~lib/services/insightAdapter"
+import {
+  generateConversationSummary,
+  generateWeeklyReport,
+  getConversations,
+  getConversationSummary,
+  getWeeklyReport
+} from "~lib/services/storageService"
 import type {
   AsyncStatus,
   Conversation,
   Platform,
   SummaryRecord,
-  WeeklyReportRecord,
-} from "~lib/types";
-import type {
-  InsightPipelineProgressPayload,
-  InsightPipelineStage,
-  InsightPipelineStatus,
-} from "~lib/messaging/protocol";
-import {
-  generateConversationSummary,
-  generateWeeklyReport,
-  getConversationSummary,
-  getConversations,
-  getWeeklyReport,
-} from "~lib/services/storageService";
-import { resolveTurnCount } from "~lib/capture/turn-metrics";
-import {
-  toChatSummaryData,
-  toWeeklySummaryData,
-} from "~lib/services/insightAdapter";
-import { getConversationOriginAt } from "~lib/conversations/timestamps";
-import type { WeeklySummaryData } from "~lib/types/insightsPresentation";
-import { InsightsAccordionItem } from "../components/InsightsAccordionItem";
-import { InsightsWandIcon } from "../components/InsightsWandIcon";
+  WeeklyReportRecord
+} from "~lib/types"
+import type { WeeklySummaryData } from "~lib/types/insightsPresentation"
 
-const COLLAPSE_AT = 3;
-const WEEKLY_DIGEST_SOON = true;
+import { InsightsAccordionItem } from "../components/InsightsAccordionItem"
+import { InsightsWandIcon } from "../components/InsightsWandIcon"
+
+const COLLAPSE_AT = 3
+const WEEKLY_DIGEST_SOON = true
 
 type WeeklyDigestUiState =
   | "idle"
   | "generating"
   | "ready"
   | "sparse_week"
-  | "error";
+  | "error"
 
-type WeeklyStableUiState = "idle" | "ready" | "sparse_week";
+type WeeklyStableUiState = "idle" | "ready" | "sparse_week"
 
-type WeeklyRangeMode = "last_7_days" | "last_full_week";
+type WeeklyRangeMode = "last_7_days" | "last_full_week"
 
-type WeeklySparseReason = "sub3" | "semantic_degraded";
+type WeeklySparseReason = "sub3" | "semantic_degraded"
 
 type WeeklyGenerationPhase =
   | "ready_to_compile"
   | "loading_thread_summaries"
   | "pattern_detection"
   | "cross_domain_mapping"
-  | "composing_and_persisting";
+  | "composing_and_persisting"
 
 type ThreadSummaryUiState =
   | "no_thread"
@@ -68,15 +70,15 @@ type ThreadSummaryUiState =
   | "selected_error"
   | "ready"
   | "ready_loading"
-  | "ready_error";
+  | "ready_error"
 
 interface WeeklyPhaseDefinition {
-  phase: Exclude<WeeklyGenerationPhase, "ready_to_compile">;
-  status: string;
-  label: string;
-  sublabel: string;
-  minDurationMs: number;
-  hint: string;
+  phase: Exclude<WeeklyGenerationPhase, "ready_to_compile">
+  status: string
+  label: string
+  sublabel: string
+  minDurationMs: number
+  hint: string
 }
 
 const WEEKLY_PHASES: WeeklyPhaseDefinition[] = [
@@ -86,7 +88,7 @@ const WEEKLY_PHASES: WeeklyPhaseDefinition[] = [
     label: "Loading thread summaries",
     sublabel: "Reading stored summaries for the selected week",
     minDurationMs: 12000,
-    hint: "~12s",
+    hint: "~12s"
   },
   {
     phase: "pattern_detection",
@@ -94,7 +96,7 @@ const WEEKLY_PHASES: WeeklyPhaseDefinition[] = [
     label: "Pattern detection",
     sublabel: "Cross-thread frequency and recurrence analysis",
     minDurationMs: 14000,
-    hint: "~14s",
+    hint: "~14s"
   },
   {
     phase: "cross_domain_mapping",
@@ -102,7 +104,7 @@ const WEEKLY_PHASES: WeeklyPhaseDefinition[] = [
     label: "Cross-domain mapping",
     sublabel: "Structural isomorphism detection",
     minDurationMs: 15000,
-    hint: "~15s",
+    hint: "~15s"
   },
   {
     phase: "composing_and_persisting",
@@ -110,16 +112,16 @@ const WEEKLY_PHASES: WeeklyPhaseDefinition[] = [
     label: "Composing and persisting",
     sublabel: "Digest composition and persistence",
     minDurationMs: 10000,
-    hint: "~10s",
-  },
-];
+    hint: "~10s"
+  }
+]
 
 interface ThreadPhaseDefinition {
-  status: string;
-  label: string;
-  sublabel: string;
-  hint: string;
-  maxElapsedMs: number;
+  status: string
+  label: string
+  sublabel: string
+  hint: string
+  maxElapsedMs: number
 }
 
 const THREAD_PHASES: ThreadPhaseDefinition[] = [
@@ -128,184 +130,187 @@ const THREAD_PHASES: ThreadPhaseDefinition[] = [
     label: "Initialising pipeline",
     sublabel: "Checking cache and waking context window",
     hint: "~12s",
-    maxElapsedMs: 12000,
+    maxElapsedMs: 12000
   },
   {
     status: "Distilling core logic...",
     label: "Distilling logic",
     sublabel: "Tracing what changed across turns",
     hint: "~14s",
-    maxElapsedMs: 26000,
+    maxElapsedMs: 26000
   },
   {
     status: "Curating structured summary...",
     label: "Curating summary",
     sublabel: "Building journey steps and insight glossary",
     hint: "~15s",
-    maxElapsedMs: 41000,
+    maxElapsedMs: 41000
   },
   {
     status: "Finalising and persisting...",
     label: "Finalising artefacts",
     sublabel: "Writing storage record and refreshing card",
     hint: "~10s",
-    maxElapsedMs: Number.POSITIVE_INFINITY,
-  },
-];
+    maxElapsedMs: Number.POSITIVE_INFINITY
+  }
+]
 
 type ThreadTrackedStage =
   | "initiating_pipeline"
   | "distilling_core_logic"
   | "curating_summary"
-  | "persisting_result";
+  | "persisting_result"
 
 const THREAD_TRACKED_STAGE_ORDER: ThreadTrackedStage[] = [
   "initiating_pipeline",
   "distilling_core_logic",
   "curating_summary",
-  "persisting_result",
-];
+  "persisting_result"
+]
 
 interface ThreadPipelineTimingState {
-  pipelineId: string;
-  stageStarts: Partial<Record<ThreadTrackedStage, number>>;
-  stageDurationsMs: Partial<Record<ThreadTrackedStage, number>>;
-  activeStage: ThreadTrackedStage | null;
-  terminal: boolean;
+  pipelineId: string
+  stageStarts: Partial<Record<ThreadTrackedStage, number>>
+  stageDurationsMs: Partial<Record<ThreadTrackedStage, number>>
+  activeStage: ThreadTrackedStage | null
+  terminal: boolean
 }
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     if (error.message.includes("STORAGE_HARD_LIMIT_REACHED")) {
-      return "Storage limit reached (1GB). Export or clear data in the Data tab.";
+      return "Storage limit reached (1GB). Export or clear data in the Data tab."
     }
-    return error.message;
+    return error.message
   }
-  return String(error);
+  return String(error)
 }
 
 function formatDateTime(ts: number): string {
-  const d = new Date(ts);
+  const d = new Date(ts)
   return d.toLocaleString("en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit",
-  });
+    minute: "2-digit"
+  })
 }
 
 function getPreviousNaturalWeekRangeLocal(referenceDate = new Date()): {
-  rangeStart: number;
-  rangeEnd: number;
+  rangeStart: number
+  rangeEnd: number
 } {
-  const cursor = new Date(referenceDate);
-  const localDay = cursor.getDay();
-  const daysSinceMonday = (localDay + 6) % 7;
+  const cursor = new Date(referenceDate)
+  const localDay = cursor.getDay()
+  const daysSinceMonday = (localDay + 6) % 7
 
-  const currentWeekMonday = new Date(cursor);
-  currentWeekMonday.setHours(0, 0, 0, 0);
-  currentWeekMonday.setDate(currentWeekMonday.getDate() - daysSinceMonday);
+  const currentWeekMonday = new Date(cursor)
+  currentWeekMonday.setHours(0, 0, 0, 0)
+  currentWeekMonday.setDate(currentWeekMonday.getDate() - daysSinceMonday)
 
-  const previousWeekMonday = new Date(currentWeekMonday);
-  previousWeekMonday.setDate(previousWeekMonday.getDate() - 7);
+  const previousWeekMonday = new Date(currentWeekMonday)
+  previousWeekMonday.setDate(previousWeekMonday.getDate() - 7)
 
-  const previousWeekSunday = new Date(previousWeekMonday);
-  previousWeekSunday.setDate(previousWeekSunday.getDate() + 6);
-  previousWeekSunday.setHours(23, 59, 59, 999);
+  const previousWeekSunday = new Date(previousWeekMonday)
+  previousWeekSunday.setDate(previousWeekSunday.getDate() + 6)
+  previousWeekSunday.setHours(23, 59, 59, 999)
 
   return {
     rangeStart: previousWeekMonday.getTime(),
-    rangeEnd: previousWeekSunday.getTime(),
-  };
+    rangeEnd: previousWeekSunday.getTime()
+  }
 }
 
 function getLastSevenDaysRangeLocal(referenceDate = new Date()): {
-  rangeStart: number;
-  rangeEnd: number;
+  rangeStart: number
+  rangeEnd: number
 } {
-  const end = new Date(referenceDate);
-  end.setHours(23, 59, 59, 999);
+  const end = new Date(referenceDate)
+  end.setHours(23, 59, 59, 999)
 
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
+  const start = new Date(end)
+  start.setDate(start.getDate() - 6)
+  start.setHours(0, 0, 0, 0)
 
   return {
     rangeStart: start.getTime(),
-    rangeEnd: end.getTime(),
-  };
+    rangeEnd: end.getTime()
+  }
 }
 
 function formatWeekRangeLabel(rangeStart: number, rangeEnd: number): string {
-  const start = new Date(rangeStart);
-  const end = new Date(rangeEnd);
-  const sameYear = start.getFullYear() === end.getFullYear();
+  const start = new Date(rangeStart)
+  const end = new Date(rangeEnd)
+  const sameYear = start.getFullYear() === end.getFullYear()
 
   const startText = start.toLocaleDateString("en-US", {
     month: "short",
-    day: "numeric",
-  });
+    day: "numeric"
+  })
 
   const endText = end.toLocaleDateString("en-US", {
     month: "short",
-    day: "numeric",
-  });
+    day: "numeric"
+  })
 
   if (sameYear) {
-    return `${startText} - ${endText}, ${end.getFullYear()}`;
+    return `${startText} - ${endText}, ${end.getFullYear()}`
   }
 
   const startWithYear = start.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
-  });
+    year: "numeric"
+  })
 
   const endWithYear = end.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
-  });
+    year: "numeric"
+  })
 
-  return `${startWithYear} - ${endWithYear}`;
+  return `${startWithYear} - ${endWithYear}`
 }
 
 function formatTimer(elapsedMs: number): string {
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
+  const totalSeconds = Math.floor(elapsedMs / 1000)
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
+  return `${mins}:${String(secs).padStart(2, "0")}`
 }
 
 function parsePlainTextLines(text?: string): string[] {
-  if (!text) return [];
+  if (!text) return []
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
 }
 
 function normalizeJourneyCopy(value: string): string {
-  return value.replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
 }
 
 function hasRenderableJourneyCopy(value: string): boolean {
-  const normalized = normalizeJourneyCopy(value);
-  if (!normalized) return false;
-  if (/^[^A-Za-z0-9\u3400-\u9FFF]+$/.test(normalized)) return false;
-  const semanticChars = normalized.replace(/[^A-Za-z0-9\u3400-\u9FFF]/g, "");
-  if (semanticChars.length >= 6) return true;
-  return normalized.length >= 12;
+  const normalized = normalizeJourneyCopy(value)
+  if (!normalized) return false
+  if (/^[^A-Za-z0-9\u3400-\u9FFF]+$/.test(normalized)) return false
+  const semanticChars = normalized.replace(/[^A-Za-z0-9\u3400-\u9FFF]/g, "")
+  if (semanticChars.length >= 6) return true
+  return normalized.length >= 12
 }
 
 function getThreadPhaseIndex(elapsedMs: number): number {
   for (let index = 0; index < THREAD_PHASES.length; index += 1) {
     if (elapsedMs <= THREAD_PHASES[index].maxElapsedMs) {
-      return index;
+      return index
     }
   }
-  return THREAD_PHASES.length - 1;
+  return THREAD_PHASES.length - 1
 }
 
 function getThreadPhaseIndexFromPipelineStage(
@@ -313,17 +318,17 @@ function getThreadPhaseIndexFromPipelineStage(
 ): number | null {
   switch (stage) {
     case "initiating_pipeline":
-      return 0;
+      return 0
     case "distilling_core_logic":
-      return 1;
+      return 1
     case "curating_summary":
-      return 2;
+      return 2
     case "persisting_result":
     case "completed":
     case "degraded_fallback":
-      return 3;
+      return 3
     default:
-      return null;
+      return null
   }
 }
 
@@ -332,34 +337,36 @@ function getThreadStatusFromPipelineStage(
   status: InsightPipelineStatus
 ): string {
   if (status === "degraded_fallback" || stage === "degraded_fallback") {
-    return "Summary completed with degraded fallback.";
+    return "Summary completed with degraded fallback."
   }
 
   switch (stage) {
     case "initiating_pipeline":
-      return "Preparing conversation context...";
+      return "Preparing conversation context..."
     case "distilling_core_logic":
-      return "Distilling core logic...";
+      return "Distilling core logic..."
     case "curating_summary":
-      return "Curating structured summary...";
+      return "Curating structured summary..."
     case "persisting_result":
-      return "Finalising and persisting...";
+      return "Finalising and persisting..."
     case "completed":
-      return "Summary generated.";
+      return "Summary generated."
     default:
-      return "Generating summary...";
+      return "Generating summary..."
   }
 }
 
 function getWeeklyPhaseByElapsed(elapsedMs: number): WeeklyGenerationPhase {
-  let threshold = 0;
+  let threshold = 0
   for (const phase of WEEKLY_PHASES) {
-    threshold += phase.minDurationMs;
+    threshold += phase.minDurationMs
     if (elapsedMs < threshold) {
-      return phase.phase;
+      return phase.phase
     }
   }
-  return WEEKLY_PHASES[WEEKLY_PHASES.length - 1]?.phase ?? "loading_thread_summaries";
+  return (
+    WEEKLY_PHASES[WEEKLY_PHASES.length - 1]?.phase ?? "loading_thread_summaries"
+  )
 }
 
 function toThreadTrackedStage(
@@ -367,81 +374,81 @@ function toThreadTrackedStage(
 ): ThreadTrackedStage | null {
   switch (stage) {
     case "initiating_pipeline":
-      return "initiating_pipeline";
+      return "initiating_pipeline"
     case "distilling_core_logic":
-      return "distilling_core_logic";
+      return "distilling_core_logic"
     case "curating_summary":
-      return "curating_summary";
+      return "curating_summary"
     case "persisting_result":
-      return "persisting_result";
+      return "persisting_result"
     default:
-      return null;
+      return null
   }
 }
 
 function formatPhaseDuration(ms: number): string {
-  const seconds = Math.max(ms, 0) / 1000;
+  const seconds = Math.max(ms, 0) / 1000
   if (seconds >= 100) {
-    return `${Math.round(seconds)}s`;
+    return `${Math.round(seconds)}s`
   }
-  return `${seconds.toFixed(1)}s`;
+  return `${seconds.toFixed(1)}s`
 }
 
 function toDepthLabel(depth: "superficial" | "moderate" | "deep"): string {
-  if (depth === "deep") return "深度拆解";
-  if (depth === "moderate") return "逐步深挖";
-  return "轻量梳理";
+  if (depth === "deep") return "深度拆解"
+  if (depth === "moderate") return "逐步深挖"
+  return "轻量梳理"
 }
 
 function getPlatformBadgeClass(platform: Platform): string {
   switch (platform) {
     case "ChatGPT":
-      return "ins-platform-badge-chatgpt";
+      return "ins-platform-badge-chatgpt"
     case "DeepSeek":
-      return "ins-platform-badge-deepseek";
+      return "ins-platform-badge-deepseek"
     case "Qwen":
-      return "ins-platform-badge-qwen";
+      return "ins-platform-badge-qwen"
     case "Doubao":
-      return "ins-platform-badge-doubao";
+      return "ins-platform-badge-doubao"
     case "Gemini":
-      return "ins-platform-badge-gemini";
+      return "ins-platform-badge-gemini"
     case "Claude":
-      return "ins-platform-badge-claude";
+      return "ins-platform-badge-claude"
     case "Kimi":
-      return "ins-platform-badge-kimi";
+      return "ins-platform-badge-kimi"
     case "Yuanbao":
-      return "ins-platform-badge-yuanbao";
+      return "ins-platform-badge-yuanbao"
     default:
-      return "ins-platform-badge-chatgpt";
+      return "ins-platform-badge-chatgpt"
   }
 }
 
 function getThreadThemeClass(platform: Platform): string {
   switch (platform) {
     case "ChatGPT":
-      return "ins-thread-theme-chatgpt";
+      return "ins-thread-theme-chatgpt"
     case "Claude":
-      return "ins-thread-theme-claude";
+      return "ins-thread-theme-claude"
     case "Gemini":
-      return "ins-thread-theme-gemini";
+      return "ins-thread-theme-gemini"
     case "DeepSeek":
-      return "ins-thread-theme-deepseek";
+      return "ins-thread-theme-deepseek"
     case "Qwen":
-      return "ins-thread-theme-qwen";
+      return "ins-thread-theme-qwen"
     case "Doubao":
-      return "ins-thread-theme-doubao";
+      return "ins-thread-theme-doubao"
     case "Kimi":
-      return "ins-thread-theme-kimi";
+      return "ins-thread-theme-kimi"
     case "Yuanbao":
-      return "ins-thread-theme-yuanbao";
+      return "ins-thread-theme-yuanbao"
     default:
-      return "ins-thread-theme-chatgpt";
+      return "ins-thread-theme-chatgpt"
   }
 }
 
 function formatConversationWeekday(conversation: Conversation): string {
-  const ts = getConversationOriginAt(conversation);
-  return new Date(ts).toLocaleDateString("en-US", { weekday: "short" });
+  const ts = getConversationOriginAt(conversation)
+  return new Date(ts).toLocaleDateString("en-US", { weekday: "short" })
 }
 
 function toThreadSummaryUiState(
@@ -449,158 +456,172 @@ function toThreadSummaryUiState(
   summaryStatus: AsyncStatus,
   summaryData: ReturnType<typeof toChatSummaryData> | null
 ): ThreadSummaryUiState {
-  if (!conversation) return "no_thread";
+  if (!conversation) return "no_thread"
 
   if (summaryData) {
-    if (summaryStatus === "loading") return "ready_loading";
-    if (summaryStatus === "error") return "ready_error";
-    return "ready";
+    if (summaryStatus === "loading") return "ready_loading"
+    if (summaryStatus === "error") return "ready_error"
+    return "ready"
   }
 
-  if (summaryStatus === "loading") return "selected_loading";
-  if (summaryStatus === "error") return "selected_error";
-  return "selected_idle";
+  if (summaryStatus === "loading") return "selected_loading"
+  if (summaryStatus === "error") return "selected_error"
+  return "selected_idle"
 }
 
-function toWeeklyStableState(data: WeeklySummaryData | null): WeeklyStableUiState {
-  if (!data) return "idle";
-  return data.insufficient_data ? "sparse_week" : "ready";
+function toWeeklyStableState(
+  data: WeeklySummaryData | null
+): WeeklyStableUiState {
+  if (!data) return "idle"
+  return data.insufficient_data ? "sparse_week" : "ready"
 }
 
 interface InsightsPageProps {
-  conversation: Conversation | null;
-  refreshToken: number;
-  pipelineProgressEvent?: InsightPipelineProgressPayload | null;
+  conversation: Conversation | null
+  refreshToken: number
+  pipelineProgressEvent?: InsightPipelineProgressPayload | null
 }
 
 export function InsightsPage({
   conversation,
   refreshToken,
-  pipelineProgressEvent = null,
+  pipelineProgressEvent = null
 }: InsightsPageProps) {
-  const [summary, setSummary] = useState<SummaryRecord | null>(null);
-  const [summaryStatus, setSummaryStatus] = useState<AsyncStatus>("idle");
-  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SummaryRecord | null>(null)
+  const [summaryStatus, setSummaryStatus] = useState<AsyncStatus>("idle")
+  const [summaryError, setSummaryError] = useState<string | null>(null)
 
-  const [weeklyReport, setWeeklyReport] = useState<WeeklyReportRecord | null>(null);
-  const [weeklyUiState, setWeeklyUiState] = useState<WeeklyDigestUiState>("idle");
-  const [weeklyStableState, setWeeklyStableState] = useState<WeeklyStableUiState>("idle");
-  const [weeklyError, setWeeklyError] = useState<string | null>(null);
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReportRecord | null>(
+    null
+  )
+  const [weeklyUiState, setWeeklyUiState] =
+    useState<WeeklyDigestUiState>("idle")
+  const [weeklyStableState, setWeeklyStableState] =
+    useState<WeeklyStableUiState>("idle")
+  const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
-  const [weeklyConversations, setWeeklyConversations] = useState<Conversation[]>([]);
-  const [isWeeklyListExpanded, setIsWeeklyListExpanded] = useState(false);
+  const [weeklyConversations, setWeeklyConversations] = useState<
+    Conversation[]
+  >([])
+  const [isWeeklyListExpanded, setIsWeeklyListExpanded] = useState(false)
   const [weeklyRangeMode, setWeeklyRangeMode] =
-    useState<WeeklyRangeMode>("last_7_days");
+    useState<WeeklyRangeMode>("last_7_days")
 
   const [weeklyPhase, setWeeklyPhase] =
-    useState<WeeklyGenerationPhase>("ready_to_compile");
-  const [weeklyGenerationStartedAt, setWeeklyGenerationStartedAt] =
-    useState<number | null>(null);
-  const [weeklyElapsedMs, setWeeklyElapsedMs] = useState(0);
-  const [weeklyGenerationPaused, setWeeklyGenerationPaused] = useState(false);
-  const [weeklyPauseStartedAt, setWeeklyPauseStartedAt] =
-    useState<number | null>(null);
-  const [weeklyPausedAccumulatedMs, setWeeklyPausedAccumulatedMs] = useState(0);
-  const [threadGenerationStartedAt, setThreadGenerationStartedAt] =
-    useState<number | null>(null);
-  const [threadElapsedMs, setThreadElapsedMs] = useState(0);
+    useState<WeeklyGenerationPhase>("ready_to_compile")
+  const [weeklyGenerationStartedAt, setWeeklyGenerationStartedAt] = useState<
+    number | null
+  >(null)
+  const [weeklyElapsedMs, setWeeklyElapsedMs] = useState(0)
+  const [weeklyGenerationPaused, setWeeklyGenerationPaused] = useState(false)
+  const [weeklyPauseStartedAt, setWeeklyPauseStartedAt] = useState<
+    number | null
+  >(null)
+  const [weeklyPausedAccumulatedMs, setWeeklyPausedAccumulatedMs] = useState(0)
+  const [threadGenerationStartedAt, setThreadGenerationStartedAt] = useState<
+    number | null
+  >(null)
+  const [threadElapsedMs, setThreadElapsedMs] = useState(0)
   const [threadPipelineTiming, setThreadPipelineTiming] =
-    useState<ThreadPipelineTimingState | null>(null);
+    useState<ThreadPipelineTimingState | null>(null)
 
-  const [threadSummaryOpen, setThreadSummaryOpen] = useState(true);
-  const [weeklyDigestOpen, setWeeklyDigestOpen] = useState(true);
-  const [discoveryOpen, setDiscoveryOpen] = useState(true);
+  const [threadSummaryOpen, setThreadSummaryOpen] = useState(true)
+  const [weeklyDigestOpen, setWeeklyDigestOpen] = useState(true)
+  const [discoveryOpen, setDiscoveryOpen] = useState(true)
 
-  const weeklyStableRef = useRef<WeeklyStableUiState>("idle");
-  const weeklyUiStateRef = useRef<WeeklyDigestUiState>("idle");
-  const weeklyHasReportRef = useRef(false);
-  const weeklyGenerationRunRef = useRef(0);
+  const weeklyStableRef = useRef<WeeklyStableUiState>("idle")
+  const weeklyUiStateRef = useRef<WeeklyDigestUiState>("idle")
+  const weeklyHasReportRef = useRef(false)
+  const weeklyGenerationRunRef = useRef(0)
 
-  const weekAnchorKey = new Date().toDateString();
+  const weekAnchorKey = new Date().toDateString()
   const weeklyRange = useMemo(
     () =>
       weeklyRangeMode === "last_full_week"
         ? getPreviousNaturalWeekRangeLocal(new Date())
         : getLastSevenDaysRangeLocal(new Date()),
     [weekAnchorKey, weeklyRangeMode]
-  );
+  )
 
   const summaryData = useMemo(
     () =>
       summary
         ? toChatSummaryData(summary, {
-            conversationTitle: conversation?.title,
+            conversationTitle: conversation?.title
           })
         : null,
     [summary, conversation?.title]
-  );
+  )
 
   const weeklyData = useMemo(
     () => (weeklyReport ? toWeeklySummaryData(weeklyReport) : null),
     [weeklyReport]
-  );
+  )
   const activeThreadPipelineEvent = useMemo(() => {
-    if (!pipelineProgressEvent || !conversation) return null;
-    if (pipelineProgressEvent.scope !== "summary") return null;
-    if (pipelineProgressEvent.targetId !== String(conversation.id)) return null;
-    return pipelineProgressEvent;
-  }, [pipelineProgressEvent, conversation]);
-  const threadPipelinePhaseIndex =
-    activeThreadPipelineEvent
-      ? getThreadPhaseIndexFromPipelineStage(activeThreadPipelineEvent.stage)
-      : null;
+    if (!pipelineProgressEvent || !conversation) return null
+    if (pipelineProgressEvent.scope !== "summary") return null
+    if (pipelineProgressEvent.targetId !== String(conversation.id)) return null
+    return pipelineProgressEvent
+  }, [pipelineProgressEvent, conversation])
+  const threadPipelinePhaseIndex = activeThreadPipelineEvent
+    ? getThreadPhaseIndexFromPipelineStage(activeThreadPipelineEvent.stage)
+    : null
 
   const threadSummaryUiState = toThreadSummaryUiState(
     conversation,
     summaryStatus,
     summaryData
-  );
+  )
   const threadJourneySteps = useMemo(() => {
-    const rawSteps = summaryData?.thinking_journey ?? [];
+    const rawSteps = summaryData?.thinking_journey ?? []
     const normalized = rawSteps
       .map((step) => {
-        const assertion = normalizeJourneyCopy(step.assertion);
+        const assertion = normalizeJourneyCopy(step.assertion)
         const anchor = step.real_world_anchor
           ? normalizeJourneyCopy(step.real_world_anchor)
-          : null;
+          : null
 
-        const assertionRenderable = hasRenderableJourneyCopy(assertion);
-        const anchorRenderable = anchor ? hasRenderableJourneyCopy(anchor) : false;
+        const assertionRenderable = hasRenderableJourneyCopy(assertion)
+        const anchorRenderable = anchor
+          ? hasRenderableJourneyCopy(anchor)
+          : false
 
         if (!assertionRenderable && step.speaker === "AI" && anchorRenderable) {
           return {
             ...step,
             assertion: anchor!,
-            real_world_anchor: null,
-          };
+            real_world_anchor: null
+          }
         }
 
         return {
           ...step,
           assertion,
-          real_world_anchor: anchorRenderable ? anchor : null,
-        };
+          real_world_anchor: anchorRenderable ? anchor : null
+        }
       })
       .filter((step) => hasRenderableJourneyCopy(step.assertion))
       .map((step, index) => ({
         ...step,
-        step: index + 1,
-      }));
+        step: index + 1
+      }))
 
-    return normalized;
-  }, [summaryData?.thinking_journey]);
-  const threadInsightItems = summaryData?.key_insights ?? [];
-  const threadUnresolvedItems = summaryData?.unresolved_threads ?? [];
-  const threadNextStepItems = summaryData?.actionable_next_steps ?? [];
+    return normalized
+  }, [summaryData?.thinking_journey])
+  const threadInsightItems = summaryData?.key_insights ?? []
+  const threadUnresolvedItems = summaryData?.unresolved_threads ?? []
+  const threadNextStepItems = summaryData?.actionable_next_steps ?? []
   const threadRealWorldAnchors = threadJourneySteps
     .map((step) => step.real_world_anchor)
-    .filter((anchor): anchor is string => Boolean(anchor && anchor.trim().length > 0));
+    .filter((anchor): anchor is string =>
+      Boolean(anchor && anchor.trim().length > 0)
+    )
   const threadPhaseIndex =
     summaryStatus === "loading"
       ? threadPipelinePhaseIndex ?? getThreadPhaseIndex(threadElapsedMs)
       : threadGenerationStartedAt
         ? getThreadPhaseIndex(threadElapsedMs)
-        : -1;
+        : -1
   const threadStatusText =
     summaryStatus === "loading" && activeThreadPipelineEvent
       ? getThreadStatusFromPipelineStage(
@@ -609,151 +630,151 @@ export function InsightsPage({
         )
       : threadPhaseIndex >= 0
         ? THREAD_PHASES[threadPhaseIndex]?.status ?? "Generating summary..."
-        : "Ready to generate.";
+        : "Ready to generate."
   const getThreadPhaseTimeLabel = (index: number): string => {
-    const fallbackHint = THREAD_PHASES[index]?.hint ?? "~10s";
-    const stageKey = THREAD_TRACKED_STAGE_ORDER[index];
+    const fallbackHint = THREAD_PHASES[index]?.hint ?? "~10s"
+    const stageKey = THREAD_TRACKED_STAGE_ORDER[index]
     if (!stageKey || !threadPipelineTiming) {
-      return fallbackHint;
+      return fallbackHint
     }
 
-    const measured = threadPipelineTiming.stageDurationsMs[stageKey];
+    const measured = threadPipelineTiming.stageDurationsMs[stageKey]
     if (typeof measured === "number") {
-      return formatPhaseDuration(measured);
+      return formatPhaseDuration(measured)
     }
 
     if (threadPipelineTiming.activeStage === stageKey) {
-      const start = threadPipelineTiming.stageStarts[stageKey];
+      const start = threadPipelineTiming.stageStarts[stageKey]
       if (typeof start === "number") {
-        return formatPhaseDuration(Date.now() - start);
+        return formatPhaseDuration(Date.now() - start)
       }
     }
 
-    return fallbackHint;
-  };
+    return fallbackHint
+  }
 
   const weeklyRangeLabel =
     weeklyData?.meta.range_label ??
-    formatWeekRangeLabel(weeklyRange.rangeStart, weeklyRange.rangeEnd);
+    formatWeekRangeLabel(weeklyRange.rangeStart, weeklyRange.rangeEnd)
 
-  const weeklyThreadCount = weeklyConversations.length;
+  const weeklyThreadCount = weeklyConversations.length
   const weeklyCountLabel = `${weeklyThreadCount} thread${
     weeklyThreadCount === 1 ? "" : "s"
-  } in range`;
+  } in range`
 
   const sortedWeeklyConversations = useMemo(() => {
     return [...weeklyConversations].sort(
       (a, b) => getConversationOriginAt(b) - getConversationOriginAt(a)
-    );
-  }, [weeklyConversations]);
+    )
+  }, [weeklyConversations])
 
   const visibleWeeklyConversations = isWeeklyListExpanded
     ? sortedWeeklyConversations
-    : sortedWeeklyConversations.slice(0, COLLAPSE_AT);
+    : sortedWeeklyConversations.slice(0, COLLAPSE_AT)
 
   const hiddenWeeklyConversationCount = Math.max(
     sortedWeeklyConversations.length - COLLAPSE_AT,
     0
-  );
+  )
 
   const turnCount = conversation
     ? resolveTurnCount(conversation.turn_count, conversation.message_count)
-    : 0;
+    : 0
 
   const weeklyPhaseIndex = WEEKLY_PHASES.findIndex(
     (phase) => phase.phase === weeklyPhase
-  );
+  )
 
-  const isWeeklyGenerating = weeklyUiState === "generating";
+  const isWeeklyGenerating = weeklyUiState === "generating"
 
   const weeklyStatusText =
     weeklyPhase === "ready_to_compile"
       ? "Ready to compile weekly digest."
       : WEEKLY_PHASES.find((phase) => phase.phase === weeklyPhase)?.status ??
-        "Generating digest...";
+        "Generating digest..."
   const weeklyRangeModeLabel =
-    weeklyRangeMode === "last_7_days" ? "Last 7 Days" : "Last Full Week";
+    weeklyRangeMode === "last_7_days" ? "Last 7 Days" : "Last Full Week"
 
   const weeklyHighlightItems =
     weeklyData?.highlights && weeklyData.highlights.length > 0
       ? weeklyData.highlights
-      : parsePlainTextLines(weeklyData?.plain_text).slice(0, 3);
+      : parsePlainTextLines(weeklyData?.plain_text).slice(0, 3)
 
-  const weeklyRecurringItems = weeklyData?.recurring_questions ?? [];
-  const weeklyCrossDomainEchoes = weeklyData?.cross_domain_echoes ?? [];
-  const weeklyUnresolvedItems = weeklyData?.unresolved_threads ?? [];
-  const weeklyNextWeekItems = weeklyData?.suggested_focus ?? [];
+  const weeklyRecurringItems = weeklyData?.recurring_questions ?? []
+  const weeklyCrossDomainEchoes = weeklyData?.cross_domain_echoes ?? []
+  const weeklyUnresolvedItems = weeklyData?.unresolved_threads ?? []
+  const weeklyNextWeekItems = weeklyData?.suggested_focus ?? []
   const weeklySubstantialCount = useMemo(() => {
     const structured = weeklyReport?.structured as
       | { time_range?: { total_conversations?: unknown } }
       | null
-      | undefined;
-    const total = structured?.time_range?.total_conversations;
-    return typeof total === "number" ? total : null;
-  }, [weeklyReport]);
+      | undefined
+    const total = structured?.time_range?.total_conversations
+    return typeof total === "number" ? total : null
+  }, [weeklyReport])
   const weeklySparseReason: WeeklySparseReason =
     weeklySubstantialCount !== null && weeklySubstantialCount < 3
       ? "sub3"
-      : "semantic_degraded";
+      : "semantic_degraded"
 
   useEffect(() => {
-    weeklyStableRef.current = weeklyStableState;
-  }, [weeklyStableState]);
+    weeklyStableRef.current = weeklyStableState
+  }, [weeklyStableState])
 
   useEffect(() => {
-    weeklyUiStateRef.current = weeklyUiState;
-  }, [weeklyUiState]);
+    weeklyUiStateRef.current = weeklyUiState
+  }, [weeklyUiState])
 
   useEffect(() => {
-    weeklyHasReportRef.current = Boolean(weeklyReport);
-  }, [weeklyReport]);
+    weeklyHasReportRef.current = Boolean(weeklyReport)
+  }, [weeklyReport])
 
   useEffect(() => {
-    if (!activeThreadPipelineEvent) return;
+    if (!activeThreadPipelineEvent) return
 
     setThreadPipelineTiming((prev) => {
-      const trackedStage = toThreadTrackedStage(activeThreadPipelineEvent.stage);
+      const trackedStage = toThreadTrackedStage(activeThreadPipelineEvent.stage)
       const isTerminal =
         activeThreadPipelineEvent.stage === "completed" ||
-        activeThreadPipelineEvent.stage === "degraded_fallback";
+        activeThreadPipelineEvent.stage === "degraded_fallback"
 
       if (!prev || prev.pipelineId !== activeThreadPipelineEvent.pipelineId) {
-        const stageStarts: Partial<Record<ThreadTrackedStage, number>> = {};
+        const stageStarts: Partial<Record<ThreadTrackedStage, number>> = {}
         if (trackedStage) {
-          stageStarts[trackedStage] = activeThreadPipelineEvent.updatedAt;
+          stageStarts[trackedStage] = activeThreadPipelineEvent.updatedAt
         }
         return {
           pipelineId: activeThreadPipelineEvent.pipelineId,
           stageStarts,
           stageDurationsMs: {},
           activeStage: trackedStage,
-          terminal: isTerminal,
-        };
+          terminal: isTerminal
+        }
       }
 
-      const stageStarts = { ...prev.stageStarts };
-      const stageDurationsMs = { ...prev.stageDurationsMs };
-      let activeStage = prev.activeStage;
+      const stageStarts = { ...prev.stageStarts }
+      const stageDurationsMs = { ...prev.stageDurationsMs }
+      let activeStage = prev.activeStage
 
       const finalizeStage = (stage: ThreadTrackedStage, endAt: number) => {
-        const startAt = stageStarts[stage];
-        if (typeof startAt !== "number") return;
-        stageDurationsMs[stage] = Math.max(0, endAt - startAt);
-      };
+        const startAt = stageStarts[stage]
+        if (typeof startAt !== "number") return
+        stageDurationsMs[stage] = Math.max(0, endAt - startAt)
+      }
 
       if (trackedStage && activeStage !== trackedStage) {
         if (activeStage) {
-          finalizeStage(activeStage, activeThreadPipelineEvent.updatedAt);
+          finalizeStage(activeStage, activeThreadPipelineEvent.updatedAt)
         }
         if (typeof stageStarts[trackedStage] !== "number") {
-          stageStarts[trackedStage] = activeThreadPipelineEvent.updatedAt;
+          stageStarts[trackedStage] = activeThreadPipelineEvent.updatedAt
         }
-        activeStage = trackedStage;
+        activeStage = trackedStage
       }
 
       if (isTerminal && activeStage) {
-        finalizeStage(activeStage, activeThreadPipelineEvent.updatedAt);
-        activeStage = null;
+        finalizeStage(activeStage, activeThreadPipelineEvent.updatedAt)
+        activeStage = null
       }
 
       return {
@@ -761,297 +782,305 @@ export function InsightsPage({
         stageStarts,
         stageDurationsMs,
         activeStage,
-        terminal: prev.terminal || isTerminal,
-      };
-    });
-  }, [activeThreadPipelineEvent]);
+        terminal: prev.terminal || isTerminal
+      }
+    })
+  }, [activeThreadPipelineEvent])
 
   useEffect(() => {
     if (weeklyUiStateRef.current === "generating") {
-      return;
+      return
     }
-    setWeeklyReport(null);
-    setWeeklyStableState("idle");
-    setWeeklyUiState("idle");
-    setWeeklyError(null);
-    setWeeklyPhase("ready_to_compile");
-  }, [weekAnchorKey, weeklyRangeMode]);
+    setWeeklyReport(null)
+    setWeeklyStableState("idle")
+    setWeeklyUiState("idle")
+    setWeeklyError(null)
+    setWeeklyPhase("ready_to_compile")
+  }, [weekAnchorKey, weeklyRangeMode])
 
   useEffect(() => {
     return () => {
-      weeklyGenerationRunRef.current += 1;
-    };
-  }, []);
+      weeklyGenerationRunRef.current += 1
+    }
+  }, [])
 
   useEffect(() => {
     if (!weeklyGenerationStartedAt) {
-      setWeeklyElapsedMs(0);
-      return;
+      setWeeklyElapsedMs(0)
+      return
     }
 
     const tick = () => {
-      const now = Date.now();
+      const now = Date.now()
       const livePauseMs =
         weeklyGenerationPaused && weeklyPauseStartedAt
           ? now - weeklyPauseStartedAt
-          : 0;
+          : 0
       const elapsed = Math.max(
         0,
-        now - weeklyGenerationStartedAt - weeklyPausedAccumulatedMs - livePauseMs
-      );
-      setWeeklyElapsedMs(elapsed);
+        now -
+          weeklyGenerationStartedAt -
+          weeklyPausedAccumulatedMs -
+          livePauseMs
+      )
+      setWeeklyElapsedMs(elapsed)
       setWeeklyPhase((prev) => {
-        const next = getWeeklyPhaseByElapsed(elapsed);
-        return prev === next ? prev : next;
-      });
-    };
+        const next = getWeeklyPhaseByElapsed(elapsed)
+        return prev === next ? prev : next
+      })
+    }
 
-    tick();
-    const timerId = window.setInterval(tick, 250);
+    tick()
+    const timerId = window.setInterval(tick, 250)
     return () => {
-      window.clearInterval(timerId);
-    };
+      window.clearInterval(timerId)
+    }
   }, [
     weeklyGenerationPaused,
     weeklyGenerationStartedAt,
     weeklyPauseStartedAt,
-    weeklyPausedAccumulatedMs,
-  ]);
+    weeklyPausedAccumulatedMs
+  ])
 
   useEffect(() => {
     if (summaryStatus === "loading") {
-      setThreadGenerationStartedAt((prev) => prev ?? Date.now());
-      return;
+      setThreadGenerationStartedAt((prev) => prev ?? Date.now())
+      return
     }
-    setThreadGenerationStartedAt(null);
-    setThreadElapsedMs(0);
-  }, [summaryStatus]);
+    setThreadGenerationStartedAt(null)
+    setThreadElapsedMs(0)
+  }, [summaryStatus])
 
   useEffect(() => {
     if (!threadGenerationStartedAt) {
-      setThreadElapsedMs(0);
-      return;
+      setThreadElapsedMs(0)
+      return
     }
 
     const tick = () => {
-      setThreadElapsedMs(Date.now() - threadGenerationStartedAt);
-    };
+      setThreadElapsedMs(Date.now() - threadGenerationStartedAt)
+    }
 
-    tick();
-    const timerId = window.setInterval(tick, 250);
+    tick()
+    const timerId = window.setInterval(tick, 250)
     return () => {
-      window.clearInterval(timerId);
-    };
-  }, [threadGenerationStartedAt]);
+      window.clearInterval(timerId)
+    }
+  }, [threadGenerationStartedAt])
 
   useEffect(() => {
     if (!conversation) {
-      setSummary(null);
-      setSummaryStatus("idle");
-      setSummaryError(null);
-      setThreadPipelineTiming(null);
-      return;
+      setSummary(null)
+      setSummaryStatus("idle")
+      setSummaryError(null)
+      setThreadPipelineTiming(null)
+      return
     }
 
-    let active = true;
-    setSummaryStatus("loading");
-    setSummaryError(null);
+    let active = true
+    setSummaryStatus("loading")
+    setSummaryError(null)
 
     getConversationSummary(conversation.id)
       .then((data) => {
-        if (!active) return;
-        setSummary(data);
-        setSummaryStatus(data ? "ready" : "idle");
+        if (!active) return
+        setSummary(data)
+        setSummaryStatus(data ? "ready" : "idle")
       })
       .catch((error) => {
-        if (!active) return;
-        setSummary(null);
-        setSummaryStatus("error");
-        setSummaryError(getErrorMessage(error));
-      });
+        if (!active) return
+        setSummary(null)
+        setSummaryStatus("error")
+        setSummaryError(getErrorMessage(error))
+      })
 
     return () => {
-      active = false;
-    };
-  }, [conversation?.id, refreshToken]);
+      active = false
+    }
+  }, [conversation?.id, refreshToken])
 
   useEffect(() => {
-    setThreadPipelineTiming(null);
-  }, [conversation?.id]);
+    setThreadPipelineTiming(null)
+  }, [conversation?.id])
 
   useEffect(() => {
     if (WEEKLY_DIGEST_SOON) {
-      setWeeklyConversations([]);
-      setIsWeeklyListExpanded(false);
-      return;
+      setWeeklyConversations([])
+      setIsWeeklyListExpanded(false)
+      return
     }
 
-    let active = true;
+    let active = true
 
     getConversations({
       dateRange: {
         start: weeklyRange.rangeStart,
-        end: weeklyRange.rangeEnd,
+        end: weeklyRange.rangeEnd
       },
+      includeTrash: false
     })
       .then((items) => {
-        if (!active) return;
-        setWeeklyConversations(items.filter((item) => !item.is_trash));
-        setIsWeeklyListExpanded(false);
+        if (!active) return
+        setWeeklyConversations(items.filter((item) => !item.is_trash))
+        setIsWeeklyListExpanded(false)
       })
       .catch(() => {
-        if (!active) return;
-        setWeeklyConversations([]);
-        setIsWeeklyListExpanded(false);
-      });
+        if (!active) return
+        setWeeklyConversations([])
+        setIsWeeklyListExpanded(false)
+      })
 
     return () => {
-      active = false;
-    };
-  }, [refreshToken, weeklyRange.rangeStart, weeklyRange.rangeEnd]);
+      active = false
+    }
+  }, [refreshToken, weeklyRange.rangeStart, weeklyRange.rangeEnd])
 
   useEffect(() => {
     if (WEEKLY_DIGEST_SOON) {
-      setWeeklyReport(null);
-      setWeeklyStableState("idle");
-      setWeeklyUiState("idle");
-      setWeeklyError(null);
-      setWeeklyPhase("ready_to_compile");
-      return;
+      setWeeklyReport(null)
+      setWeeklyStableState("idle")
+      setWeeklyUiState("idle")
+      setWeeklyError(null)
+      setWeeklyPhase("ready_to_compile")
+      return
     }
 
     if (weeklyUiStateRef.current === "generating") {
-      return;
+      return
     }
 
-    let active = true;
-    setWeeklyError(null);
+    let active = true
+    setWeeklyError(null)
 
     getWeeklyReport(weeklyRange.rangeStart, weeklyRange.rangeEnd)
       .then((data) => {
-        if (!active) return;
-        setWeeklyReport(data);
-        const nextData = data ? toWeeklySummaryData(data) : null;
-        const nextStableState = toWeeklyStableState(nextData);
-        setWeeklyStableState(nextStableState);
-        setWeeklyUiState(nextStableState);
-        setWeeklyPhase("ready_to_compile");
+        if (!active) return
+        setWeeklyReport(data)
+        const nextData = data ? toWeeklySummaryData(data) : null
+        const nextStableState = toWeeklyStableState(nextData)
+        setWeeklyStableState(nextStableState)
+        setWeeklyUiState(nextStableState)
+        setWeeklyPhase("ready_to_compile")
       })
       .catch((error) => {
-        if (!active) return;
-        setWeeklyError(getErrorMessage(error));
-        setWeeklyUiState(weeklyHasReportRef.current ? weeklyStableRef.current : "error");
-      });
+        if (!active) return
+        setWeeklyError(getErrorMessage(error))
+        setWeeklyUiState(
+          weeklyHasReportRef.current ? weeklyStableRef.current : "error"
+        )
+      })
 
     return () => {
-      active = false;
-    };
-  }, [refreshToken, weeklyRange.rangeStart, weeklyRange.rangeEnd]);
+      active = false
+    }
+  }, [refreshToken, weeklyRange.rangeStart, weeklyRange.rangeEnd])
 
   const handleGenerateSummary = async () => {
-    if (!conversation) return;
+    if (!conversation) return
 
-    setThreadSummaryOpen(true);
-    setThreadGenerationStartedAt(Date.now());
-    setThreadElapsedMs(0);
-    setThreadPipelineTiming(null);
-    setSummaryStatus("loading");
-    setSummaryError(null);
+    setThreadSummaryOpen(true)
+    setThreadGenerationStartedAt(Date.now())
+    setThreadElapsedMs(0)
+    setThreadPipelineTiming(null)
+    setSummaryStatus("loading")
+    setSummaryError(null)
 
     try {
-      const data = await generateConversationSummary(conversation.id);
-      setSummary(data);
-      setSummaryStatus("ready");
+      const data = await generateConversationSummary(conversation.id)
+      setSummary(data)
+      setSummaryStatus("ready")
     } catch (error) {
-      setSummaryStatus("error");
-      setSummaryError(getErrorMessage(error));
+      setSummaryStatus("error")
+      setSummaryError(getErrorMessage(error))
     }
-  };
+  }
 
   const handleGenerateWeekly = async () => {
     if (WEEKLY_DIGEST_SOON) {
-      return;
+      return
     }
 
-    const runId = weeklyGenerationRunRef.current + 1;
-    weeklyGenerationRunRef.current = runId;
+    const runId = weeklyGenerationRunRef.current + 1
+    weeklyGenerationRunRef.current = runId
 
-    setWeeklyDigestOpen(true);
-    setWeeklyUiState("generating");
-    setWeeklyError(null);
-    setWeeklyPhase("loading_thread_summaries");
-    setWeeklyGenerationStartedAt(Date.now());
-    setWeeklyGenerationPaused(false);
-    setWeeklyPauseStartedAt(null);
-    setWeeklyPausedAccumulatedMs(0);
+    setWeeklyDigestOpen(true)
+    setWeeklyUiState("generating")
+    setWeeklyError(null)
+    setWeeklyPhase("loading_thread_summaries")
+    setWeeklyGenerationStartedAt(Date.now())
+    setWeeklyGenerationPaused(false)
+    setWeeklyPauseStartedAt(null)
+    setWeeklyPausedAccumulatedMs(0)
 
-    const result = await generateWeeklyReport(weeklyRange.rangeStart, weeklyRange.rangeEnd)
+    const result = await generateWeeklyReport(
+      weeklyRange.rangeStart,
+      weeklyRange.rangeEnd
+    )
       .then((data) => ({ ok: true as const, data }))
-      .catch((error) => ({ ok: false as const, error }));
+      .catch((error) => ({ ok: false as const, error }))
 
     if (weeklyGenerationRunRef.current !== runId) {
-      return;
+      return
     }
 
-    setWeeklyGenerationStartedAt(null);
-    setWeeklyGenerationPaused(false);
-    setWeeklyPauseStartedAt(null);
-    setWeeklyPausedAccumulatedMs(0);
-    setWeeklyPhase("ready_to_compile");
+    setWeeklyGenerationStartedAt(null)
+    setWeeklyGenerationPaused(false)
+    setWeeklyPauseStartedAt(null)
+    setWeeklyPausedAccumulatedMs(0)
+    setWeeklyPhase("ready_to_compile")
 
     if (result.ok === true) {
-      setWeeklyReport(result.data);
-      const nextData = toWeeklySummaryData(result.data);
-      const nextStableState = toWeeklyStableState(nextData);
-      setWeeklyStableState(nextStableState);
-      setWeeklyUiState(nextStableState);
-      setWeeklyError(null);
-      return;
+      setWeeklyReport(result.data)
+      const nextData = toWeeklySummaryData(result.data)
+      const nextStableState = toWeeklyStableState(nextData)
+      setWeeklyStableState(nextStableState)
+      setWeeklyUiState(nextStableState)
+      setWeeklyError(null)
+      return
     }
 
     const nextError = getErrorMessage(
       result.ok === false ? result.error : "UNKNOWN_ERROR"
-    );
-    setWeeklyError(nextError);
+    )
+    setWeeklyError(nextError)
 
     if (weeklyHasReportRef.current) {
-      setWeeklyUiState(weeklyStableRef.current);
+      setWeeklyUiState(weeklyStableRef.current)
     } else {
-      setWeeklyUiState("error");
+      setWeeklyUiState("error")
     }
-  };
+  }
 
   const handleToggleWeeklyPause = () => {
     if (!isWeeklyGenerating || !weeklyGenerationStartedAt) {
-      return;
+      return
     }
 
-    const now = Date.now();
+    const now = Date.now()
     if (weeklyGenerationPaused) {
       if (weeklyPauseStartedAt) {
         setWeeklyPausedAccumulatedMs(
           (prev) => prev + (now - weeklyPauseStartedAt)
-        );
+        )
       }
-      setWeeklyPauseStartedAt(null);
-      setWeeklyGenerationPaused(false);
-      return;
+      setWeeklyPauseStartedAt(null)
+      setWeeklyGenerationPaused(false)
+      return
     }
 
-    setWeeklyPauseStartedAt(now);
-    setWeeklyGenerationPaused(true);
-  };
+    setWeeklyPauseStartedAt(now)
+    setWeeklyGenerationPaused(true)
+  }
 
   const renderThreadContext = () => {
-    if (!conversation) return null;
+    if (!conversation) return null
 
     return (
       <div className="ins-thread-ctx">
         <span
           className={`ins-platform-badge ${getPlatformBadgeClass(
             conversation.platform
-          )} ins-thread-platform-badge`}
-        >
+          )} ins-thread-platform-badge`}>
           {conversation.platform}
         </span>
         <div className="min-w-0 flex-1">
@@ -1061,8 +1090,8 @@ export function InsightsPage({
           </p>
         </div>
       </div>
-    );
-  };
+    )
+  }
 
   const renderThreadSummaryBody = () => {
     if (threadSummaryUiState === "no_thread") {
@@ -1070,16 +1099,16 @@ export function InsightsPage({
         <p className="ins-empty">
           Select a thread from Threads to generate a summary.
         </p>
-      );
+      )
     }
 
     const showGeneratingShell =
       threadSummaryUiState === "selected_loading" ||
-      threadSummaryUiState === "ready_loading";
+      threadSummaryUiState === "ready_loading"
     const showReadyShell =
       threadSummaryUiState === "ready" ||
       threadSummaryUiState === "ready_loading" ||
-      threadSummaryUiState === "ready_error";
+      threadSummaryUiState === "ready_error"
 
     return (
       <div className="flex flex-col gap-2">
@@ -1099,7 +1128,9 @@ export function InsightsPage({
                 <p className="ins-thread-status-copy">{threadStatusText}</p>
               </div>
 
-              <span className="ins-thread-timer">{formatTimer(threadElapsedMs)}</span>
+              <span className="ins-thread-timer">
+                {formatTimer(threadElapsedMs)}
+              </span>
             </div>
 
             <div className="ins-thread-phase-track">
@@ -1109,20 +1140,26 @@ export function InsightsPage({
                     ? "ins-thread-phase-done"
                     : threadPhaseIndex === index
                       ? "ins-thread-phase-active"
-                      : "ins-thread-phase-idle";
+                      : "ins-thread-phase-idle"
                 return (
-                  <div key={phase.label} className={`ins-thread-phase-row ${rowState}`}>
+                  <div
+                    key={phase.label}
+                    className={`ins-thread-phase-row ${rowState}`}>
                     <span className="ins-thread-phase-dot" />
                     <span className="min-w-0 flex-1">
-                      <span className="ins-thread-phase-label">{phase.label}</span>
-                      <span className="ins-thread-phase-sublabel">{phase.sublabel}</span>
+                      <span className="ins-thread-phase-label">
+                        {phase.label}
+                      </span>
+                      <span className="ins-thread-phase-sublabel">
+                        {phase.sublabel}
+                      </span>
                     </span>
                     <span className="ins-thread-phase-time">
                       {getThreadPhaseTimeLabel(index)}
                     </span>
                     <span className="ins-thread-phase-tick">OK</span>
                   </div>
-                );
+                )
               })}
             </div>
           </div>
@@ -1132,28 +1169,36 @@ export function InsightsPage({
           <div
             className={`ins-thread-ready-shell ${
               conversation ? getThreadThemeClass(conversation.platform) : ""
-            }`}
-          >
+            }`}>
             <section className="ins-thread-core-card">
-              <p className="ins-thread-core-label">{"\u6838\u5fc3\u95ee\u9898"}</p>
-              <p className="ins-thread-core-text">{summaryData.core_question}</p>
+              <p className="ins-thread-core-label">
+                {"\u6838\u5fc3\u95ee\u9898"}
+              </p>
+              <p className="ins-thread-core-text">
+                {summaryData.core_question}
+              </p>
             </section>
 
             {threadJourneySteps.length > 0 && (
               <section>
                 <div className="ins-thread-sec-head">
-                  <span className="ins-thread-sec-label">{"\u601d\u8003\u8f68\u8ff9"}</span>
+                  <span className="ins-thread-sec-label">
+                    {"\u601d\u8003\u8f68\u8ff9"}
+                  </span>
                   <span className="ins-thread-sec-line" />
-                  <span className="ins-thread-sec-count">{threadJourneySteps.length}</span>
+                  <span className="ins-thread-sec-count">
+                    {threadJourneySteps.length}
+                  </span>
                 </div>
                 <div className="ins-thread-journey-list">
                   {threadJourneySteps.map((step, index) => (
                     <article
                       key={`${index + 1}-${step.speaker}-${step.assertion}`}
                       className={`ins-thread-step-card ${
-                        step.speaker === "User" ? "ins-thread-step-user" : "ins-thread-step-ai"
-                      }`}
-                    >
+                        step.speaker === "User"
+                          ? "ins-thread-step-user"
+                          : "ins-thread-step-ai"
+                      }`}>
                       <div className="ins-thread-step-head">
                         <span className="ins-thread-step-num">
                           {String(index + 1).padStart(2, "0")}
@@ -1163,16 +1208,19 @@ export function InsightsPage({
                             step.speaker === "User"
                               ? "ins-thread-speaker-user"
                               : "ins-thread-speaker-ai"
-                          }`}
-                        >
+                          }`}>
                           {step.speaker === "User" ? "\u4f60" : "\u52a9\u624b"}
                         </span>
                       </div>
-                      <p className="ins-thread-step-assertion">{step.assertion}</p>
+                      <p className="ins-thread-step-assertion">
+                        {step.assertion}
+                      </p>
 
                       {step.speaker === "AI" && step.real_world_anchor && (
                         <blockquote className="ins-thread-anchor-quote">
-                          <p className="ins-thread-anchor-text">{step.real_world_anchor}</p>
+                          <p className="ins-thread-anchor-text">
+                            {step.real_world_anchor}
+                          </p>
                         </blockquote>
                       )}
                     </article>
@@ -1184,15 +1232,23 @@ export function InsightsPage({
             {threadInsightItems.length > 0 && (
               <section>
                 <div className="ins-thread-sec-head">
-                  <span className="ins-thread-sec-label">{"\u5173\u952e\u6d1e\u5bdf"}</span>
+                  <span className="ins-thread-sec-label">
+                    {"\u5173\u952e\u6d1e\u5bdf"}
+                  </span>
                   <span className="ins-thread-sec-line" />
-                  <span className="ins-thread-sec-count">{threadInsightItems.length}</span>
+                  <span className="ins-thread-sec-count">
+                    {threadInsightItems.length}
+                  </span>
                 </div>
                 <div className="ins-thread-insight-list">
                   {threadInsightItems.map((item, index) => (
-                    <article className="ins-thread-insight-card" key={`${item.term}-${index}`}>
+                    <article
+                      className="ins-thread-insight-card"
+                      key={`${item.term}-${index}`}>
                       <p className="ins-thread-insight-term">{item.term}</p>
-                      <p className="ins-thread-insight-def">{item.definition}</p>
+                      <p className="ins-thread-insight-def">
+                        {item.definition}
+                      </p>
                     </article>
                   ))}
                 </div>
@@ -1202,13 +1258,19 @@ export function InsightsPage({
             {threadUnresolvedItems.length > 0 && (
               <section>
                 <div className="ins-thread-sec-head">
-                  <span className="ins-thread-sec-label">{"\u672a\u89e3\u95ee\u9898"}</span>
+                  <span className="ins-thread-sec-label">
+                    {"\u672a\u89e3\u95ee\u9898"}
+                  </span>
                   <span className="ins-thread-sec-line" />
-                  <span className="ins-thread-sec-count">{threadUnresolvedItems.length}</span>
+                  <span className="ins-thread-sec-count">
+                    {threadUnresolvedItems.length}
+                  </span>
                 </div>
                 <div className="ins-thread-unresolved-list">
                   {threadUnresolvedItems.map((item, index) => (
-                    <article className="ins-thread-unresolved-item" key={`${item}-${index}`}>
+                    <article
+                      className="ins-thread-unresolved-item"
+                      key={`${item}-${index}`}>
                       <span className="ins-thread-unresolved-dot" />
                       <p className="ins-thread-unresolved-text">{item}</p>
                     </article>
@@ -1220,13 +1282,19 @@ export function InsightsPage({
             {threadNextStepItems.length > 0 && (
               <section>
                 <div className="ins-thread-sec-head">
-                  <span className="ins-thread-sec-label">{"\u4e0b\u4e00\u6b65\u5efa\u8bae"}</span>
+                  <span className="ins-thread-sec-label">
+                    {"\u4e0b\u4e00\u6b65\u5efa\u8bae"}
+                  </span>
                   <span className="ins-thread-sec-line" />
-                  <span className="ins-thread-sec-count">{threadNextStepItems.length}</span>
+                  <span className="ins-thread-sec-count">
+                    {threadNextStepItems.length}
+                  </span>
                 </div>
                 <div className="ins-thread-next-list">
                   {threadNextStepItems.map((item, index) => (
-                    <article className="ins-thread-next-item" key={`${item}-${index}`}>
+                    <article
+                      className="ins-thread-next-item"
+                      key={`${item}-${index}`}>
                       <span className="ins-thread-next-num">
                         {String(index + 1).padStart(2, "0")}
                       </span>
@@ -1239,7 +1307,9 @@ export function InsightsPage({
 
             <section>
               <div className="ins-thread-sec-head">
-                <span className="ins-thread-sec-label">{"\u601d\u7ef4\u4fa7\u5199"}</span>
+                <span className="ins-thread-sec-label">
+                  {"\u601d\u7ef4\u4fa7\u5199"}
+                </span>
                 <span className="ins-thread-sec-line" />
               </div>
               <div className="ins-thread-meta-row">
@@ -1269,8 +1339,7 @@ export function InsightsPage({
           type="button"
           onClick={handleGenerateSummary}
           disabled={summaryStatus === "loading"}
-          className="ins-generate-btn"
-        >
+          className="ins-generate-btn">
           {summaryStatus === "loading" ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-primary" />
           ) : (
@@ -1293,8 +1362,7 @@ export function InsightsPage({
             <button
               type="button"
               onClick={handleGenerateSummary}
-              className="ins-inline-link"
-            >
+              className="ins-inline-link">
               Retry
             </button>
           </p>
@@ -1315,16 +1383,15 @@ export function InsightsPage({
           </div>
         )}
       </div>
-    );
-  };
+    )
+  }
 
   const renderWeeklyRangeToggle = () => {
     return (
       <div
         className={`ins-week-range-toggle ${isWeeklyGenerating ? "is-disabled" : ""}`}
         role="radiogroup"
-        aria-label="Weekly digest range"
-      >
+        aria-label="Weekly digest range">
         <button
           type="button"
           role="radio"
@@ -1333,8 +1400,7 @@ export function InsightsPage({
           onClick={() => setWeeklyRangeMode("last_7_days")}
           className={`ins-week-range-btn ${
             weeklyRangeMode === "last_7_days" ? "is-active" : ""
-          }`}
-        >
+          }`}>
           Last 7 Days
         </button>
         <button
@@ -1345,13 +1411,12 @@ export function InsightsPage({
           onClick={() => setWeeklyRangeMode("last_full_week")}
           className={`ins-week-range-btn ${
             weeklyRangeMode === "last_full_week" ? "is-active" : ""
-          }`}
-        >
+          }`}>
           Last Full Week
         </button>
       </div>
-    );
-  };
+    )
+  }
 
   const renderWeeklyIdle = () => {
     return (
@@ -1370,8 +1435,7 @@ export function InsightsPage({
               <span
                 className={`ins-platform-badge ${getPlatformBadgeClass(
                   item.platform
-                )}`}
-              >
+                )}`}>
                 {item.platform}
               </span>
               <p className="ins-week-thread-title">{item.title}</p>
@@ -1385,8 +1449,7 @@ export function InsightsPage({
             <button
               type="button"
               onClick={() => setIsWeeklyListExpanded((prev) => !prev)}
-              className="ins-week-toggle"
-            >
+              className="ins-week-toggle">
               <span className="ins-week-toggle-line" />
               <span className="ins-week-toggle-label">
                 {isWeeklyListExpanded
@@ -1405,16 +1468,15 @@ export function InsightsPage({
         <button
           type="button"
           onClick={handleGenerateWeekly}
-          className="ins-week-generate-trigger"
-        >
+          className="ins-week-generate-trigger">
           <InsightsWandIcon className="h-3.5 w-3.5 ins-week-generate-trigger-icon" />
           <span className="ins-week-generate-trigger-text">
             Generate digest for this week
           </span>
         </button>
       </>
-    );
-  };
+    )
+  }
 
   const renderWeeklyGenerating = () => {
     return (
@@ -1444,7 +1506,9 @@ export function InsightsPage({
               </p>
             </div>
 
-            <span className="ins-week-timer">{formatTimer(weeklyElapsedMs)}</span>
+            <span className="ins-week-timer">
+              {formatTimer(weeklyElapsedMs)}
+            </span>
           </div>
 
           <div className="ins-week-phase-track">
@@ -1454,19 +1518,23 @@ export function InsightsPage({
                   ? "ins-week-phase-done"
                   : weeklyPhaseIndex === index
                     ? "ins-week-phase-active"
-                    : "ins-week-phase-idle";
+                    : "ins-week-phase-idle"
 
               return (
-                <div key={phase.phase} className={`ins-week-phase-row ${rowState}`}>
+                <div
+                  key={phase.phase}
+                  className={`ins-week-phase-row ${rowState}`}>
                   <span className="ins-week-phase-dot" />
                   <span className="min-w-0 flex-1">
                     <span className="ins-week-phase-label">{phase.label}</span>
-                    <span className="ins-week-phase-sublabel">{phase.sublabel}</span>
+                    <span className="ins-week-phase-sublabel">
+                      {phase.sublabel}
+                    </span>
                   </span>
                   <span className="ins-week-phase-time">{phase.hint}</span>
                   <span className="ins-week-phase-tick">OK</span>
                 </div>
-              );
+              )
             })}
           </div>
 
@@ -1475,9 +1543,12 @@ export function InsightsPage({
               type="button"
               onClick={handleToggleWeeklyPause}
               aria-pressed={weeklyGenerationPaused}
-              aria-label={weeklyGenerationPaused ? "Resume progress view" : "Pause progress view"}
-              className="ins-week-gen-control-btn"
-            >
+              aria-label={
+                weeklyGenerationPaused
+                  ? "Resume progress view"
+                  : "Pause progress view"
+              }
+              className="ins-week-gen-control-btn">
               {weeklyGenerationPaused ? (
                 <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
               ) : (
@@ -1491,8 +1562,8 @@ export function InsightsPage({
           </div>
         </div>
       </>
-    );
-  };
+    )
+  }
 
   const renderWeeklyReady = () => {
     return (
@@ -1511,8 +1582,7 @@ export function InsightsPage({
             <button
               type="button"
               onClick={handleGenerateWeekly}
-              className="ins-inline-link"
-            >
+              className="ins-inline-link">
               Retry
             </button>
           </p>
@@ -1527,7 +1597,9 @@ export function InsightsPage({
               </div>
               <div className="ins-week-highlight-list">
                 {weeklyHighlightItems.map((item, index) => (
-                  <article className="ins-week-highlight-item" key={`${item}-${index}`}>
+                  <article
+                    className="ins-week-highlight-item"
+                    key={`${item}-${index}`}>
                     <p className="ins-week-highlight-text">{item}</p>
                   </article>
                 ))}
@@ -1543,7 +1615,9 @@ export function InsightsPage({
               </div>
               <div className="ins-week-recurring-list">
                 {weeklyRecurringItems.map((item, index) => (
-                  <article className="ins-week-recurring-item" key={`${item}-${index}`}>
+                  <article
+                    className="ins-week-recurring-item"
+                    key={`${item}-${index}`}>
                     <span className="ins-week-recurring-mark">"</span>
                     <p className="ins-week-recurring-text">{item}</p>
                   </article>
@@ -1560,11 +1634,17 @@ export function InsightsPage({
               </div>
               <div className="ins-week-echo-list">
                 {weeklyCrossDomainEchoes.map((echo, index) => (
-                  <article className="ins-week-echo-card" key={`${echo.domain_a}-${index}`}>
+                  <article
+                    className="ins-week-echo-card"
+                    key={`${echo.domain_a}-${index}`}>
                     <div className="ins-week-echo-domains">
-                      <span className="ins-week-echo-domain-tag">{echo.domain_a}</span>
+                      <span className="ins-week-echo-domain-tag">
+                        {echo.domain_a}
+                      </span>
                       <span className="ins-week-echo-arrow">&lt;-&gt;</span>
-                      <span className="ins-week-echo-domain-tag">{echo.domain_b}</span>
+                      <span className="ins-week-echo-domain-tag">
+                        {echo.domain_b}
+                      </span>
                     </div>
                     <p className="ins-week-echo-label">Shared logic</p>
                     <p className="ins-week-echo-text">{echo.shared_logic}</p>
@@ -1591,7 +1671,9 @@ export function InsightsPage({
               </div>
               <div className="ins-week-unresolved-list">
                 {weeklyUnresolvedItems.map((item, index) => (
-                  <article className="ins-week-unresolved-item" key={`${item}-${index}`}>
+                  <article
+                    className="ins-week-unresolved-item"
+                    key={`${item}-${index}`}>
                     <span className="ins-week-unresolved-dot" />
                     <p className="ins-week-unresolved-text">{item}</p>
                   </article>
@@ -1608,7 +1690,9 @@ export function InsightsPage({
               </div>
               <div className="ins-week-focus-list">
                 {weeklyNextWeekItems.map((item, index) => (
-                  <article className="ins-week-focus-item" key={`${item}-${index}`}>
+                  <article
+                    className="ins-week-focus-item"
+                    key={`${item}-${index}`}>
                     <span className="ins-week-focus-arrow">-&gt;</span>
                     <p className="ins-week-focus-text">{item}</p>
                   </article>
@@ -1621,8 +1705,7 @@ export function InsightsPage({
         <button
           type="button"
           onClick={handleGenerateWeekly}
-          className="ins-generate-btn"
-        >
+          className="ins-generate-btn">
           <InsightsWandIcon className="h-3.5 w-3.5 text-accent-primary" />
           Regenerate
         </button>
@@ -1631,7 +1714,9 @@ export function InsightsPage({
           <div className="ins-model-meta">
             <p className="ins-model-meta-line">
               <span className="ins-model-meta-label">Model:</span>
-              <span className="ins-model-meta-value">{weeklyReport.modelId}</span>
+              <span className="ins-model-meta-value">
+                {weeklyReport.modelId}
+              </span>
             </p>
             <p className="ins-model-meta-line">
               <span className="ins-model-meta-label">Generated:</span>
@@ -1642,8 +1727,8 @@ export function InsightsPage({
           </div>
         )}
       </>
-    );
-  };
+    )
+  }
 
   const renderWeeklySparse = () => {
     return (
@@ -1662,8 +1747,7 @@ export function InsightsPage({
             <button
               type="button"
               onClick={handleGenerateWeekly}
-              className="ins-inline-link"
-            >
+              className="ins-inline-link">
               Retry
             </button>
           </p>
@@ -1675,21 +1759,24 @@ export function InsightsPage({
           </p>
           {weeklySparseReason === "sub3" && (
             <p className="ins-week-sparse-body">
-              This range has fewer than 3 substantial summaries. Weekly Digest will
-              resume automatically when enough structured evidence is available.
+              This range has fewer than 3 substantial summaries. Weekly Digest
+              will resume automatically when enough structured evidence is
+              available.
             </p>
           )}
           {weeklySparseReason === "semantic_degraded" && (
             <p className="ins-week-quality-note">
-              Enough summaries were found, but semantic quality gate downgraded this
-              run to prevent low-signal fragments.
+              Enough summaries were found, but semantic quality gate downgraded
+              this run to prevent low-signal fragments.
             </p>
           )}
           <div className="ins-week-sparse-stats">
             <span>Threads started in range: {weeklyThreadCount}</span>
             <span>
               Substantial summaries:{" "}
-              {weeklySubstantialCount === null ? "unknown" : weeklySubstantialCount}
+              {weeklySubstantialCount === null
+                ? "unknown"
+                : weeklySubstantialCount}
             </span>
           </div>
         </div>
@@ -1697,14 +1784,13 @@ export function InsightsPage({
         <button
           type="button"
           onClick={handleGenerateWeekly}
-          className="ins-generate-btn"
-        >
+          className="ins-generate-btn">
           <InsightsWandIcon className="h-3.5 w-3.5 text-accent-primary" />
           Regenerate
         </button>
       </>
-    );
-  };
+    )
+  }
 
   const renderWeeklyError = () => {
     return (
@@ -1724,39 +1810,38 @@ export function InsightsPage({
           <button
             type="button"
             onClick={handleGenerateWeekly}
-            className="ins-generate-btn ins-week-inline-gap"
-          >
+            className="ins-generate-btn ins-week-inline-gap">
             <InsightsWandIcon className="h-3.5 w-3.5 text-accent-primary" />
             Retry
           </button>
         </div>
       </>
-    );
-  };
+    )
+  }
 
   const renderWeeklyBody = () => {
     if (weeklyUiState === "generating") {
-      return renderWeeklyGenerating();
+      return renderWeeklyGenerating()
     }
 
     if (weeklyUiState === "ready") {
-      return renderWeeklyReady();
+      return renderWeeklyReady()
     }
 
     if (weeklyUiState === "sparse_week") {
-      return renderWeeklySparse();
+      return renderWeeklySparse()
     }
 
     if (weeklyUiState === "error") {
-      return renderWeeklyError();
+      return renderWeeklyError()
     }
 
-    return renderWeeklyIdle();
-  };
+    return renderWeeklyIdle()
+  }
 
   function openDashboard(tab: "explore" | "network") {
-    const url = chrome.runtime.getURL(`options.html?tab=${tab}`);
-    chrome.tabs.create({ url });
+    const url = chrome.runtime.getURL(`options.html?tab=${tab}`)
+    chrome.tabs.create({ url })
   }
 
   return (
@@ -1778,8 +1863,7 @@ export function InsightsPage({
               <FileText className="h-4 w-4" strokeWidth={1.5} />
               <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-current opacity-80" />
             </span>
-          }
-        >
+          }>
           {renderThreadSummaryBody()}
         </InsightsAccordionItem>
 
@@ -1790,12 +1874,13 @@ export function InsightsPage({
           description="Highlights from the past seven days"
           open={weeklyDigestOpen}
           onToggle={
-            WEEKLY_DIGEST_SOON ? undefined : () => setWeeklyDigestOpen((prev) => !prev)
+            WEEKLY_DIGEST_SOON
+              ? undefined
+              : () => setWeeklyDigestOpen((prev) => !prev)
           }
           icon={<CalendarDays className="h-4 w-4" strokeWidth={1.5} />}
           disabled={WEEKLY_DIGEST_SOON}
-          soonTag={WEEKLY_DIGEST_SOON ? "Soon" : undefined}
-        >
+          soonTag={WEEKLY_DIGEST_SOON ? "Soon" : undefined}>
           {renderWeeklyBody()}
         </InsightsAccordionItem>
 
@@ -1806,20 +1891,23 @@ export function InsightsPage({
           description="Knowledge graph and thread connections"
           open={discoveryOpen}
           onToggle={() => setDiscoveryOpen((prev) => !prev)}
-          icon={<Network className="h-4 w-4" strokeWidth={1.5} />}
-        >
+          icon={<Network className="h-4 w-4" strokeWidth={1.5} />}>
           <div className="flex flex-col gap-2 pt-1">
             <button
               type="button"
               onClick={() => openDashboard("explore")}
               className="flex items-center justify-between w-full px-3 py-2.5
                    rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover
-                   transition-colors duration-150 group"
-            >
+                   transition-colors duration-150 group">
               <div className="flex items-center gap-2.5">
-                <Compass className="w-4 h-4 text-text-secondary" strokeWidth={1.75} />
+                <Compass
+                  className="w-4 h-4 text-text-secondary"
+                  strokeWidth={1.75}
+                />
                 <div className="text-left">
-                  <p className="text-[13px] font-medium text-text-primary">Explore</p>
+                  <p className="text-[13px] font-medium text-text-primary">
+                    Explore
+                  </p>
                   <p className="text-[11px] text-text-tertiary">
                     Browse and search your knowledge base
                   </p>
@@ -1836,12 +1924,16 @@ export function InsightsPage({
               onClick={() => openDashboard("network")}
               className="flex items-center justify-between w-full px-3 py-2.5
                    rounded-md bg-bg-surface-card hover:bg-bg-surface-card-hover
-                   transition-colors duration-150 group"
-            >
+                   transition-colors duration-150 group">
               <div className="flex items-center gap-2.5">
-                <Network className="w-4 h-4 text-text-secondary" strokeWidth={1.75} />
+                <Network
+                  className="w-4 h-4 text-text-secondary"
+                  strokeWidth={1.75}
+                />
                 <div className="text-left">
-                  <p className="text-[13px] font-medium text-text-primary">Network</p>
+                  <p className="text-[13px] font-medium text-text-primary">
+                    Network
+                  </p>
                   <p className="text-[11px] text-text-tertiary">
                     Visualize connections between conversations
                   </p>
@@ -1857,5 +1949,5 @@ export function InsightsPage({
         </InsightsAccordionItem>
       </div>
     </div>
-  );
+  )
 }

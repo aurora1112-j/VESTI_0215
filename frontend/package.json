@@ -19,6 +19,7 @@
     "@fontsource/newsreader": "^5.2.10",
     "@fontsource/nunito-sans": "^5.2.7",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@sqlite.org/sqlite-wasm": "3.51.2-build8",
     "@vesti/ui": "file:../packages/vesti-ui",
     "dexie": "^4.3.0",
     "katex": "^0.16.25",
