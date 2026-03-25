@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  createContext,
   useState,
   useEffect,
   useRef,
   useMemo,
+  useContext,
   type FocusEvent,
   type KeyboardEvent,
 } from "react";
@@ -12,8 +14,12 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
   BookOpen,
+  ArrowLeft,
   ChevronDown,
+  ExternalLink,
+  Expand,
   List,
+  Shrink,
   Star,
   Check,
   ArrowRight,
@@ -25,7 +31,6 @@ import {
   RefreshCw,
   Trash2,
   X,
-  ExternalLink,
 } from "lucide-react";
 import type {
   Annotation,
@@ -54,19 +59,266 @@ import { buildReaderTimestampFooterModel } from "../lib/reader-timestamps";
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
 type FolderMeta = { customFolders: string[] };
+type WorkspaceMode = "single" | "split";
+type NoteSaveStatus = "saved" | "saving" | "unsaved";
+type PendingExcerpt = {
+  id: string;
+  conversationId: number;
+  messageId: number;
+  messageIndex: number;
+  sourceLabel: string;
+  content: string;
+};
+type ReaderSelectionAction = PendingExcerpt & {
+  top: number;
+  left: number;
+};
 
 type LibraryTabProps = {
   storage: StorageApi;
   themeMode?: UiThemeMode;
   openConversationId?: number | null;
   onConversationOpened?: () => void;
+  returnToSourceLabel?: string | null;
+  onReturnToSource?: () => void;
 };
+
+type LibrarySplitContextValue = {
+  isSplitActive: boolean;
+  isSplitNavigationOpen: boolean;
+  noteSaveStatus: NoteSaveStatus;
+  pendingExcerpts: PendingExcerpt[];
+  openSplitNavigation: () => void;
+  closeSplitNavigation: () => void;
+  toggleSplitNavigation: () => void;
+  consumePendingExcerpt: (excerptId: string) => void;
+  exitSplit: () => void | Promise<void>;
+};
+
+const LibrarySplitContext = createContext<LibrarySplitContextValue | null>(null);
+
+function useLibrarySplitContext(): LibrarySplitContextValue {
+  const context = useContext(LibrarySplitContext);
+  if (!context) {
+    throw new Error("LibrarySplitContext is only available inside LibraryTab split workspace.");
+  }
+  return context;
+}
+
+function SplitNavigationToggle() {
+  const { isSplitActive, toggleSplitNavigation } = useLibrarySplitContext();
+
+  if (!isSplitActive) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={toggleSplitNavigation}
+      className="absolute left-3 top-3 z-40 inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-subtle bg-bg-primary/92 text-text-tertiary shadow-[0_8px_24px_rgba(15,23,42,0.12)] backdrop-blur transition-colors hover:text-text-primary"
+      aria-label="Toggle library navigation"
+      title="Library navigation"
+    >
+      <List strokeWidth={1.7} className="h-4 w-4" />
+    </button>
+  );
+}
+
+type SplitNoteEditorPanelProps = {
+  selectedConversation: Conversation;
+  selectedNote: Note | null;
+  noteTitle: string;
+  noteContent: string;
+  linkedConversations: Conversation[];
+  onTitleChange: (value: string) => void;
+  onContentChange: (value: string) => void;
+  onAppendExcerpt: (excerpt: PendingExcerpt) => void;
+  onCreateConversationNote: () => void | Promise<void>;
+  onDeleteCurrentNote: () => void | Promise<void>;
+  onOpenConversation: (conversationId: number) => void | Promise<void>;
+  formatTimeAgo: (timestamp: number) => string;
+};
+
+function SplitNoteEditorPanel({
+  selectedConversation,
+  selectedNote,
+  noteTitle,
+  noteContent,
+  linkedConversations,
+  onTitleChange,
+  onContentChange,
+  onAppendExcerpt,
+  onCreateConversationNote,
+  onDeleteCurrentNote,
+  onOpenConversation,
+  formatTimeAgo,
+}: SplitNoteEditorPanelProps) {
+  const {
+    pendingExcerpts,
+    consumePendingExcerpt,
+    noteSaveStatus,
+    exitSplit,
+  } = useLibrarySplitContext();
+  const splitTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!selectedNote || pendingExcerpts.length === 0) return;
+
+    pendingExcerpts
+      .filter((excerpt) => excerpt.conversationId === selectedConversation.id)
+      .forEach((excerpt) => {
+        onAppendExcerpt(excerpt);
+        consumePendingExcerpt(excerpt.id);
+      });
+  }, [
+    consumePendingExcerpt,
+    onAppendExcerpt,
+    pendingExcerpts,
+    selectedConversation.id,
+    selectedNote,
+  ]);
+
+  useEffect(() => {
+    const element = splitTextareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [noteContent]);
+
+  const saveStatusLabel = selectedNote
+    ? noteSaveStatus === "saving"
+      ? "Saving..."
+      : noteSaveStatus === "unsaved"
+        ? "Unsaved changes"
+        : `Updated ${formatTimeAgo(selectedNote.updated_at)}`
+    : "No note yet";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-bg-primary">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="sticky top-0 z-10 bg-bg-primary/95 px-6 py-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-sans uppercase tracking-[0.18em] text-text-tertiary">
+                Conversation Note
+              </div>
+              <div className="mt-1 text-[13px] font-sans text-text-secondary">
+                {saveStatusLabel}
+              </div>
+            </div>
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => void exitSplit()}
+                aria-label="Exit split view"
+                title="Exit split view"
+                className="group inline-flex h-9 items-center bg-transparent px-1 text-[12px] font-sans text-text-tertiary transition-colors duration-200 hover:text-text-primary"
+              >
+                <Shrink strokeWidth={1.7} className="h-4 w-4 shrink-0" />
+                <span className="ml-0 max-w-0 overflow-hidden whitespace-nowrap text-[11px] uppercase tracking-[0.18em] opacity-0 transition-[max-width,opacity,margin] duration-200 group-hover:ml-2 group-hover:max-w-[108px] group-hover:opacity-100 group-focus-visible:ml-2 group-focus-visible:max-w-[108px] group-focus-visible:opacity-100">
+                  Exit Split
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-6 pb-28">
+          {selectedNote ? (
+            <>
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={(event) => onTitleChange(event.target.value)}
+                placeholder={selectedConversation.title}
+                className="w-full border-0 bg-transparent px-0 text-2xl font-serif font-normal text-text-primary outline-none placeholder:text-text-tertiary"
+              />
+
+              <div className="relative mt-6">
+                <textarea
+                  ref={splitTextareaRef}
+                  value={noteContent}
+                  onChange={(event) => onContentChange(event.target.value)}
+                  placeholder="Extracted excerpts and your notes will appear here..."
+                  className="min-h-[520px] w-full resize-none overflow-hidden border-0 bg-transparent px-0 pb-14 text-[13px] leading-[1.75] text-text-primary outline-none placeholder:text-text-tertiary"
+                  style={{
+                    fontFamily: "\"JetBrains Mono\", \"SF Mono\", Menlo, monospace",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void onDeleteCurrentNote()}
+                  aria-label="Delete note"
+                  title="Delete note"
+                  className="absolute bottom-2 right-0 inline-flex h-8 w-8 items-center justify-center text-[#B42318] transition-colors hover:bg-[#FEF2F2]"
+                >
+                  <Trash2 strokeWidth={1.6} className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-8">
+                <h3 className="mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-text-tertiary">
+                  Linked Conversations
+                </h3>
+                {linkedConversations.length > 0 ? (
+                  <div className="space-y-2">
+                    {linkedConversations.map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        onClick={() => void onOpenConversation(conversation.id)}
+                        className="flex w-full items-center justify-between rounded-lg bg-bg-surface-card p-3 transition-colors hover:bg-bg-surface-card-hover"
+                      >
+                        <span className="truncate text-[13px] font-sans text-text-primary">
+                          {conversation.title}
+                        </span>
+                        <span className="text-xs font-sans font-medium text-accent-primary">
+                          Open
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-bg-surface-card p-3 text-[13px] font-sans text-text-tertiary">
+                    No linked conversations
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[28px] border border-dashed border-border-subtle bg-bg-surface-card px-10 text-center">
+              <div className="text-[11px] font-sans uppercase tracking-[0.18em] text-text-tertiary">
+                Focus Note
+              </div>
+              <h2 className="mt-3 text-2xl font-serif font-normal text-text-primary">
+                No note linked yet
+              </h2>
+              <p className="mt-3 max-w-md text-[13px] font-sans leading-relaxed text-text-secondary">
+                Start extracting from the reader or create a conversation note for
+                {` ${selectedConversation.title}`} to keep your reading and writing side by side.
+              </p>
+              <button
+                type="button"
+                onClick={() => void onCreateConversationNote()}
+                className="mt-6 inline-flex items-center gap-1.5 rounded-md bg-bg-primary px-4 py-2 text-[13px] font-sans text-text-primary transition-colors hover:bg-bg-secondary"
+              >
+                <BookOpen strokeWidth={1.6} className="h-4 w-4" />
+                Create Conversation Note
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function LibraryTab({
   storage,
   themeMode = "light",
   openConversationId,
   onConversationOpened,
+  returnToSourceLabel = null,
+  onReturnToSource,
 }: LibraryTabProps) {
   const { topics, conversations, refresh } = useLibraryData();
   const getRelatedConversations = storage.getRelatedConversations;
@@ -134,12 +386,18 @@ export function LibraryTab({
   const [hasLinkedNote, setHasLinkedNote] = useState(false);
   const [renameNoteTarget, setRenameNoteTarget] = useState<Note | null>(null);
   const [renameNoteTitle, setRenameNoteTitle] = useState("");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("single");
+  const [isSplitNavigationOpen, setIsSplitNavigationOpen] = useState(false);
+  const [isDesktopSplitAvailable, setIsDesktopSplitAvailable] = useState(false);
+  const [pendingExcerpts, setPendingExcerpts] = useState<PendingExcerpt[]>([]);
+  const [readerSelectionAction, setReaderSelectionAction] =
+    useState<ReaderSelectionAction | null>(null);
 
   // Note editing state
   const [editingTitle, setEditingTitle] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
-  const [noteSaveStatus, setNoteSaveStatus] = useState<"saved" | "unsaved">("saved");
+  const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [isEditingNoteBody, setIsEditingNoteBody] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -148,7 +406,21 @@ export function LibraryTab({
   const annotationSurfaceRef = useRef<HTMLDivElement>(null);
   const annotationDismissInFlightRef = useRef(false);
   const annotationTriggerRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const messageContentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const conversationPreviewScrollRef = useRef<HTMLDivElement>(null);
+  const notesRef = useRef<Note[]>([]);
+  const notePersistTimerRef = useRef<number | null>(null);
+  const noteHydratingRef = useRef(false);
+  const hydratedNoteIdRef = useRef<number | null>(null);
+  const noteDraftRef = useRef<{
+    noteId: number | null;
+    title: string;
+    content: string;
+  }>({
+    noteId: null,
+    title: "",
+    content: "",
+  });
   const FOLDER_META_KEY = "vesti_folder_meta";
   const NOTION_SETTINGS_KEY = "vesti_notion_settings";
   const [hasNotionExportConfig, setHasNotionExportConfig] = useState(false);
@@ -189,29 +461,6 @@ export function LibraryTab({
     );
   }
 
-  // Auto-save note with debounce
-  useEffect(() => {
-    if (viewMode !== "notes" || !selectedNoteId) return;
-    if (!noteContent && !noteTitle) return;
-    setNoteSaveStatus("unsaved");
-    const timer = setTimeout(() => {
-      console.log("[dashboard] Note saved:", { title: noteTitle, content: noteContent });
-      setNoteSaveStatus("saved");
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [noteContent, noteTitle, viewMode, selectedNoteId]);
-
-  // Load selected note
-  useEffect(() => {
-    if (!selectedNoteId) return;
-    const note = notes.find((n) => n.id === selectedNoteId);
-    if (note) {
-      setNoteTitle(note.title);
-      setNoteContent(note.content);
-      setIsEditingNoteBody(false);
-    }
-  }, [selectedNoteId, notes]);
-
   useEffect(() => {
     if (!storage.getNotes) return;
     setNotesLoading(true);
@@ -221,6 +470,72 @@ export function LibraryTab({
       .catch(() => setNotes([]))
       .finally(() => setNotesLoading(false));
   }, [storage]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    noteDraftRef.current = {
+      noteId: selectedNoteId,
+      title: noteTitle,
+      content: noteContent,
+    };
+  }, [noteContent, noteTitle, selectedNoteId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const syncSplitAvailability = () => setIsDesktopSplitAvailable(mediaQuery.matches);
+
+    syncSplitAvailability();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncSplitAvailability);
+      return () => mediaQuery.removeEventListener("change", syncSplitAvailability);
+    }
+
+    mediaQuery.addListener(syncSplitAvailability);
+    return () => mediaQuery.removeListener(syncSplitAvailability);
+  }, []);
+
+  useEffect(() => {
+    if (workspaceMode !== "split") {
+      setIsSplitNavigationOpen(false);
+    }
+  }, [workspaceMode]);
+
+  useEffect(() => {
+    if (workspaceMode !== "split" || isDesktopSplitAvailable) return;
+    setWorkspaceMode("single");
+    setIsSplitNavigationOpen(false);
+    setReaderSelectionAction(null);
+  }, [isDesktopSplitAvailable, workspaceMode]);
+
+  useEffect(() => {
+    if (!selectedNoteId) {
+      hydratedNoteIdRef.current = null;
+      noteHydratingRef.current = true;
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteSaveStatus("saved");
+      setIsEditingNoteBody(false);
+      setEditingTitle(false);
+      return;
+    }
+
+    if (hydratedNoteIdRef.current === selectedNoteId) return;
+
+    const note = notes.find((item) => item.id === selectedNoteId);
+    if (!note) return;
+
+    hydratedNoteIdRef.current = selectedNoteId;
+    noteHydratingRef.current = true;
+    setNoteTitle(note.title);
+    setNoteContent(note.content);
+    setNoteSaveStatus("saved");
+    setIsEditingNoteBody(false);
+    setEditingTitle(false);
+  }, [notes, selectedNoteId]);
 
   const persistFolderMeta = (nextCustom: string[]) => {
     setCustomFolders(nextCustom);
@@ -295,16 +610,6 @@ export function LibraryTab({
       }
     }
   }, [conversations, selectedConversationId]);
-
-  useEffect(() => {
-    if (typeof openConversationId !== "number") return;
-    if (openConversationId !== selectedConversationId) {
-      setViewMode("conversations");
-      setSelectedConversationId(openConversationId);
-      setSelectedNoteId(null);
-    }
-    onConversationOpened?.();
-  }, [openConversationId, selectedConversationId, onConversationOpened]);
 
   // TODO: replace with actual db read when teammate's analysis schema is confirmed
   // e.g. db.analyses.where('conversation_id').equals(selectedConversationId).first()
@@ -384,25 +689,21 @@ export function LibraryTab({
     const loadMessages = async () => {
       if (!selectedConversationId || !getMessages) {
         setMessages([]);
-        setLoadedMessagesConversationId(null);
         setMessagesError(null);
         return;
       }
 
       setMessagesLoading(true);
-      setLoadedMessagesConversationId(null);
       setMessagesError(null);
       setMessages([]);
       try {
         const data = await getMessages(selectedConversationId);
         if (!cancelled) {
           setMessages(data);
-          setLoadedMessagesConversationId(selectedConversationId);
         }
       } catch (error) {
         if (!cancelled) {
           setMessages([]);
-          setLoadedMessagesConversationId(selectedConversationId);
           setMessagesError(
             (error as Error)?.message ?? "Failed to load messages"
           );
@@ -610,7 +911,7 @@ export function LibraryTab({
     renameNoteTrimmed &&
     renameNoteTrimmed !== renameNoteTarget.title
   );
-  const messageCount = selectedConversation?.message_count ?? messages.length;
+  const messageCount = messages.length;
   const timestampFooter = useMemo(
     () =>
       selectedConversation ? buildReaderTimestampFooterModel(selectedConversation) : null,
@@ -621,6 +922,8 @@ export function LibraryTab({
     selectedConversation !== null &&
     !messagesLoading &&
     loadedMessagesConversationId === selectedConversation.id;
+  const messageDate =
+    messages.length > 0 ? messages[0].created_at : selectedConversation?.updated_at;
   const renderedNoteContent = useMemo(() => {
     if (!noteContent.trim()) return "";
     const html = marked.parse(noteContent, { gfm: true, breaks: true }) as string;
@@ -704,6 +1007,402 @@ export function LibraryTab({
     : baseConversations;
 
   const filteredConversations = tagFilteredConversations;
+  const isSplitActive =
+    workspaceMode === "split" && isDesktopSplitAvailable && Boolean(selectedConversation);
+  const isReaderConversationExpanded = isSplitActive || isConversationExpanded;
+
+  useEffect(() => {
+    if (typeof openConversationId !== "number") return;
+    if (openConversationId !== selectedConversationId) {
+      void selectConversation(openConversationId, {
+        resetSelectedNote: !isSplitActive,
+      });
+    }
+    onConversationOpened?.();
+  }, [isSplitActive, openConversationId, onConversationOpened, selectedConversationId]);
+
+  function clearPendingNotePersistTimer() {
+    if (notePersistTimerRef.current !== null) {
+      window.clearTimeout(notePersistTimerRef.current);
+      notePersistTimerRef.current = null;
+    }
+  }
+
+  function getConversationLinkedNotes(conversationId: number): Note[] {
+    return notes
+      .filter((note) => note.linked_conversation_ids.includes(conversationId))
+      .sort((a, b) => b.updated_at - a.updated_at);
+  }
+
+  function resolveConversationSplitNote(conversationId: number): Note | null {
+    if (selectedNote && selectedNote.linked_conversation_ids.includes(conversationId)) {
+      return selectedNote;
+    }
+    return getConversationLinkedNotes(conversationId)[0] ?? null;
+  }
+
+  async function flushPendingNoteSave() {
+    clearPendingNotePersistTimer();
+
+    const draft = noteDraftRef.current;
+    if (!draft.noteId || !storage.updateNote) {
+      setNoteSaveStatus("saved");
+      return;
+    }
+
+    const baseline = notesRef.current.find((note) => note.id === draft.noteId);
+    if (!baseline) {
+      setNoteSaveStatus("saved");
+      return;
+    }
+
+    if (baseline.title === draft.title && baseline.content === draft.content) {
+      setNoteSaveStatus("saved");
+      return;
+    }
+
+    setNoteSaveStatus("saving");
+    try {
+      const updated = await storage.updateNote(draft.noteId, {
+        title: draft.title,
+        content: draft.content,
+      });
+      setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)));
+      setNoteSaveStatus("saved");
+    } catch (error) {
+      console.error("[library] updateNote failed", error);
+      setNoteSaveStatus("unsaved");
+    }
+  }
+
+  async function ensureConversationNote(
+    conversationId: number,
+    options?: { createIfMissing?: boolean }
+  ): Promise<Note | null> {
+    const existingNote = resolveConversationSplitNote(conversationId);
+    if (existingNote) {
+      setSelectedNoteId(existingNote.id);
+      return existingNote;
+    }
+
+    if (!options?.createIfMissing || !storage.saveNote) {
+      setSelectedNoteId(null);
+      return null;
+    }
+
+    const conversation = conversations.find((item) => item.id === conversationId);
+    const createdNote = await storage.saveNote({
+      title: conversation?.title ?? "Untitled",
+      content: "",
+      linked_conversation_ids: [conversationId],
+    });
+    setNotes((prev) => [createdNote, ...prev.filter((note) => note.id !== createdNote.id)]);
+    setSelectedNoteId(createdNote.id);
+    return createdNote;
+  }
+
+  function closeReaderSelectionAction() {
+    setReaderSelectionAction(null);
+    if (typeof window !== "undefined") {
+      window.getSelection()?.removeAllRanges();
+    }
+  }
+
+  function queuePendingExcerpt(excerpt: PendingExcerpt) {
+    setPendingExcerpts((prev) => [...prev, excerpt]);
+  }
+
+  function consumePendingExcerpt(excerptId: string) {
+    setPendingExcerpts((prev) => prev.filter((excerpt) => excerpt.id !== excerptId));
+  }
+
+  function appendExcerptToDraft(excerpt: PendingExcerpt) {
+    setNoteContent((current) => {
+      const trimmedCurrent = current.trimEnd();
+      const prefix = trimmedCurrent.length > 0 ? "\n\n" : "";
+      return `${trimmedCurrent}${prefix}${excerpt.content}`;
+    });
+  }
+
+  async function enterSplitView(options?: { openNavigation?: boolean }) {
+    if (!selectedConversationId) return;
+    await flushPendingNoteSave();
+    setViewMode("conversations");
+    if (isDesktopSplitAvailable) {
+      setWorkspaceMode("split");
+      setIsSplitNavigationOpen(Boolean(options?.openNavigation));
+      const linkedNote = resolveConversationSplitNote(selectedConversationId);
+      setSelectedNoteId(linkedNote?.id ?? null);
+    }
+  }
+
+  async function exitSplitView() {
+    await flushPendingNoteSave();
+    setWorkspaceMode("single");
+    setIsSplitNavigationOpen(false);
+    setReaderSelectionAction(null);
+    setViewMode("conversations");
+  }
+
+  async function openNotesView(noteId?: number | null) {
+    await flushPendingNoteSave();
+    setWorkspaceMode("single");
+    setIsSplitNavigationOpen(false);
+    setViewMode("notes");
+    if (typeof noteId === "number") {
+      setSelectedNoteId(noteId);
+    } else if (notes.length > 0 && !selectedNoteId) {
+      setSelectedNoteId(notes[0].id);
+    }
+  }
+
+  async function selectConversation(
+    conversationId: number | null,
+    options?: {
+      resetFilters?: boolean;
+      closeNavigation?: boolean;
+      resetSelectedNote?: boolean;
+    }
+  ) {
+    await flushPendingNoteSave();
+    setViewMode("conversations");
+    if (options?.resetFilters) {
+      setListFilter("all");
+      setSelectedTag(null);
+    }
+    setSelectedConversationId(conversationId);
+    if (options?.resetSelectedNote) {
+      setSelectedNoteId(null);
+    }
+    if (options?.closeNavigation) {
+      setIsSplitNavigationOpen(false);
+    }
+    setReaderSelectionAction(null);
+  }
+
+  async function selectNote(noteId: number | null) {
+    await flushPendingNoteSave();
+    setSelectedNoteId(noteId);
+  }
+
+  async function handleSplitViewForCurrentConversation() {
+    if (!selectedConversationId) return;
+    await enterSplitView();
+  }
+
+  async function handleImportConversationToNotes() {
+    if (!selectedConversationId) return;
+    let note = resolveConversationSplitNote(selectedConversationId);
+    if (!note) {
+      if (!storage.saveNote) return;
+      const title = selectedConversation?.title ?? "Untitled";
+      const content = summaryData
+        ? [
+            `## ${summaryData.core_question}`,
+            "",
+            "### Thinking Journey",
+            ...summaryData.thinking_journey.map(
+              (item) =>
+                `**Step ${item.step} · ${item.speaker}**: ${item.assertion}${
+                  item.real_world_anchor ? `\n  _Example: ${item.real_world_anchor}_` : ""
+                }`
+            ),
+            "",
+            "### Key Insights",
+            ...summaryData.key_insights.map(
+              (item) => `**${item.term}**: ${item.definition}`
+            ),
+            "",
+            "### Unresolved Threads",
+            ...summaryData.unresolved_threads.map((item) => `- ${item}`),
+            "",
+            "### Next Steps",
+            ...summaryData.actionable_next_steps.map((item) => `- ${item}`),
+          ].join("\n")
+        : `Notes for: ${title}`;
+      note = await storage.saveNote({
+        title,
+        content,
+        linked_conversation_ids: [selectedConversationId],
+      });
+      setNotes((prev) => [note as Note, ...prev.filter((item) => item.id !== note?.id)]);
+      setSelectedNoteId(note.id);
+    }
+    if (!note) return;
+    if (isDesktopSplitAvailable) {
+      setViewMode("conversations");
+      setWorkspaceMode("split");
+      setIsSplitNavigationOpen(false);
+      return;
+    }
+    await openNotesView(note.id);
+  }
+
+  async function handleCreateConversationNote() {
+    if (!selectedConversationId) return;
+    const note = await ensureConversationNote(selectedConversationId, {
+      createIfMissing: true,
+    });
+    if (!note) return;
+    if (isDesktopSplitAvailable) {
+      setWorkspaceMode("split");
+      setViewMode("conversations");
+      return;
+    }
+    await openNotesView(note.id);
+  }
+
+  async function handleDeleteCurrentSplitNote() {
+    if (!selectedNote) return;
+    if (!storage.deleteNote) {
+      window.alert("Delete is not available yet.");
+      return;
+    }
+    const confirmed = window.confirm(`Delete note "${selectedNote.title}"?`);
+    if (!confirmed) return;
+    try {
+      await storage.deleteNote(selectedNote.id);
+      setNotes((prev) => prev.filter((note) => note.id !== selectedNote.id));
+      setSelectedNoteId(null);
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteSaveStatus("saved");
+    } catch (error) {
+      console.error("[library] deleteNote failed", error);
+    }
+  }
+
+  function updateReaderSelectionAction(
+    message: Message,
+    messageIndex: number,
+    element: HTMLDivElement | null
+  ) {
+    if (!element || !selectedConversation || !isDesktopSplitAvailable) {
+      setReaderSelectionAction(null);
+      return;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      setReaderSelectionAction(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+
+    if (!anchorNode || !focusNode || !element.contains(anchorNode) || !element.contains(focusNode)) {
+      setReaderSelectionAction(null);
+      return;
+    }
+
+    const content = selection.toString().replace(/\s+\n/g, "\n").trim();
+    if (!content) {
+      setReaderSelectionAction(null);
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      setReaderSelectionAction(null);
+      return;
+    }
+
+    const maxLeft = typeof window !== "undefined" ? window.innerWidth - 148 : rect.left;
+    setReaderSelectionAction({
+      id: `${message.id}-${Date.now()}`,
+      conversationId: selectedConversation.id,
+      messageId: message.id,
+      messageIndex,
+      sourceLabel: message.role === "user" ? "You" : selectedConversation.platform,
+      content,
+      top: Math.max(12, rect.bottom + 10),
+      left: Math.max(12, Math.min(rect.left + rect.width / 2 - 60, maxLeft)),
+    });
+  }
+
+  async function handleExtractSelection() {
+    if (!readerSelectionAction || !selectedConversationId) return;
+    const note = await ensureConversationNote(selectedConversationId, {
+      createIfMissing: true,
+    });
+    if (!note) return;
+
+    setViewMode("conversations");
+    if (isDesktopSplitAvailable) {
+      setWorkspaceMode("split");
+      setIsSplitNavigationOpen(false);
+    }
+    queuePendingExcerpt(readerSelectionAction);
+    closeReaderSelectionAction();
+  }
+
+  useEffect(() => {
+    if (noteHydratingRef.current) {
+      noteHydratingRef.current = false;
+      return;
+    }
+
+    if (!selectedNoteId || !storage.updateNote) return;
+    const baseline = notesRef.current.find((note) => note.id === selectedNoteId);
+    if (!baseline) return;
+
+    if (baseline.title === noteTitle && baseline.content === noteContent) {
+      setNoteSaveStatus("saved");
+      clearPendingNotePersistTimer();
+      return;
+    }
+
+    setNoteSaveStatus("unsaved");
+    clearPendingNotePersistTimer();
+    notePersistTimerRef.current = window.setTimeout(() => {
+      void flushPendingNoteSave();
+    }, 750);
+
+    return () => clearPendingNotePersistTimer();
+  }, [noteContent, noteTitle, selectedNoteId, storage.updateNote]);
+
+  useEffect(() => {
+    if (!isSplitActive || !selectedConversationId) return;
+
+    const nextNote = resolveConversationSplitNote(selectedConversationId);
+    if ((nextNote?.id ?? null) !== selectedNoteId) {
+      setSelectedNoteId(nextNote?.id ?? null);
+    }
+  }, [isSplitActive, notes, selectedConversationId, selectedNoteId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !readerSelectionAction) return;
+
+    const handleClearSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setReaderSelectionAction(null);
+      }
+    };
+
+    const handleViewportChange = () => {
+      setReaderSelectionAction(null);
+    };
+
+    document.addEventListener("selectionchange", handleClearSelection);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("selectionchange", handleClearSelection);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [readerSelectionAction]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingNotePersistTimer();
+      void flushPendingNoteSave();
+    };
+  }, []);
 
   const handleCreateFolder = () => {
     const name = window.prompt("New folder name");
@@ -917,11 +1616,12 @@ export function LibraryTab({
     const confirmed = window.confirm(`Delete note "${note.title}"?`);
     if (!confirmed) return;
     try {
+      await flushPendingNoteSave();
       await storage.deleteNote(note.id);
       const nextNotes = notes.filter((item) => item.id !== note.id);
       setNotes(nextNotes);
       if (selectedNoteId === note.id) {
-        setSelectedNoteId(nextNotes[0]?.id ?? null);
+        setSelectedNoteId(isSplitActive ? null : nextNotes[0]?.id ?? null);
       }
       if (renameNoteTarget?.id === note.id) {
         setRenameNoteTarget(null);
@@ -957,6 +1657,15 @@ export function LibraryTab({
     }
   };
 
+  function formatDate(timestamp?: number): string {
+    if (!timestamp) return "Unknown date";
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(timestamp));
+  }
+
   function formatAnnotationTimestamp(annotation: Annotation): string {
     const createdAt = annotation.created_at;
     if (!createdAt) return "Added at an unknown time";
@@ -984,6 +1693,14 @@ export function LibraryTab({
       return;
     }
     annotationTriggerRefs.current.delete(messageId);
+  }
+
+  function setMessageContentRef(messageId: number, node: HTMLDivElement | null) {
+    if (node) {
+      messageContentRefs.current.set(messageId, node);
+      return;
+    }
+    messageContentRefs.current.delete(messageId);
   }
 
   function isAnnotationTriggerTarget(target: EventTarget | null): boolean {
@@ -1449,10 +2166,10 @@ export function LibraryTab({
   }
 
   const switchToConversation = (conversationId: number) => {
-    setViewMode("conversations");
-    setListFilter("all");
-    setSelectedTag(null);
-    setSelectedConversationId(conversationId);
+    void selectConversation(conversationId, {
+      resetFilters: true,
+      closeNavigation: isSplitActive,
+    });
   };
 
   const isAllActive =
@@ -1461,18 +2178,68 @@ export function LibraryTab({
     viewMode === "conversations" && listFilter === "starred";
   const isRecentActive =
     viewMode === "conversations" && listFilter === "recent";
+  const splitContextValue: LibrarySplitContextValue = {
+    isSplitActive,
+    isSplitNavigationOpen,
+    noteSaveStatus,
+    pendingExcerpts,
+    openSplitNavigation: () => setIsSplitNavigationOpen(true),
+    closeSplitNavigation: () => setIsSplitNavigationOpen(false),
+    toggleSplitNavigation: () =>
+      setIsSplitNavigationOpen((current) => !current),
+    consumePendingExcerpt,
+    exitSplit: exitSplitView,
+  };
 
   return (
-    <div className="flex h-full">
-      {/* Left Column - Sidebar (200px) */}
-      <aside className="w-[200px] bg-bg-secondary flex flex-col">
+    <div className="flex h-full flex-col">
+      {returnToSourceLabel && onReturnToSource ? (
+        <div className="border-b border-border-subtle bg-bg-primary px-4 py-2.5">
+          <button
+            type="button"
+            onClick={onReturnToSource}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-bg-primary px-3 py-1.5 text-xs font-sans text-text-secondary transition-colors hover:bg-bg-surface-card hover:text-text-primary"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.7} />
+            {returnToSourceLabel}
+          </button>
+        </div>
+      ) : null}
+      <LibrarySplitContext.Provider value={splitContextValue}>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <SplitNavigationToggle />
+        {isSplitActive && isSplitNavigationOpen ? (
+          <button
+            type="button"
+            className="absolute inset-0 z-20 bg-black/10 backdrop-blur-[1px]"
+            onClick={() => setIsSplitNavigationOpen(false)}
+            aria-label="Close library navigation"
+          />
+        ) : null}
+        <div
+          className={`${
+            isSplitActive
+              ? "absolute inset-y-0 left-0 z-30 flex w-[520px] max-w-[calc(100%-32px)] overflow-hidden transition-[transform,opacity] duration-300 ease-out"
+              : "flex shrink-0"
+          } ${
+            isSplitActive
+              ? isSplitNavigationOpen
+                ? "translate-x-0 opacity-100"
+                : "-translate-x-[calc(100%+16px)] opacity-0 pointer-events-none"
+              : ""
+          }`}
+        >
+        {/* Left Column - Sidebar (200px) */}
+        <aside className="w-[200px] bg-bg-secondary flex flex-col">
         <div className="px-2 pt-3 pb-2">
           <button
             onClick={() => {
+              void flushPendingNoteSave();
               setViewMode("conversations");
               setListFilter("all");
               setSelectedTag(null);
               setSelectedConversationId(null);
+              setIsSplitNavigationOpen(false);
             }}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors my-1 rounded-lg ${
               isAllActive ? "bg-accent-primary-light" : "hover:bg-bg-surface-card"
@@ -1493,10 +2260,12 @@ export function LibraryTab({
           </button>
           <button
             onClick={() => {
+              void flushPendingNoteSave();
               setViewMode("conversations");
               setListFilter("starred");
               setSelectedTag(null);
               setSelectedConversationId(null);
+              setIsSplitNavigationOpen(false);
             }}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors my-1 rounded-lg ${
               isStarredActive ? "bg-accent-primary-light" : "hover:bg-bg-surface-card"
@@ -1517,10 +2286,12 @@ export function LibraryTab({
           </button>
           <button
             onClick={() => {
+              void flushPendingNoteSave();
               setViewMode("conversations");
               setListFilter("recent");
               setSelectedTag(null);
               setSelectedConversationId(null);
+              setIsSplitNavigationOpen(false);
             }}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors my-1 rounded-lg ${
               isRecentActive ? "bg-accent-primary-light" : "hover:bg-bg-surface-card"
@@ -1565,18 +2336,22 @@ export function LibraryTab({
                     role="button"
                     tabIndex={0}
                     onClick={() => {
+                      void flushPendingNoteSave();
                       setViewMode("conversations");
                       setListFilter("all");
                       setSelectedTag(folder.name);
                       setSelectedConversationId(null);
+                      setIsSplitNavigationOpen(false);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
+                        void flushPendingNoteSave();
                         setViewMode("conversations");
                         setListFilter("all");
                         setSelectedTag(folder.name);
                         setSelectedConversationId(null);
+                        setIsSplitNavigationOpen(false);
                       }
                     }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors duration-200 my-1 rounded-lg group cursor-pointer relative ${
@@ -1643,12 +2418,7 @@ export function LibraryTab({
 
         <div className="border-t border-border-subtle px-2 py-2">
           <button
-            onClick={() => {
-              setViewMode("notes");
-              if (notes.length > 0 && !selectedNoteId) {
-                setSelectedNoteId(notes[0].id);
-              }
-            }}
+            onClick={() => void openNotesView()}
             className={`w-full flex items-center gap-2 px-3 py-2 transition-colors my-1 rounded-lg ${
               viewMode === "notes" ? "bg-bg-surface-card-active" : "hover:bg-bg-surface-card"
             }`}
@@ -1691,11 +2461,17 @@ export function LibraryTab({
                     key={conv.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setSelectedConversationId(conv.id)}
+                    onClick={() =>
+                      void selectConversation(conv.id, {
+                        closeNavigation: isSplitActive,
+                      })
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        setSelectedConversationId(conv.id);
+                        void selectConversation(conv.id, {
+                          closeNavigation: isSplitActive,
+                        });
                       }
                     }}
                     className={`w-full text-left p-3 rounded-lg transition-all duration-200 relative group cursor-pointer ${
@@ -1708,7 +2484,9 @@ export function LibraryTab({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setSelectedConversationId(conv.id);
+                        void selectConversation(conv.id, {
+                          closeNavigation: isSplitActive,
+                        });
                         setOpenConversationMenuId((prev) =>
                           prev === conv.id ? null : conv.id
                         );
@@ -1849,6 +2627,7 @@ export function LibraryTab({
                   onClick={async () => {
                     if (!storage.saveNote) return;
                     try {
+                      await flushPendingNoteSave();
                       const newNote = await storage.saveNote({
                         title: "New Note",
                         content: "",
@@ -1857,8 +2636,7 @@ export function LibraryTab({
                           : [],
                       });
                       setNotes((prev) => [newNote, ...prev]);
-                      setSelectedNoteId(newNote.id);
-                      setViewMode("notes");
+                      await openNotesView(newNote.id);
                     } catch (error) {
                       console.error("[library] New Note failed", error);
                     }
@@ -1893,7 +2671,7 @@ export function LibraryTab({
                       </span>
                       <button
                         type="button"
-                        onClick={() => setSelectedNoteId(note.id)}
+                        onClick={() => void selectNote(note.id)}
                         className="w-full text-left"
                       >
                         <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug pr-16">
@@ -1938,7 +2716,7 @@ export function LibraryTab({
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedNoteId(note.id);
+                            void selectNote(note.id);
                             openNoteRenameDialog(note);
                           }}
                           className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-bg-surface-card transition-colors"
@@ -1965,38 +2743,77 @@ export function LibraryTab({
           </>
         )}
       </div>
+      </div>
 
+      <div
+        className={`min-w-0 flex-1 ${
+          isSplitActive
+            ? "grid grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]"
+            : "flex"
+        }`}
+      >
       {/* Right Column - Reader/Editor (flex-1) */}
       {viewMode === "conversations" && selectedConversation && (
-        <div className="flex-1 bg-bg-primary overflow-y-auto">
+        <div
+          className={`min-w-0 bg-bg-primary overflow-y-auto ${
+            isSplitActive ? "border-r border-border-subtle" : "flex-1"
+          }`}
+        >
           <div className="max-w-3xl mx-auto px-8 py-6">
             {/* Block A - Header */}
             <div className="mb-6 border-b border-border-subtle pb-6">
-              <h1 className="text-2xl font-serif font-normal text-text-primary mb-3 leading-tight">
-                {selectedConversation.title}
-              </h1>
-              <div className="flex items-center gap-2 text-[13px] font-sans text-text-secondary mb-4">
-                <span
-                  className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
-                  style={getPlatformBadgeStyle(selectedConversation.platform, themeMode)}
-                >
-                  {getPlatformLabel(selectedConversation.platform)}
-                </span>
-                <span>|</span>
-                <span>{messageCount} messages</span>
-                {selectedConversation.url && (
-                  <>
-                    <span>|</span>
-                    <button
-                      onClick={() => window.open(selectedConversation.url, "_blank", "noopener,noreferrer")}
-                      className="inline-flex items-center gap-1 text-accent-primary hover:text-accent-primary/80 transition-colors"
-                      title="Open original conversation"
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h1 className="mb-3 text-2xl font-serif font-normal leading-tight text-text-primary">
+                    {selectedConversation.title}
+                  </h1>
+                  <div className="mb-4 flex flex-wrap items-center gap-2 text-[13px] font-sans text-text-secondary">
+                    <span
+                      className="px-2 py-0.5 rounded-md text-[11px] font-sans font-medium leading-none"
+                      style={getPlatformBadgeStyle(selectedConversation.platform, themeMode)}
                     >
-                      <ExternalLink className="w-3.5 h-3.5" strokeWidth={1.5} />
-                      <span>Open</span>
-                    </button>
-                  </>
-                )}
+                      {getPlatformLabel(selectedConversation.platform)}
+                    </span>
+                    <span>·</span>
+                    <span>{formatDate(messageDate)}</span>
+                    <span>·</span>
+                    <span>{messageCount} messages</span>
+                    {selectedConversation.url && (
+                      <>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(
+                              selectedConversation.url,
+                              "_blank",
+                              "noopener,noreferrer"
+                            )
+                          }
+                          className="inline-flex items-center gap-1 text-accent-primary transition-colors hover:text-accent-primary/80"
+                          title="Open original conversation"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          <span>Open</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {isDesktopSplitAvailable && !isSplitActive ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleSplitViewForCurrentConversation()}
+                    aria-label="Open split view"
+                    title="Split view"
+                    className="group inline-flex h-9 shrink-0 items-center bg-transparent px-1 text-[12px] font-sans text-text-tertiary transition-colors duration-200 hover:text-text-primary"
+                  >
+                    <Expand strokeWidth={1.7} className="h-4 w-4 shrink-0" />
+                    <span className="ml-0 max-w-0 overflow-hidden whitespace-nowrap text-[11px] uppercase tracking-[0.18em] opacity-0 transition-[max-width,opacity,margin] duration-200 group-hover:ml-2 group-hover:max-w-[108px] group-hover:opacity-100 group-focus-visible:ml-2 group-focus-visible:max-w-[108px] group-focus-visible:opacity-100">
+                      Split View
+                    </span>
+                  </button>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
                 {activeTags.map((tag) => (
@@ -2257,49 +3074,7 @@ export function LibraryTab({
                   )}
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!selectedConversationId || !storage.saveNote) return;
-                      const title = selectedConversation?.title ?? "Untitled";
-                      const content = summaryData
-                        ? [
-                            `## ${summaryData.core_question}`,
-                            "",
-                            "### Thinking Journey",
-                            ...summaryData.thinking_journey.map(
-                              (item) =>
-                                `**Step ${item.step} · ${item.speaker}**: ${item.assertion}${
-                                  item.real_world_anchor
-                                    ? `\n  _Example: ${item.real_world_anchor}_`
-                                    : ""
-                                }`
-                            ),
-                            "",
-                            "### Key Insights",
-                            ...summaryData.key_insights.map(
-                              (item) => `**${item.term}**: ${item.definition}`
-                            ),
-                            "",
-                            "### Unresolved Threads",
-                            ...summaryData.unresolved_threads.map((item) => `- ${item}`),
-                            "",
-                            "### Next Steps",
-                            ...summaryData.actionable_next_steps.map((item) => `- ${item}`),
-                          ].join("\n")
-                        : `Notes for: ${title}`;
-                      try {
-                        const newNote = await storage.saveNote({
-                          title,
-                          content,
-                          linked_conversation_ids: [selectedConversationId],
-                        });
-                        setNotes((prev) => [newNote, ...prev]);
-                        setHasLinkedNote(true);
-                        setSelectedNoteId(newNote.id);
-                        setViewMode("notes");
-                      } catch (error) {
-                        console.error("[library] saveNote failed", error);
-                      }
-                    }}
+                    onClick={() => void handleImportConversationToNotes()}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-sans
                       text-text-secondary hover:text-accent-primary hover:bg-accent-primary-light
                       transition-colors duration-150"
@@ -2310,16 +3085,11 @@ export function LibraryTab({
                   <button
                     type="button"
                     onClick={() => {
-                      // TODO: navigate to linked note
-                      // 当 has_note 为 true 时跳转到对应笔记
                       const linkedNote = notes.find((n) =>
                         n.linked_conversation_ids.includes(selectedConversationId ?? -1)
                       );
                       if (linkedNote) {
-                        setViewMode("notes");
-                        setSelectedNoteId(linkedNote.id);
-                      } else {
-                        console.log("[library] no linked note yet");
+                        void openNotesView(linkedNote.id);
                       }
                     }}
                     disabled={!hasLinkedNote}
@@ -2340,7 +3110,7 @@ export function LibraryTab({
             {/* Block C - Conversation Preview */}
             <div className="mt-6">
               {/* 默认预览条 - 折叠时显示 */}
-              {!isConversationExpanded && (
+              {!isReaderConversationExpanded && (
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-4">
                     <p className="text-[13px] font-sans text-text-secondary leading-relaxed line-clamp-2 flex-1">
@@ -2356,9 +3126,9 @@ export function LibraryTab({
                       <button
                         type="button"
                         onClick={() => setIsConversationExpanded((prev) => !prev)}
-                        className="shrink-0 text-[12px] font-sans text-text-tertiary hover:text-text-secondary transition-colors whitespace-nowrap"
+                        className="shrink-0 whitespace-nowrap text-[12px] font-sans text-text-tertiary transition-colors hover:text-text-secondary"
                       >
-                        Show all {messageCount} messages
+                        Show all {messageCount} messages ↓
                       </button>
                     )}
                   </div>
@@ -2372,26 +3142,33 @@ export function LibraryTab({
                 </div>
               )}
 
+              {/* 展开后的完整消息流 */}
               <div
-                className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                  isConversationExpanded
-                    ? "opacity-100 mt-6"
-                    : "max-h-0 opacity-0 pointer-events-none"
+                className={`transition-all duration-300 ease-in-out ${
+                  isSplitActive
+                    ? "mt-6 opacity-100"
+                    : isConversationExpanded
+                      ? "mt-6 overflow-hidden opacity-100"
+                      : "max-h-0 overflow-hidden opacity-0 pointer-events-none"
                 }`}
               >
                 <div
                   ref={conversationPreviewScrollRef}
-                  className="relative rounded-lg bg-bg-surface-card border border-border-subtle p-4 max-h-[440px] overflow-y-auto"
-                  style={{ scrollbarGutter: "stable" }}
+                  className={`relative ${
+                    isSplitActive
+                      ? ""
+                      : "max-h-[440px] overflow-y-auto rounded-lg border border-border-subtle bg-bg-surface-card p-4"
+                  }`}
+                  style={isSplitActive ? undefined : { scrollbarGutter: "stable" }}
                 >
-                  {messageCount > 1 && (
+                  {!isSplitActive && messageCount > 1 && (
                     <div className="sticky top-0 z-10 flex justify-end bg-bg-surface-card pb-2">
                       <button
                         type="button"
                         onClick={() => setIsConversationExpanded(false)}
                         className="text-[12px] font-sans text-text-tertiary hover:text-text-secondary transition-colors whitespace-nowrap"
                       >
-                        Hide
+                        Hide ↑
                       </button>
                     </div>
                   )}
@@ -2407,7 +3184,7 @@ export function LibraryTab({
                           Unable to load messages.
                         </div>
                       )}
-                      {messages.map((message) => {
+                      {messages.map((message, messageIndex) => {
                         const isUser = message.role === "user";
                         const messageAnnotations = getAnnotationsForMessage(message.id);
                         const latestAnnotation = getLatestAnnotationForMessage(message.id);
@@ -2502,6 +3279,18 @@ export function LibraryTab({
                                       ? ""
                                       : "rounded-2xl bg-bg-surface-ai-message p-3"
                                   }
+                                  ref={(node) => setMessageContentRef(message.id, node)}
+                                  onMouseUp={() => {
+                                    const element =
+                                      messageContentRefs.current.get(message.id) ?? null;
+                                    window.setTimeout(() => {
+                                      updateReaderSelectionAction(
+                                        message,
+                                        messageIndex + 1,
+                                        element
+                                      );
+                                    }, 0);
+                                  }}
                                 >
                                   <RichMessageContent message={message} />
                                 </div>
@@ -2529,7 +3318,21 @@ export function LibraryTab({
                           {renderAnnotationPanelContent()}
                         </div>
                       )}
-
+                    {readerSelectionAction ? (
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => void handleExtractSelection()}
+                        className="fixed z-30 inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-primary px-3 py-1.5 text-[12px] font-sans text-text-primary shadow-[0_10px_28px_rgba(15,23,42,0.18)] transition-colors hover:bg-bg-secondary"
+                        style={{
+                          top: readerSelectionAction.top,
+                          left: readerSelectionAction.left,
+                        }}
+                      >
+                        <BookOpen strokeWidth={1.6} className="h-3.5 w-3.5" />
+                        Extract
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2597,10 +3400,7 @@ export function LibraryTab({
                       ).map((note) => (
                         <button
                           key={note.id}
-                          onClick={() => {
-                            setViewMode("notes");
-                            setSelectedNoteId(note.id);
-                          }}
+                          onClick={() => void openNotesView(note.id)}
                           className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-bg-surface-card transition-colors group"
                         >
                           <span className="text-[13px] font-sans text-text-primary">
@@ -2656,7 +3456,30 @@ export function LibraryTab({
         </div>
       )}
 
-      {viewMode === "notes" && selectedNote && (
+      {isSplitActive && selectedConversation ? (
+        <div className="min-h-0 min-w-0 bg-bg-primary">
+          <SplitNoteEditorPanel
+            selectedConversation={selectedConversation}
+            selectedNote={selectedNote}
+            noteTitle={noteTitle}
+            noteContent={noteContent}
+            linkedConversations={selectedNote
+              ? selectedNote.linked_conversation_ids
+                  .map((convId) => conversations.find((conversation) => conversation.id === convId))
+                  .filter((conversation): conversation is Conversation => Boolean(conversation))
+              : []}
+            onTitleChange={setNoteTitle}
+            onContentChange={setNoteContent}
+            onAppendExcerpt={appendExcerptToDraft}
+            onCreateConversationNote={handleCreateConversationNote}
+            onDeleteCurrentNote={handleDeleteCurrentSplitNote}
+            onOpenConversation={switchToConversation}
+            formatTimeAgo={formatTimeAgo}
+          />
+        </div>
+      ) : null}
+
+      {!isSplitActive && viewMode === "notes" && selectedNote && (
         <div className="flex-1 bg-bg-primary overflow-y-auto">
           <div className="max-w-3xl mx-auto px-8 py-6">
             <div className="mb-4">
@@ -2688,9 +3511,11 @@ export function LibraryTab({
 
             <div className="flex items-center text-[13px] font-sans text-text-secondary mb-6 pb-6 border-b border-border-subtle">
               <span className="ml-auto">
-                {noteSaveStatus === "unsaved"
-                  ? "Unsaved changes"
-                  : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
+                {noteSaveStatus === "saving"
+                  ? "Saving..."
+                  : noteSaveStatus === "unsaved"
+                    ? "Unsaved changes"
+                    : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
               </span>
             </div>
 
@@ -2699,20 +3524,7 @@ export function LibraryTab({
                 ref={textareaRef}
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
-                onBlur={async () => {
-                  setIsEditingNoteBody(false);
-                  if (!selectedNote || !storage.updateNote) return;
-                  try {
-                    const updated = await storage.updateNote(selectedNote.id, {
-                      content: noteContent,
-                    });
-                    setNotes((prev) =>
-                      prev.map((note) => (note.id === updated.id ? updated : note))
-                    );
-                  } catch (error) {
-                    console.error("[library] updateNote failed", error);
-                  }
-                }}
+                onBlur={() => setIsEditingNoteBody(false)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && event.metaKey) {
                     event.preventDefault();
@@ -2796,6 +3608,7 @@ export function LibraryTab({
         </div>
       )}
 
+      </div>
       {renameNoteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
@@ -2849,6 +3662,8 @@ export function LibraryTab({
           </div>
         </div>
       )}
+      </div>
+      </LibrarySplitContext.Provider>
     </div>
   );
 }

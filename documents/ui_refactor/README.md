@@ -52,6 +52,10 @@ It is not the correct home for:
   - v1.4 global UI refactor engineering spec.
 - `v1_4_ui_refactor_component_system_spec.md`
   - v1.4 component system and visual token contract.
+- `v1_4_library_annotation_storage_and_export_spec.md`
+  - v1.4 Library annotation storage and export contract.
+- `v1_4_library_split_note_workspace_spec.md`
+  - v1.4 Library split note workspace contract for split layout, extraction flow, and autosave behavior.
 - `v1_8_1_insights_ui_refactor_spec.md`
   - v1.8.1 Insights refactor specification.
 - `v1_8_1_insights_state_machine_contract.md`
