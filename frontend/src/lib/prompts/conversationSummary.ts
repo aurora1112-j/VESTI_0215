@@ -3,6 +3,7 @@ import type {
   ConversationSummaryPromptPayload,
   PromptVersion,
 } from "./types";
+import { buildMessageFallbackDisplayText } from "../utils/messageContentPackage";
 
 const CONVERSATION_SUMMARY_SYSTEM = `You are Vesti's thread-summary mapper.
 
@@ -88,7 +89,7 @@ function toNarrativeTranscript(
   return messages
     .map((message) => {
       const role = message.role === "user" ? "用户" : "AI";
-      return `[${formatTime(message.created_at)}] ${role}:\n${message.content_text}\n`;
+      return `[${formatTime(message.created_at)}] ${role}:\n${buildMessageFallbackDisplayText(message)}\n`;
     })
     .join("\n---\n\n");
 }
@@ -156,7 +157,7 @@ function toLegacyTranscript(
   return messages
     .map((message) => {
       const role = message.role === "user" ? "User" : "AI";
-      return `[${formatTime(message.created_at)}] ${role}: ${message.content_text}`;
+      return `[${formatTime(message.created_at)}] ${role}: ${buildMessageFallbackDisplayText(message)}`;
     })
     .join("\n");
 }

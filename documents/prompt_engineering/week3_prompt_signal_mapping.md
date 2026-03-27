@@ -35,6 +35,7 @@ The important `structureSignals` are:
 - `hasTable`
 - `hasMath`
 - `hasCode`
+- `hasAttachment`
 - `hasCitations`
 - `hasArtifacts`
 
@@ -99,6 +100,70 @@ Expected prompt signals:
 - citation influence belongs in transcript sidecar context, not body-tail text
 
 Consumers that must honor this:
+- `exportCompression.ts`
+- `conversationSummary.ts`
+
+### `CHATGPT_UPLOAD_FILE_001`
+
+Source:
+- `dom:CHATGPT_UPLOAD_FILE_001`
+
+Expected prompt signals:
+- `hasAttachment = true`
+- `bodyText` may remain empty when the user turn is attachment-only
+- `transcriptText` must still contain attachment summary lines
+- attachment summaries remain index-only; prompt consumers must not imply file replay
+- file metadata can influence `artifactRefs` only through safe summary lines, not raw payload access
+
+Consumers that must honor this:
+- `promptIngestionAdapter.ts`
+- `exportCompression.ts`
+- `conversationSummary.ts`
+
+### `CHATGPT_UPLOAD_IMAGE_001`
+
+Source:
+- `dom:CHATGPT_UPLOAD_IMAGE_001`
+
+Expected prompt signals:
+- `hasAttachment = true`
+- image-only user turns must still survive transcript packing
+- prompt/runtime fallback text may expose `Uploaded image N`, but must not imply raw image capture
+- attachment summaries stay outside `bodyText` when no textual body exists
+
+Consumers that must honor this:
+- `promptIngestionAdapter.ts`
+- `exportCompression.ts`
+- `conversationSummary.ts`
+
+### `GEMINI_UPLOAD_FILE_001`
+
+Source:
+- `dom:GEMINI_UPLOAD_FILE_001`
+
+Expected prompt signals:
+- `hasAttachment = true`
+- Gemini upload file shells contribute attachment summary lines, not body-tail pollution
+- `bodyText` may be empty while transcript context remains non-empty
+- prompt consumers must preserve file label / mime only when safely visible in DOM
+
+Consumers that must honor this:
+- `promptIngestionAdapter.ts`
+- `exportCompression.ts`
+- `conversationSummary.ts`
+
+### `GEMINI_UPLOAD_IMAGE_001`
+
+Source:
+- `dom:GEMINI_UPLOAD_IMAGE_001`
+
+Expected prompt signals:
+- `hasAttachment = true`
+- attachment-only Gemini turns remain visible to compression, search, and summary ingest
+- image upload summaries are index-only and do not upgrade to artifact replay
+
+Consumers that must honor this:
+- `promptIngestionAdapter.ts`
 - `exportCompression.ts`
 - `conversationSummary.ts`
 
@@ -181,7 +246,7 @@ If a runtime change alters prompt-ingestion behavior, reviewers should verify:
 
 1. whether the affected case IDs above are still mapped correctly
 2. whether `bodyText` stayed clean
-3. whether the right `structureSignals` and `artifactRefs` still exist
+3. whether the right `structureSignals`, `sidecarSummaryLines`, and `artifactRefs` still exist
 4. whether the shipped consumer changed prompt behavior for the right reason
 
 ## Explicit defers

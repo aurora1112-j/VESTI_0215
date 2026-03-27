@@ -22,7 +22,7 @@ The current web/dashboard stack is only partially aligned with sidepanel:
 - time semantics are moving toward shared helpers
 - message rendering is still more text-centric
 - `message.content_text` is still doing too much work
-- `citations[]` and `artifacts[]` are not yet stable first-class surfaces in web detail views
+- `citations[]`, `attachments[]`, and `artifacts[]` are not yet stable first-class surfaces in web detail views
 
 This creates three practical risks:
 
@@ -76,6 +76,7 @@ interface WebMessageView {
   semantic_ast_version?: "ast_v2" | "ast_v1" | null;
   semantic_ast?: unknown | null;
   citations?: WebMessageCitation[];
+  attachments?: WebMessageAttachment[];
   artifacts?: WebMessageArtifact[];
   created_at: number;
 }
@@ -85,6 +86,13 @@ interface WebMessageCitation {
   href: string;
   host: string;
   sourceType: "inline_pill" | "search_card" | "reference_list" | "unknown";
+}
+
+interface WebMessageAttachment {
+  indexAlt: string;
+  label?: string;
+  mime?: string | null;
+  occurrenceRole?: "user_upload" | "assistant_attachment" | "download_card" | "unknown";
 }
 
 interface WebMessageArtifact {
@@ -104,7 +112,8 @@ interface WebMessageArtifact {
 Rules:
 - `canonical_plain_text` is fallback-only body text
 - `semantic_ast` is the preferred rich rendering source
-- `citations[]` and `artifacts[]` are sidecars and never body suffixes
+- `citations[]`, `attachments[]`, and `artifacts[]` are sidecars and never body suffixes
+- `attachments[]` is index-only and must not imply raw file/image replay support
 
 ### 3.3 Transitional compatibility rule
 
@@ -113,6 +122,7 @@ Until runtime/package refactors are fully completed, the web adapter may derive:
 - `canonical_plain_text` from current `message.content_text`
 - `semantic_ast_version` from current `content_ast_version`
 - `semantic_ast` from current `content_ast`
+- `attachments[]` may remain absent until runtime exposes a stable attachment index; web must not fabricate pseudo-attachments from raw HTML
 
 But the web layer should already behave as if the target contract exists.
 
@@ -159,7 +169,15 @@ If `citations.length > 0`:
 - click navigates to `href`
 - citation text must not be appended to message body
 
-### 4.6 Artifacts rule
+### 4.6 Attachment Index rule
+
+If `attachments.length > 0`:
+- render a message-level folded `Attachments` section or equivalent attachment-index surface
+- each item shows at least `indexAlt`
+- optional metadata may include `label` and `mime`
+- web must not directly replay uploaded images, files, blob URLs, or private preview DOM
+
+### 4.7 Artifacts rule
 
 If `artifacts.length > 0`:
 - render a message-level folded `Artifacts` section
@@ -169,6 +187,13 @@ If `artifacts.length > 0`:
   - `label`
   - `captureMode`
   - `renderDimensions`
+  - excerpt text derived from safe snapshot fields
+
+- web must not directly replay `iframe / canvas / web-preview / mini-app` content
+- acceptable excerpt priority is:
+  - `markdownSnapshot`
+  - `plainText`
+  - `normalizedHtmlSnapshot`
 
 This stage does **not** require full artifact replay.
 
@@ -188,7 +213,8 @@ Recommended next-stage order:
 1. align web adapter to the minimum schema draft
 2. reuse or port sidepanel reader renderer into web detail view
 3. add `Sources` sidecar rendering
-4. add `Artifacts` sidecar rendering
+4. add `Attachments` index rendering
+5. add `Artifacts` sidecar rendering
 5. only then expand web-specific export/summary UX
 
 ## 7. Non-goals

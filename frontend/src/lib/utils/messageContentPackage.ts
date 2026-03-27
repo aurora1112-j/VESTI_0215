@@ -6,6 +6,14 @@ import {
 import type { Message } from "../types";
 import { extractAstPlainText, isAstRoot, shouldPreferAstCanonicalText } from "./astText";
 
+type MessageContentPackageLike = {
+  content_text: string;
+  content_ast?: unknown;
+  citations?: Message["citations"];
+  attachments?: Message["attachments"];
+  artifacts?: Message["artifacts"];
+};
+
 function normalizeBodyText(value: string): string {
   return value
     .replace(/\r/g, "")
@@ -15,7 +23,9 @@ function normalizeBodyText(value: string): string {
     .trim();
 }
 
-export function resolveCanonicalBodyText(message: Pick<Message, "content_text" | "content_ast">): string {
+export function resolveCanonicalBodyText(
+  message: Pick<MessageContentPackageLike, "content_text" | "content_ast">
+): string {
   const fallbackText = normalizeBodyText(message.content_text);
   const astRoot = isAstRoot(message.content_ast) ? message.content_ast : null;
 
@@ -35,12 +45,12 @@ export function resolveCanonicalBodyText(message: Pick<Message, "content_text" |
   return fallbackText;
 }
 
-export function buildMessageSidecarSummaryLines(message: Message): string[] {
+export function buildMessageSidecarSummaryLines(message: MessageContentPackageLike): string[] {
   return buildSharedSidecarSummaryLines(message);
 }
 
 export function buildMessagePreviewText(
-  message: Message,
+  message: MessageContentPackageLike,
   options: {
     maxChars?: number;
     separator?: string;
@@ -56,14 +66,16 @@ export function buildMessagePreviewText(
   );
 }
 
-export function buildMessageFallbackDisplayText(message: Message): string {
+export function buildMessageFallbackDisplayText(
+  message: MessageContentPackageLike
+): string {
   return buildSharedFallbackDisplayText({
     ...message,
     content_text: resolveCanonicalBodyText(message),
   });
 }
 
-export function buildMessageSearchIndexText(message: Message): string {
+export function buildMessageSearchIndexText(message: MessageContentPackageLike): string {
   const bodyText = resolveCanonicalBodyText(message);
   const sidecarLines = buildSharedSidecarSummaryLines(message);
   return [bodyText, ...sidecarLines].filter(Boolean).join("\n").trim();

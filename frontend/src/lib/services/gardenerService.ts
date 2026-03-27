@@ -1,6 +1,7 @@
 import type { Conversation, GardenerResult, GardenerStep, Topic } from "../types";
 import { applyGardenerResult, createTopic, getConversationById, getTopics, listMessages } from "../db/repository";
 import { dedupeTags, resolveTechTags } from "./tagging";
+import { buildMessageSearchIndexText } from "../utils/messageContentPackage";
 
 const MAX_MESSAGE_COUNT = 12;
 const MAX_TEXT_LENGTH = 4000;
@@ -85,7 +86,7 @@ export async function runGardener(conversationId: number): Promise<{
   const messages = await listMessages(conversationId);
   const messageTexts = messages
     .slice(0, MAX_MESSAGE_COUNT)
-    .map((message) => message.content_text)
+    .map((message) => buildMessageSearchIndexText(message))
     .filter(Boolean);
 
   const text = buildConversationText(conversation, messageTexts);

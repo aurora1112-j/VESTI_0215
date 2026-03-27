@@ -61,6 +61,9 @@ interface PromptRuntimeDatasetItem extends ConversationExportDatasetItem {
   promptContext: PromptReadyConversationContext;
 }
 
+type CompressionMessageLike = Pick<Message, "content_text"> &
+  Partial<Pick<PromptReadyMessage, "bodyText" | "transcriptText" | "sidecarSummaryLines">>;
+
 export interface CompressedConversationExport {
   conversation: Conversation;
   messages: Message[];
@@ -356,8 +359,31 @@ function shorten(value: string, maxChars = 180): string {
   return `${normalized.slice(0, maxChars - 3).trimEnd()}...`;
 }
 
+function getPromptMessageBodyOrSidecarText(message: CompressionMessageLike): string {
+  const bodyText = normalizeWhitespace(message.bodyText ?? "");
+  if (bodyText) {
+    return message.bodyText ?? "";
+  }
+
+  const sidecarText = (message.sidecarSummaryLines ?? []).filter(Boolean).join("\n").trim();
+  if (sidecarText) {
+    return sidecarText;
+  }
+
+  return message.transcriptText || message.content_text;
+}
+
+function getPromptMessageAnalysisText(message: CompressionMessageLike): string {
+  const transcriptText = normalizeWhitespace(message.transcriptText ?? "");
+  if (transcriptText) {
+    return message.transcriptText ?? "";
+  }
+
+  return getPromptMessageBodyOrSidecarText(message);
+}
+
 function getTranscriptChars(messages: PromptReadyMessage[]): number {
-  return messages.map((message) => message.bodyText).join("\n").length;
+  return messages.map((message) => getPromptMessageAnalysisText(message)).join("\n").length;
 }
 
 function getAbsoluteMinChars(mode: ExportCompressionMode): number {
@@ -479,7 +505,7 @@ function findIncompleteTerminalLine(value: string): string | null {
   return null;
 }
 
-function toOrderedMessages(messages: Message[]): Message[] {
+function toOrderedMessages<T extends { created_at: number }>(messages: T[]): T[] {
   return [...messages].sort((a, b) => a.created_at - b.created_at);
 }
 
@@ -597,19 +623,22 @@ function sanitizeMessagesForExperimentalProcessing(
 ): PromptReadyMessage[] {
   return [...messages]
     .sort((a, b) => a.created_at - b.created_at)
-    .map((message) => ({
-      ...message,
-      content_text: sanitizeExperimentalMessageContent(message.content_text),
-      bodyText: sanitizeExperimentalMessageContent(message.bodyText),
-      transcriptText: [
-        sanitizeExperimentalMessageContent(message.bodyText),
-        ...message.sidecarSummaryLines,
-      ]
-        .filter(Boolean)
-        .join("\n")
-        .trim(),
-    }))
-    .filter((message) => normalizeWhitespace(message.content_text).length > 0);
+    .map((message) => {
+      const sanitizedBodyText = sanitizeExperimentalMessageContent(
+        getPromptMessageBodyOrSidecarText(message)
+      );
+      const sanitizedTranscriptText = sanitizeExperimentalMessageContent(
+        getPromptMessageAnalysisText(message)
+      );
+
+      return {
+        ...message,
+        content_text: sanitizedBodyText,
+        bodyText: sanitizedBodyText,
+        transcriptText: sanitizedTranscriptText,
+      };
+    })
+    .filter((message) => normalizeWhitespace(message.transcriptText).length > 0);
 }
 
 type ExperimentalEvidenceWindow = {
@@ -623,7 +652,7 @@ function scoreWindowCandidate(
   message: PromptReadyMessage,
   label: (typeof EXPERIMENTAL_EVIDENCE_WINDOW_LABELS)[number]
 ): number {
-  const text = message.content_text;
+  const text = getPromptMessageAnalysisText(message);
   const lengthBonus = Math.min(4, Math.floor(normalizeWhitespace(text).length / 100));
 
   switch (label) {
@@ -825,7 +854,7 @@ function buildFallbackTranscript(payload: ExportCompressionPromptPayload): strin
   return payload.messages
     .map((message, index) => {
       const role = message.role === "user" ? "User" : "AI";
-      return `${index + 1}. [${role}] ${shorten(message.content_text, 900)}`;
+      return `${index + 1}. [${role}] ${shorten(getPromptMessageAnalysisText(message), 900)}`;
     })
     .join("\n");
 }
@@ -1037,14 +1066,14 @@ function collectRoleAwareTurns(
   return unique(
     [firstUser, firstAi, latestAi, latestUser]
       .filter((value): value is PromptReadyMessage => Boolean(value))
-      .map((message) => shorten(message.content_text, 220))
+      .map((message) => shorten(getPromptMessageBodyOrSidecarText(message), 220))
   ).slice(0, maxItems);
 }
 
 function collectQuestionCandidates(messages: PromptReadyMessage[], maxItems = 3): string[] {
   const candidates = toOrderedMessages(messages)
     .filter((message) => message.role === "user")
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter((sentence) => QUESTION_CUE.test(sentence))
     .map((sentence) => shorten(sentence, 180));
 
@@ -1053,7 +1082,7 @@ function collectQuestionCandidates(messages: PromptReadyMessage[], maxItems = 3)
       (message) => message.role === "user"
     );
     if (firstUser) {
-      candidates.push(shorten(firstUser.content_text, 180));
+      candidates.push(shorten(getPromptMessageBodyOrSidecarText(firstUser), 180));
     }
   }
 
@@ -1063,7 +1092,7 @@ function collectQuestionCandidates(messages: PromptReadyMessage[], maxItems = 3)
 function collectConstraintLines(messages: PromptReadyMessage[], maxItems = 3): string[] {
   const candidates = toOrderedMessages(messages)
     .filter((message) => message.role === "user")
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter((sentence) => CONSTRAINT_CUE.test(sentence))
     .map((sentence) => shorten(sentence, 180));
 
@@ -1074,12 +1103,12 @@ function collectDecisionLines(messages: PromptReadyMessage[], maxItems = 4): str
   const ordered = toOrderedMessages(messages);
   const aiCandidates = ordered
     .filter((message) => message.role === "ai")
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter((sentence) => DECISION_CUE.test(sentence))
     .map((sentence) => shorten(sentence, 220));
   const userCandidates = ordered
     .filter((message) => message.role === "user")
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter((sentence) => DECISION_CUE.test(sentence))
     .map((sentence) => shorten(sentence, 220));
 
@@ -1089,7 +1118,7 @@ function collectDecisionLines(messages: PromptReadyMessage[], maxItems = 4): str
       ordered
         .filter((message) => message.role === "ai")
         .slice(-3)
-        .map((message) => shorten(message.content_text, 220)),
+        .map((message) => shorten(getPromptMessageBodyOrSidecarText(message), 220)),
       maxItems
     );
   }
@@ -1101,14 +1130,14 @@ function collectUnresolvedLines(messages: PromptReadyMessage[], maxItems = 3): s
   const ordered = toOrderedMessages(messages);
   const candidates = [...ordered]
     .reverse()
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter((sentence) => UNRESOLVED_CUE.test(sentence))
     .map((sentence) => shorten(sentence, 220));
 
   if (candidates.length === 0) {
     const lastUser = [...ordered].reverse().find((message) => message.role === "user");
     if (lastUser) {
-      candidates.push(shorten(lastUser.content_text, 220));
+      candidates.push(shorten(getPromptMessageBodyOrSidecarText(lastUser), 220));
     }
   }
 
@@ -1118,7 +1147,7 @@ function collectUnresolvedLines(messages: PromptReadyMessage[], maxItems = 3): s
 function collectCodeBlocks(messages: PromptReadyMessage[], maxItems = 2): string[] {
   const snippets: string[] = [];
   for (const message of messages) {
-    const matches = message.content_text.match(CODE_BLOCK_PATTERN) || [];
+    const matches = getPromptMessageBodyOrSidecarText(message).match(CODE_BLOCK_PATTERN) || [];
     for (const block of matches) {
       const inner = block
         .replace(/```[a-zA-Z0-9_-]*\s*/, "")
@@ -1144,10 +1173,10 @@ function detectFallbackCompressionContext(messages: PromptReadyMessage[]): {
   mathHeavy: boolean;
   explanationTeaching: boolean;
 } {
-  const transcript = messages.map((message) => message.content_text).join("\n");
+  const transcript = messages.map((message) => getPromptMessageAnalysisText(message)).join("\n");
   const questionHeavyUserText = messages
     .filter((message) => message.role === "user")
-    .map((message) => message.content_text)
+    .map((message) => getPromptMessageBodyOrSidecarText(message))
     .join("\n");
   const mathHeavy =
     MATH_HEAVY_CUE.test(transcript) ||
@@ -1250,7 +1279,7 @@ function collectFilePathLines(
   for (const message of messages) {
     const candidates = unique([
       ...(message.artifactRefs ?? []),
-      ...(message.content_text.match(PATH_PATTERN) || []),
+      ...(getPromptMessageBodyOrSidecarText(message).match(PATH_PATTERN) || []),
     ]);
     for (const found of candidates) {
       if (!isExplicitPathCandidate(found)) continue;
@@ -1274,7 +1303,7 @@ function collectCommandLines(messages: PromptReadyMessage[], maxItems = 4): stri
   for (const message of messages) {
     const candidates = unique([
       ...(message.artifactRefs ?? []),
-      ...(message.content_text.match(COMMAND_PATTERN) || []),
+      ...(getPromptMessageBodyOrSidecarText(message).match(COMMAND_PATTERN) || []),
     ]);
     for (const found of candidates) {
       const normalized = shorten(found.trim(), 160);
@@ -1296,7 +1325,7 @@ function collectApiHints(
   for (const message of messages) {
     const apiCandidates = unique([
       ...(message.artifactRefs ?? []),
-      ...(message.content_text.match(API_PATTERN) || []),
+      ...(getPromptMessageBodyOrSidecarText(message).match(API_PATTERN) || []),
     ]);
     for (const found of apiCandidates) {
       matches.push(`API/Function: ${shorten(found, 120)}`);
@@ -1304,7 +1333,7 @@ function collectApiHints(
     if (!options?.strict) {
       const refCandidates = unique([
         ...(message.artifactRefs ?? []),
-        ...(message.content_text.match(BACKTICK_PATTERN) || []),
+        ...(getPromptMessageBodyOrSidecarText(message).match(BACKTICK_PATTERN) || []),
       ]);
       for (const found of refCandidates) {
         matches.push(`Reference: ${shorten(found, 120)}`);
@@ -1361,7 +1390,7 @@ function pickContextLine(
   const firstUser = messages.find((message) => message.role === "user");
   return shorten(
     conversation.snippet ||
-      firstUser?.content_text ||
+      (firstUser ? getPromptMessageBodyOrSidecarText(firstUser) : "") ||
       conversation.title ||
       "No context captured.",
     220
@@ -1370,7 +1399,7 @@ function pickContextLine(
 
 function collectRejectedPathLines(messages: PromptReadyMessage[], maxItems = 3): string[] {
   const candidates = toOrderedMessages(messages)
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter(
       (sentence) =>
         /(?:\b(?:reject|rejected|avoid|failed because|didn't work|did not work|not the issue|ruled out|not the blocker|do not reopen)\b|排除|否掉|不走这条路|不是主因|不要重开|失败因为)/i.test(
@@ -1387,7 +1416,7 @@ function collectKeyUnderstandingLines(messages: PromptReadyMessage[], maxItems =
   const candidates = [
     ...ordered
       .filter((message) => message.role === "ai")
-      .flatMap((message) => splitIntoSentences(message.content_text))
+      .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
       .filter(
         (sentence) =>
           EXPLANATION_TEACHING_CUE.test(sentence) ||
@@ -1399,7 +1428,7 @@ function collectKeyUnderstandingLines(messages: PromptReadyMessage[], maxItems =
       .map((sentence) => shorten(sentence, 220)),
     ...ordered
       .filter((message) => message.role === "user")
-      .flatMap((message) => splitIntoSentences(message.content_text))
+      .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
       .filter((sentence) => EXPLANATION_TEACHING_CUE.test(sentence))
       .map((sentence) => shorten(sentence, 220)),
   ];
@@ -1407,7 +1436,7 @@ function collectKeyUnderstandingLines(messages: PromptReadyMessage[], maxItems =
   if (candidates.length === 0) {
     const latestAi = [...ordered].reverse().find((message) => message.role === "ai");
     if (latestAi) {
-      candidates.push(shorten(latestAi.content_text, 220));
+      candidates.push(shorten(getPromptMessageBodyOrSidecarText(latestAi), 220));
     }
   }
 
@@ -1419,7 +1448,7 @@ function collectGenerationDirectionLines(
   maxItems = 4
 ): string[] {
   const candidates = toOrderedMessages(messages)
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter(
       (sentence) =>
         GENERATION_CUE.test(sentence) ||
@@ -1437,7 +1466,7 @@ function collectSelectionCriteriaLines(
   maxItems = 3
 ): string[] {
   const candidates = toOrderedMessages(messages)
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter(
       (sentence) =>
         /\b(?:criteria|criterion|select|selection|screen|evaluate|judge|trade[- ]?off|constraint)\b/i.test(
@@ -1453,7 +1482,7 @@ function collectSelectionCriteriaLines(
 function collectUserContextLines(messages: PromptReadyMessage[], maxItems = 4): string[] {
   const candidates = toOrderedMessages(messages)
     .filter((message) => message.role === "user")
-    .flatMap((message) => splitIntoSentences(message.content_text))
+    .flatMap((message) => splitIntoSentences(getPromptMessageBodyOrSidecarText(message)))
     .filter(
       (sentence) =>
         CONSTRAINT_CUE.test(sentence) ||

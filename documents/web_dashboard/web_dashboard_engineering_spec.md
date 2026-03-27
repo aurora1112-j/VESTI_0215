@@ -123,7 +123,9 @@ The web dashboard also depends on the canonical content-package direction define
 For web work, this now implies:
 - web title must come from app-shell metadata, not from the largest body heading
 - web reader must converge on the same rich message package consumed by sidepanel reader
-- `citations[]` and `artifacts[]` are sidecars, not body-tail text
+- `citations[]`, `attachments[]`, and `artifacts[]` are sidecars, not body-tail text
+- `attachments[]` is index-only by default; web must not imply raw file/image replay support unless a later spec explicitly upgrades that contract
+- dynamic preview surfaces must remain placeholder / summary-first, not direct live replay
 - `content_text` may remain as fallback plain text, but must not be treated as the only truth source for rich messages
 
 The explicit draft contract for this web-facing layer lives in:

@@ -1,4 +1,5 @@
 import type { Message } from "../../types";
+import { buildMessageFallbackDisplayText } from "../../utils/messageContentPackage";
 
 export function formatExportDateTime(value: number): string {
   return new Date(value).toLocaleString("en-US", {
@@ -32,7 +33,7 @@ export function toExportTranscript(
   return messages
     .map((message, index) => {
       const role = message.role === "user" ? "User" : "AI";
-      return `${index + 1}. [${formatExportTime(message.created_at)}] [${role}] ${message.content_text}`;
+      return `${index + 1}. [${formatExportTime(message.created_at)}] [${role}] ${buildMessageFallbackDisplayText(message)}`;
     })
     .join("\n");
 }

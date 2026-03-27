@@ -109,17 +109,19 @@ conversation title、session identity、page-level status 等 metadata 属于应
 | `canonical_plain_text` | 最小可搜索文本 | 用于检索、简单 fallback、纯文本导出；必须是去重影、去 UI 污染后的 canonical text |
 | `semantic_ast_v2` | 主渲染结构 | reader、结构化导出、未来 package-aware consumer 的首选输入 |
 | `normalized_html_snapshot` | 可回放兜底 | 用于 reparsing、调试、未来修复和保真导出；仅对富结构消息或 artifact-bearing 消息持久化 |
-| `attachments[]` | 附件存在性 | 上传文件、图片、文件卡、下载物、引用附件等 |
+| `attachments[]` | 附件索引 | 上传文件、图片、文件卡、下载物、引用附件等；默认只保留 `indexAlt` 与最小安全元数据，不持久化原始二进制、像素内容或完整附件预览 DOM |
 | `artifacts[]` | 产物存在性 | 代码 artifact、画布、预览卡、图表、工具输出等；允许独立于正文 AST 存在 |
 | `citations[]` | 引用存在性 | `label / href / host / sourceType / occurrenceRole`；作为 message sidecar，不进入正文 AST 主干 |
 | `message_meta` | 消息元数据 | model slug、tool / thinking 状态、生成状态、任务状态等 |
 
 说明：
 - `attachments[] / artifacts[] / citations[] / message_meta` 是目标规范，即使实现尚未齐备，也必须作为未来 contract 保留。
+- `attachments[]` 的默认 contract 是 **index-only**：每项至少携带 `indexAlt`，可选附带 `label / mime / occurrenceRole`；不默认捕获或持久化用户上传文件、图片和下载物的原始 payload。
 - `citations[]` 在下一实现阶段不是“可选加分项”，而是 **hard requirement**：只要存在稳定 link-bearing 锚点，就必须结构化提取并从正文中剥离。
 - `artifacts[]` 允许作为 sidecar object 独立存在，不要求一定映射为正文 AST 节点。
 - `normalized_html_snapshot` 是平台归一化后的快照，不是原始站点 DOM 的无限制镜像。
 - `normalized_html_snapshot` 的默认持久化策略是：**仅对 rich-structure message / artifact-bearing message 持久化**，不做全量消息快照。
+- `iframe / canvas / web-preview / mini-app` 等动态内容不进入默认直接渲染 contract；capture 只保留存在性、外壳摘要和必要时的安全 shell snapshot，不反向抓取 iframe 内部 DOM、canvas 像素或图片二进制。
 
 ## 5. Target Layered Architecture
 
@@ -188,6 +190,14 @@ conversation title、session identity、page-level status 等 metadata 属于应
   - 允许作为 sidecar object 独立于正文 AST 存在
   - 对独立 Artifact，允许提取 `renderDimensions / plainText / markdownSnapshot / normalizedHtmlSnapshot`
   - standalone artifact 不得回落为正文尾部重建来源
+- **attachment**
+  - 上传文件、图片、下载物和文件卡默认只产出 `indexAlt` 与最小安全元数据
+  - 不从用户本地文件系统、站点 blob store 或临时对象 URL 反向抓取原始 payload
+  - attachment placeholder 可以进入 AST 或 sidecar，但不承担附件正文回放职责
+- **dynamic artifact / preview**
+  - `iframe / canvas / web-preview / mini-app` 不进入正文 AST 直接回放路径
+  - 默认先保留 `presence_only`；仅当 outer shell 存在稳定文本或安全可导出的结构时，才升级提取摘要或 shell 级 `normalizedHtmlSnapshot`
+  - 不持久化 iframe 内部 DOM、canvas 像素、生成图片原始文件或全量交互状态
 
 shared AST 不应继续承担平台私有 DOM 猜测。
 
@@ -202,9 +212,16 @@ shared AST 不应继续承担平台私有 DOM 猜测。
 - `normalized_html_snapshot`
   - rich-structure message / artifact-bearing message 才持久化
   - 普通纯文本消息默认不持久化 snapshot
+- `attachments[]`
+  - 作为消息侧车索引持久化
+  - 默认只写入 `indexAlt` 与最小安全元数据
+  - 不写入用户上传文件、图片和下载物的原始内容
 - `artifacts[] / citations[]`
   - 作为消息侧车元数据持久化
   - 不要求索引优先落地
+- `dynamic artifact shell`
+  - 默认只持久化存在性与摘要
+  - 只有在 shell 内容稳定、可安全导出且具备调试价值时才保留 `normalized_html_snapshot`
 - 历史脏数据
   - 不默认做自动 repair migration
   - 优先通过 recapture 或专项 migration 设计处理

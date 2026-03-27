@@ -1323,9 +1323,10 @@ function buildJourneySeedsFromMessages(messages: PromptReadyMessage[]): Array<{
   return messages
     .map((message) => {
       const speaker: "User" | "AI" = message.role === "ai" ? "AI" : "User";
+      const seedText = message.bodyText || message.transcriptText;
       return {
         speaker,
-        assertion: normalizeSynthesisLine(message.content_text, 500),
+        assertion: normalizeSynthesisLine(seedText, 500),
       };
     })
     .filter((item) => item.assertion.length > 0);

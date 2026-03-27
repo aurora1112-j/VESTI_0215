@@ -1,4 +1,5 @@
 import type { Message } from "../types";
+import { buildMessageFallbackDisplayText } from "../utils/messageContentPackage";
 import type { CompactionPromptPayload, PromptVersion } from "./types";
 
 const COMPACTION_SYSTEM = `You are Agent A: Vesti's structured context compaction engine.
@@ -45,7 +46,7 @@ function toCompactTranscript(
   return messages
     .map((message, index) => {
       const role = message.role === "user" ? "User" : "AI";
-      return `${index + 1}. [${formatTime(message.created_at)}] [${role}] ${message.content_text}`;
+      return `${index + 1}. [${formatTime(message.created_at)}] [${role}] ${buildMessageFallbackDisplayText(message)}`;
     })
     .join("\n");
 }

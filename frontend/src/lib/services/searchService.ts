@@ -13,6 +13,7 @@
   ExploreToolCall,
   ExploreToolName,
   LlmConfig,
+  Message,
   RagResponse,
   RelatedConversation,
 } from "../types";
@@ -43,6 +44,15 @@ import { callInference } from "./llmService";
 import { getEffectiveModelId, getLlmAccessMode } from "./llmConfig";
 import { getLlmSettings } from "./llmSettingsService";
 import { logger } from "../utils/logger";
+import {
+  buildMessagePreviewText,
+  buildMessageSearchIndexText,
+} from "../utils/messageContentPackage";
+
+type SearchableMessage = Pick<
+  Message,
+  "role" | "content_text" | "citations" | "attachments" | "artifacts"
+>;
 
 const MAX_MESSAGE_COUNT = 12;
 const MAX_TEXT_LENGTH = 4000;
@@ -627,14 +637,14 @@ function buildConversationText(
 
 function buildConversationContext(
   conversation: Conversation,
-  messages: Array<{ role: "user" | "ai"; content_text: string }>,
+  messages: SearchableMessage[],
   annotations: Annotation[]
 ): string {
   const lines = messages
     .slice(0, MAX_MESSAGE_COUNT)
     .map((msg) => {
       const role = msg.role === "user" ? "User" : "AI";
-      return `[${role}] ${msg.content_text}`;
+      return `[${role}] ${buildMessageSearchIndexText(msg)}`;
     });
 
   const annotationLines = annotations.map((item) => `[Note] ${item.content_text}`);
@@ -838,10 +848,10 @@ async function callExploreInference(
   };
 }
 
-function extractExcerpt(messages: Array<{ content_text: string }>): string {
+function extractExcerpt(messages: SearchableMessage[]): string {
   const text = messages
     .slice(0, 4)
-    .map((message) => message.content_text)
+    .map((message) => buildMessagePreviewText(message, { maxChars: 120 }))
     .filter(Boolean)
     .join("\n");
 
@@ -1876,7 +1886,7 @@ async function getConversationText(
 
   const messageTexts = messages
     .slice(0, MAX_MESSAGE_COUNT)
-    .map((message) => message.content_text)
+    .map((message) => buildMessageSearchIndexText(message))
     .filter(Boolean);
 
   const annotationRecords = await db.annotations

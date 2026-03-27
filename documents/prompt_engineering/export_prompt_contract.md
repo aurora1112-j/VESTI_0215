@@ -32,6 +32,16 @@ The only long-term runtime prompt source is:
 
 Documentation in `documents/prompt_engineering/**` defines contracts and governance, but it is not the runtime prompt text authority.
 
+## Shipped prompt-input boundary
+
+The current shipped prompt pipeline is now explicitly body-first and sidecar-aware:
+
+- `bodyText` is the preferred canonical text body
+- `transcriptText` may append sidecar summaries when citations, attachments, or artifacts are present
+- `attachments[]` contributes index-only summary lines, never raw file/image payloads
+- `artifacts[]` contributes presence / excerpt-first summary lines
+- prompt consumers must not recreate raw attachment replay or dynamic preview playback from sidecar text
+
 ## Target prompt layout
 
 Export prompts should converge to this structure:
