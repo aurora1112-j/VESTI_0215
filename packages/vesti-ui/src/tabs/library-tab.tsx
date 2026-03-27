@@ -54,6 +54,7 @@ import {
 } from "../notion-integration";
 import { RichMessageContent } from "../components/RichMessageContent";
 import { ReaderTimestampFooter } from "../components/ReaderTimestampFooter";
+import { buildMessagePreviewText } from "../lib/messagePackage";
 import { buildReaderTimestampFooterModel } from "../lib/reader-timestamps";
 
 type ViewMode = "conversations" | "notes";
@@ -1744,9 +1745,7 @@ export function LibraryTab({
   }
 
   function getAnnotationPreview(message: Message): string {
-    const normalized = message.content_text.replace(/\s+/g, " ").trim();
-    if (normalized.length <= 180) return normalized;
-    return `${normalized.slice(0, 180)}...`;
+    return buildMessagePreviewText(message, { maxChars: 180 });
   }
 
   const persistAnnotationDraft = async (
@@ -3118,9 +3117,7 @@ export function LibraryTab({
                         ? "Loading..."
                         : messages.length === 0
                           ? "No messages captured yet."
-                          : `${messages[0]?.content_text?.slice(0, 120) ?? ""}${
-                              (messages[0]?.content_text?.length ?? 0) > 120 ? "..." : ""
-                            }`}
+                          : buildMessagePreviewText(messages[0], { maxChars: 120 })}
                     </p>
                     {messageCount > 1 && (
                       <button

@@ -6,6 +6,10 @@ import {
   inspectAstStructure,
   type AstStructureStats,
 } from "~lib/utils/astText";
+import {
+  buildMessageFallbackDisplayText,
+  resolveCanonicalBodyText,
+} from "~lib/utils/messageContentPackage";
 import type { ReaderOccurrence } from "../types/threadsSearch";
 
 const MIN_QUERY_LENGTH = 1;
@@ -101,7 +105,7 @@ export function buildReaderSearchArtifacts(params: {
       occurrences,
       occurrenceIndexRef,
       message.id,
-      message.content_text,
+      buildMessageFallbackDisplayText(message),
       normalizedQuery
     );
   }
@@ -209,7 +213,7 @@ export function resolveMessageRenderPlan(
   }
 
   const renderAst = sanitizeAstForRender(rawAst, message.role, platform);
-  const sourceTextLen = normalizeForCoverage(message.content_text).length;
+  const sourceTextLen = normalizeForCoverage(resolveCanonicalBodyText(message)).length;
   const astTextLen = normalizeForCoverage(extractAstPlainText(renderAst)).length;
   const astStats = inspectAstStructure(renderAst);
   const astCoverageRatio = sourceTextLen > 0 ? astTextLen / sourceTextLen : 1;

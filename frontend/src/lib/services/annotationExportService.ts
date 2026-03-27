@@ -9,6 +9,10 @@ import {
   disconnectNotion,
   getNotionSettings,
 } from "./notionSettingsService";
+import {
+  buildMessageFallbackDisplayText,
+  buildMessagePreviewText,
+} from "../utils/messageContentPackage";
 
 const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
@@ -71,7 +75,7 @@ function buildAnnotationEntry(
     "",
     `Role: ${roleLabel}`,
     "",
-    data.message.content_text,
+    buildMessageFallbackDisplayText(data.message),
     "",
     `#### Annotation`,
     "",
@@ -208,7 +212,9 @@ export async function exportAnnotationToNotion(
   const context = await getAnnotationExportContext(annotationId);
   const titleProperty = await getDatabaseTitlePropertyName(databaseId, notionToken);
   const conversationDate = context.conversation.source_created_at ?? context.conversation.created_at;
-  const excerpt = truncate(context.message.content_text, 100) || "(No message content)";
+  const excerpt =
+    truncate(buildMessagePreviewText(context.message, { maxChars: 100 }), 100) ||
+    "(No message content)";
 
   const payload = await notionRequest<{ id: string; url?: string }>(`/pages`, notionToken, {
     method: "POST",

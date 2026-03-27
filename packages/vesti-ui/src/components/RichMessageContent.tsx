@@ -3,6 +3,7 @@ import katex from "katex";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AstNode, AstRoot, AstTableNode, Message } from "../types";
 import { formatArtifactDescriptor, getArtifactExcerptText } from "../lib/artifactSummary";
+import { buildMessagePreviewText } from "../lib/messagePackage";
 
 const COPY_FEEDBACK_MS = 1400;
 
@@ -352,6 +353,45 @@ function renderArtifactMeta(message: Message): ReactNode {
   );
 }
 
+function renderAttachmentMeta(message: Message): ReactNode {
+  if ((message.attachments ?? []).length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="mt-3 rounded-xl border border-border-subtle bg-bg-primary/60">
+      <summary className="cursor-pointer list-none px-3 py-2 text-[12px] font-medium text-text-primary">
+        Attachments ({message.attachments?.length ?? 0})
+      </summary>
+      <div className="space-y-2 border-t border-border-subtle px-3 py-3">
+        {(message.attachments ?? []).map((attachment, index) => {
+          const secondaryLabel =
+            attachment.label && attachment.label !== attachment.indexAlt
+              ? attachment.label
+              : null;
+
+          return (
+            <div
+              key={`${attachment.indexAlt}-${attachment.label ?? index}`}
+              className="rounded-lg border border-border-subtle bg-bg-surface-card/60 px-3 py-2"
+            >
+              <div className="text-[12px] font-medium text-text-primary">
+                {attachment.indexAlt}
+              </div>
+              {secondaryLabel ? (
+                <div className="mt-1 text-[11px] text-text-secondary">{secondaryLabel}</div>
+              ) : null}
+              {attachment.mime ? (
+                <div className="mt-1 text-[11px] text-text-tertiary">{attachment.mime}</div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
 function renderSourceMeta(message: Message): ReactNode {
   if ((message.citations ?? []).length === 0) {
     return null;
@@ -383,12 +423,13 @@ function renderSourceMeta(message: Message): ReactNode {
 export function RichMessageContent({ message }: RichMessageContentProps) {
   const body = hasRenderableAst(message.content_ast)
     ? renderNodes(message.content_ast.children, `msg-${message.id}`)
-    : message.content_text;
+    : (message.content_text || buildMessagePreviewText(message));
 
   return (
     <>
       <div className="text-[13px] leading-relaxed text-inherit">{body}</div>
       {renderSourceMeta(message)}
+      {renderAttachmentMeta(message)}
       {renderArtifactMeta(message)}
     </>
   );

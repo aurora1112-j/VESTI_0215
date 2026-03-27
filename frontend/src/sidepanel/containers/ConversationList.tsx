@@ -20,6 +20,7 @@ import {
   searchConversationMatchesByText,
   updateConversationTitle,
 } from "~lib/services/storageService";
+import { buildMessageFallbackDisplayText } from "~lib/utils/messageContentPackage";
 import { trackCardActionClick } from "~lib/services/telemetry";
 import type { DatePreset } from "../types/timelineFilters";
 import { ConversationCard } from "../components/ConversationCard";
@@ -98,7 +99,7 @@ function buildConversationCopyText(
   for (const message of messages) {
     const role = message.role === "user" ? "User" : "AI";
     lines.push(`${role}: [${toLocalDateTime(message.created_at)}]`);
-    lines.push(message.content_text);
+    lines.push(buildMessageFallbackDisplayText(message));
     lines.push("");
   }
 

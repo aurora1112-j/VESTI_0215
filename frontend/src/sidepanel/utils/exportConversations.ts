@@ -18,6 +18,10 @@ import {
   type ConversationExportDatasetItem,
   type ExportCompressionMode,
 } from "./exportCompression";
+import {
+  buildMessageExportSections,
+  resolveMessageExportBodyText,
+} from "~lib/utils/messageExportPackage";
 
 function toLocalDateTime(timestamp: number): string {
   const d = new Date(timestamp);
@@ -169,7 +173,17 @@ function toMarkdown(
         const role = message.role === "user" ? "User" : "Assistant";
         lines.push(`**${role}** (${toLocalDateTime(message.created_at)})`);
         lines.push("");
-        lines.push(message.content_text);
+        const bodyText = resolveMessageExportBodyText(message);
+        if (bodyText) {
+          lines.push(bodyText);
+        }
+        const sections = buildMessageExportSections(message, "md");
+        for (const section of sections) {
+          lines.push("");
+          lines.push(`#### ${section.title}`);
+          lines.push("");
+          lines.push(...section.lines);
+        }
         lines.push("");
       });
     } else {
@@ -236,7 +250,16 @@ function toText(
       lines.push("");
       messages.forEach((message) => {
         const role = message.role === "user" ? "USER" : "AI";
-        lines.push(`${role} (${toLocalDateTime(message.created_at)}): ${message.content_text}`);
+        lines.push(`${role} (${toLocalDateTime(message.created_at)}):`);
+        const bodyText = resolveMessageExportBodyText(message);
+        if (bodyText) {
+          lines.push(bodyText);
+        }
+        const sections = buildMessageExportSections(message, "txt");
+        for (const section of sections) {
+          lines.push(`${section.title}:`);
+          lines.push(...section.lines);
+        }
         lines.push("");
       });
     } else {
@@ -283,7 +306,10 @@ function toJson(
     if (mode === "full") {
       return {
         ...base,
-        messages,
+        messages: messages.map((message) => ({
+          ...message,
+          content_text: resolveMessageExportBodyText(message),
+        })),
       };
     }
 

@@ -1,11 +1,16 @@
 import { formatArtifactDescriptor, getArtifactExcerptText } from "@vesti/ui";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Copy, Check, ChevronDown, Link2 } from "lucide-react";
+import { Copy, Check, ChevronDown, Link2, Paperclip } from "lucide-react";
 import type { Message, Platform } from "~lib/types";
 import type { AstRoot } from "~lib/types/ast";
 import { AstMessageRenderer } from "./AstMessageRenderer";
 import { DisclosureSection } from "./DisclosureSection";
 import { PLATFORM_TONE } from "./platformTone";
+import {
+  buildMessageFallbackDisplayText,
+  buildMessagePreviewText,
+  resolveCanonicalBodyText,
+} from "~lib/utils/messageContentPackage";
 import {
   buildFallbackSegments,
   buildHighlightSegments,
@@ -52,6 +57,10 @@ export function MessageBubble({
   const shouldUseAst = plan.mode === "ast" && plan.renderAst;
   const indexMap = occurrenceIndexMap ?? {};
   const activeIndex = typeof currentIndex === "number" ? currentIndex : null;
+  const canonicalBodyText = resolveCanonicalBodyText(message);
+  const renderedFallbackText =
+    canonicalBodyText || buildMessagePreviewText(message);
+  const copyText = buildMessageFallbackDisplayText(message);
 
   const renderHighlightSegments = (text: string, nodeKey: string) => {
     const segments = buildHighlightSegments(text, indexMap[nodeKey]);
@@ -115,7 +124,7 @@ export function MessageBubble({
       }
       observer?.disconnect();
     };
-  }, [message.id, message.content_text, plan.mode, plan.renderAst]);
+  }, [message.id, renderedFallbackText, plan.mode, plan.renderAst]);
 
   useEffect(() => {
     if (!canCollapse) {
@@ -132,7 +141,7 @@ export function MessageBubble({
   }, []);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content_text).catch(() => {});
+    navigator.clipboard.writeText(copyText).catch(() => {});
     setCopied(true);
     if (copyTimerRef.current !== null) {
       window.clearTimeout(copyTimerRef.current);
@@ -187,7 +196,7 @@ export function MessageBubble({
             />
           ) : (
             <div className="reader-fallback-content whitespace-pre-wrap">
-              {renderFallbackContent(message.content_text, message.id, renderHighlightSegments)}
+              {renderFallbackContent(renderedFallbackText, message.id, renderHighlightSegments)}
             </div>
           )}
         </div>
@@ -223,6 +232,46 @@ export function MessageBubble({
                   </div>
                 </a>
               ))}
+            </div>
+          </DisclosureSection>
+        </div>
+      ) : null}
+
+      {(message.attachments ?? []).length > 0 ? (
+        <div className="mt-3">
+          <DisclosureSection
+            title="Attachments"
+            description={`${message.attachments?.length ?? 0} indexed attachment${(message.attachments?.length ?? 0) === 1 ? "" : "s"}`}
+            icon={<Paperclip className="h-3.5 w-3.5" strokeWidth={1.75} />}
+          >
+            <div className="space-y-2">
+              {(message.attachments ?? []).map((attachment, index) => {
+                const secondaryLabel =
+                  attachment.label && attachment.label !== attachment.indexAlt
+                    ? attachment.label
+                    : null;
+
+                return (
+                  <div
+                    key={`${attachment.indexAlt}-${attachment.label ?? index}`}
+                    className="rounded-lg border border-border-subtle bg-bg-primary/80 px-3 py-2"
+                  >
+                    <div className="text-[12px] font-medium text-text-primary">
+                      {attachment.indexAlt}
+                    </div>
+                    {secondaryLabel ? (
+                      <div className="mt-0.5 text-[11px] text-text-secondary">
+                        {secondaryLabel}
+                      </div>
+                    ) : null}
+                    {attachment.mime ? (
+                      <div className="mt-0.5 text-[11px] text-text-tertiary">
+                        {attachment.mime}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </DisclosureSection>
         </div>

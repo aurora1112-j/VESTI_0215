@@ -4,6 +4,7 @@ import type {
   Conversation,
   ExportPayload,
   Message,
+  MessageAttachment,
   MessageArtifact,
   MessageCitation,
   SummaryRecord,
@@ -15,6 +16,7 @@ import {
   getConversationOriginAt,
   getConversationSourceCreatedAt,
 } from "../conversations/timestamps";
+import { resolveMessageExportBodyText } from "../utils/messageExportPackage";
 
 export interface ExportDataset {
   conversations: Conversation[];
@@ -250,6 +252,36 @@ function formatExportArtifactLines(artifacts: MessageArtifact[], format: "txt" |
   });
 }
 
+function formatExportAttachmentLines(
+  attachments: MessageAttachment[],
+  format: "txt" | "md"
+): string[] {
+  if (attachments.length === 0) {
+    return [];
+  }
+
+  const formatLabel = (attachment: MessageAttachment) => {
+    const label = attachment.label && attachment.label !== attachment.indexAlt
+      ? attachment.label
+      : null;
+    const mime = attachment.mime ?? null;
+
+    if (format === "md") {
+      if (label && mime) return `- **${attachment.indexAlt}** — ${label} (${mime})`;
+      if (label) return `- **${attachment.indexAlt}** — ${label}`;
+      if (mime) return `- **${attachment.indexAlt}** (${mime})`;
+      return `- **${attachment.indexAlt}**`;
+    }
+
+    if (label && mime) return `- ${attachment.indexAlt} — ${label} (${mime})`;
+    if (label) return `- ${attachment.indexAlt} — ${label}`;
+    if (mime) return `- ${attachment.indexAlt} (${mime})`;
+    return `- ${attachment.indexAlt}`;
+  };
+
+  return attachments.map(formatLabel);
+}
+
 function groupAnnotations(annotations: Annotation[]): Map<number, Annotation[]> {
   const byConversation = new Map<number, Annotation[]>();
   const sorted = [...annotations].sort((a, b) => a.created_at - b.created_at);
@@ -293,9 +325,11 @@ export function buildExportJsonV1(dataset: ExportDataset): ExportPayload {
       })),
       messages: dataset.messages.map((item) => ({
         ...item,
+        content_text: resolveMessageExportBodyText(item),
         content_ast: item.content_ast ?? null,
         content_ast_version: item.content_ast_version ?? null,
         citations: item.citations ?? [],
+        attachments: item.attachments ?? [],
         artifacts: item.artifacts ?? [],
         normalized_html_snapshot: item.normalized_html_snapshot ?? null,
         degraded_nodes_count:
@@ -359,10 +393,17 @@ export function buildExportTxtV1(dataset: ExportDataset): ExportPayload {
     for (const message of messages) {
       const role = message.role === "user" ? "User" : "AI";
       lines.push(`${role}: [${toLocalDateTime(message.created_at)}]`);
-      lines.push(message.content_text);
+      const bodyText = resolveMessageExportBodyText(message);
+      if (bodyText) {
+        lines.push(bodyText);
+      }
       if ((message.citations ?? []).length > 0) {
         lines.push("Sources:");
         lines.push(...formatExportCitationLines(message.citations ?? [], "txt"));
+      }
+      if ((message.attachments ?? []).length > 0) {
+        lines.push("Attachments:");
+        lines.push(...formatExportAttachmentLines(message.attachments ?? [], "txt"));
       }
       if ((message.artifacts ?? []).length > 0) {
         lines.push("Artifacts:");
@@ -447,12 +488,21 @@ export function buildExportMdV1(dataset: ExportDataset): ExportPayload {
       const role = message.role === "user" ? "User" : "AI";
       lines.push(`### ${role} [${toLocalDateTime(message.created_at)}]`);
       lines.push("");
-      lines.push(message.content_text);
+      const bodyText = resolveMessageExportBodyText(message);
+      if (bodyText) {
+        lines.push(bodyText);
+      }
       if ((message.citations ?? []).length > 0) {
         lines.push("");
         lines.push("#### Sources");
         lines.push("");
         lines.push(...formatExportCitationLines(message.citations ?? [], "md"));
+      }
+      if ((message.attachments ?? []).length > 0) {
+        lines.push("");
+        lines.push("#### Attachments");
+        lines.push("");
+        lines.push(...formatExportAttachmentLines(message.attachments ?? [], "md"));
       }
       if ((message.artifacts ?? []).length > 0) {
         lines.push("");
