@@ -30,6 +30,11 @@ if (!parser.detect()) {
   const observer = new ConversationObserver(parser, pipeline);
   observer.start();
 
+  // Warm-start capture for cold-opened threads
+  window.setTimeout(() => {
+    void pipeline.capture();
+  }, 1200);
+
   chrome.runtime.onMessage.addListener(
     (
       message: unknown,
