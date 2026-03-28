@@ -502,7 +502,7 @@ const SHADOW_STYLE = `
 }
 
 .capsule-panel {
-  width: min(320px, calc(100vw - 16px));
+  width: min(296px, calc(100vw - 16px));
   box-sizing: border-box;
   border: 1px solid var(--capsule-border);
   border-radius: 18px;
@@ -525,7 +525,7 @@ const SHADOW_STYLE = `
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 11px 13px 8px;
+  padding: 10px 11px 7px;
   border-bottom: 1px solid var(--capsule-divider);
 }
 
@@ -590,7 +590,7 @@ const SHADOW_STYLE = `
   justify-content: space-between;
   gap: 10px;
   min-height: 0;
-  margin: 8px 13px 0;
+  margin: 8px 11px 0;
   padding: 0;
 }
 
@@ -644,8 +644,8 @@ const SHADOW_STYLE = `
 .capsule-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 0 13px;
+  gap: 5px;
+  padding: 0 11px;
   margin-top: 8px;
 }
 
@@ -676,12 +676,12 @@ const SHADOW_STYLE = `
   letter-spacing: 0.01em;
   color: var(--capsule-text2);
   position: relative;
-  max-width: 148px;
+  max-width: 134px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 10px;
+  padding-left: 9px;
   margin-left: 2px;
 }
 
@@ -718,7 +718,7 @@ const SHADOW_STYLE = `
   line-height: 1.3;
   color: var(--capsule-text2);
   margin: 8px 0 0;
-  padding: 0 13px;
+  padding: 0 11px;
   text-align: center;
 }
 
@@ -729,8 +729,8 @@ const SHADOW_STYLE = `
 .capsule-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px 13px 12px;
+  gap: 6px;
+  padding: 8px 11px 12px;
 }
 
 .capsule-action-btn {
@@ -738,7 +738,7 @@ const SHADOW_STYLE = `
   font-family: inherit;
   border: 1px solid var(--btn-secondary-border);
   border-radius: 12px;
-  padding: 0 12px;
+  padding: 0 10px;
   font-size: 11.5px;
   line-height: 1;
   font-weight: 600;
@@ -903,7 +903,7 @@ const SHADOW_STYLE = `
 .capsule-shell[data-view="expanded"] .capsule-domain-label {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
+  max-width: 146px;
 }
 
 .capsule-shell[data-view="expanded"] .capsule-actions .capsule-action-btn {
