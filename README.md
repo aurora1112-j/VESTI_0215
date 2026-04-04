@@ -1,5 +1,52 @@
 <div align="center">
 
+  <!-- 🏆 荣誉横幅 - 徽章学花环设计 -->
+  <table border="0" width="100%">
+    <tr>
+      <td align="center">
+        <table border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <!-- 左侧：奖杯 -->
+            <td align="center" valign="middle">
+              <img src=".github/assets/goldcup.gif" width="75" alt="金奖奖杯">
+            </td>
+            <!-- 中间：花环徽章 -->
+            <td align="center" valign="middle" style="padding: 0 15px;">
+              <table border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="font-size: 28px; line-height: 0.8;">🌿&#x3000;&#x3000;🌿</td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-size: 48px; font-weight: bold; color: #FFD700; line-height: 1; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                    𝟙
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-size: 28px; line-height: 0.8;">🌿&#x3000;&#x3000;🌿</td>
+                </tr>
+              </table>
+            </td>
+            <!-- 右侧：奖项信息 -->
+            <td align="left" valign="middle">
+              <div style="font-size: 17px; font-weight: bold; color: #B8860B;">
+                🥇 2026 AI Hackathon Tour
+              </div>
+              <div style="font-size: 15px; color: #DAA520; font-weight: 600; margin-top: 3px;">
+                全国总决赛 · 金奖
+              </div>
+              <div style="font-size: 13px; color: #666; margin-top: 5px; font-style: italic;">
+                数字生活与情感赛道 · 最佳项目
+              </div>
+            </td>
+          </tr>
+        </table>
+        <hr width="60%" style="border: none; border-top: 1px solid #E0E0E0; margin-top: 10px;">
+      </td>
+    </tr>
+  </table>
+
+  <br>
+
   <h1>心迹 Vesti</h1>
   <p>本地优先的 AI 对话记忆与知识管理中台 | Local-First AI Conversation Memory & Knowledge Hub</p>
 
