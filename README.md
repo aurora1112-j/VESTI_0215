@@ -1,49 +1,13 @@
 <div align="center">
 
-  <!-- 🏆 荣誉横幅 - 徽章学花环设计 -->
-  <table border="0" width="100%">
-    <tr>
-      <td align="center">
-        <table border="0" cellpadding="0" cellspacing="0">
-          <tr>
-            <!-- 左侧：奖杯 -->
-            <td align="center" valign="middle">
-              <img src=".github/assets/goldcup.gif" width="75" alt="金奖奖杯">
-            </td>
-            <!-- 中间：花环徽章 -->
-            <td align="center" valign="middle" style="padding: 0 15px;">
-              <table border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center" style="font-size: 28px; line-height: 0.8;">🌿&#x3000;&#x3000;🌿</td>
-                </tr>
-                <tr>
-                  <td align="center" style="font-size: 48px; font-weight: bold; color: #FFD700; line-height: 1; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                    𝟙
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="font-size: 28px; line-height: 0.8;">🌿&#x3000;&#x3000;🌿</td>
-                </tr>
-              </table>
-            </td>
-            <!-- 右侧：奖项信息 -->
-            <td align="left" valign="middle">
-              <div style="font-size: 17px; font-weight: bold; color: #B8860B;">
-                🥇 2026 AI Hackathon Tour
-              </div>
-              <div style="font-size: 15px; color: #DAA520; font-weight: 600; margin-top: 3px;">
-                全国总决赛 · 金奖
-              </div>
-              <div style="font-size: 13px; color: #666; margin-top: 5px; font-style: italic;">
-                数字生活与情感赛道 · 最佳项目
-              </div>
-            </td>
-          </tr>
-        </table>
-        <hr width="60%" style="border: none; border-top: 1px solid #E0E0E0; margin-top: 10px;">
-      </td>
-    </tr>
-  </table>
+  <!-- 🏆 荣誉徽章 -->
+  <p align="center">
+    <img src=".github/assets/goldcup.gif" width="60" alt="金奖奖杯" valign="middle">
+    &nbsp;&nbsp;
+    <img src="https://img.shields.io/badge/2026%20AI%20Hackathon%20Tour-全国总决赛%20金奖-FFD700?style=for-the-badge&logo=trophy&logoColor=FFD700&labelColor=1a1a2e" alt="2026 AI Hackathon Tour 金奖">
+    &nbsp;
+    <img src="https://img.shields.io/badge/数字生活与情感赛道-最佳项目-4CAF50?style=for-the-badge&logo=leaf&logoColor=white&labelColor=2E7D32" alt="数字生活与情感赛道最佳">
+  </p>
 
   <br>
 
