@@ -4,12 +4,14 @@ import {
   createContext,
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useMemo,
   useContext,
   type ReactNode,
   type FocusEvent,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -101,6 +103,112 @@ const LibrarySplitContext = createContext<LibrarySplitContextValue | null>(
   null,
 );
 
+const NOTE_EDITOR_FALLBACK_MIN_HEIGHT = 180;
+const NOTE_EDITOR_VIEWPORT_PADDING = 24;
+const SPLIT_NOTE_EDITOR_PREFERRED_MIN_HEIGHT = 520;
+const STANDARD_NOTE_EDITOR_PREFERRED_MIN_HEIGHT = 240;
+
+function syncBoundedTextareaHeight(
+  textareaRef: RefObject<HTMLTextAreaElement | null>,
+  anchorRef: RefObject<HTMLElement | null>,
+  scrollViewportRef: RefObject<HTMLElement | null>,
+  preferredMinHeight: number,
+) {
+  if (typeof window === "undefined") return;
+
+  const textarea = textareaRef.current;
+  const anchor = anchorRef.current;
+  const scrollViewport = scrollViewportRef.current;
+  if (!textarea || !anchor || !scrollViewport) return;
+
+  const viewportRect = scrollViewport.getBoundingClientRect();
+  const anchorRect = anchor.getBoundingClientRect();
+  const topOffset = Math.max(0, anchorRect.top - viewportRect.top);
+  const availableHeight =
+    scrollViewport.clientHeight - topOffset - NOTE_EDITOR_VIEWPORT_PADDING;
+  const maxHeight = Math.max(
+    NOTE_EDITOR_FALLBACK_MIN_HEIGHT,
+    Math.floor(availableHeight),
+  );
+  const minimumHeight = Math.min(preferredMinHeight, maxHeight);
+
+  textarea.style.height = "auto";
+  textarea.style.maxHeight = `${maxHeight}px`;
+
+  const scrollHeight = textarea.scrollHeight;
+  const nextHeight = Math.max(minimumHeight, Math.min(scrollHeight, maxHeight));
+
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
+function useBoundedTextareaHeight(
+  textareaRef: RefObject<HTMLTextAreaElement | null>,
+  anchorRef: RefObject<HTMLElement | null>,
+  scrollViewportRef: RefObject<HTMLElement | null>,
+  value: string,
+  preferredMinHeight: number,
+  enabled = true,
+) {
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    syncBoundedTextareaHeight(
+      textareaRef,
+      anchorRef,
+      scrollViewportRef,
+      preferredMinHeight,
+    );
+  }, [
+    anchorRef,
+    enabled,
+    preferredMinHeight,
+    scrollViewportRef,
+    textareaRef,
+    value,
+  ]);
+
+  useEffect(() => {
+    if (!enabled || typeof window === "undefined") return;
+
+    let frameId: number | null = null;
+    const scheduleSync = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        syncBoundedTextareaHeight(
+          textareaRef,
+          anchorRef,
+          scrollViewportRef,
+          preferredMinHeight,
+        );
+      });
+    };
+
+    const anchor = anchorRef.current;
+    const scrollViewport = scrollViewportRef.current;
+    if (!anchor || !scrollViewport) return;
+
+    scheduleSync();
+
+    const resizeObserver = new ResizeObserver(scheduleSync);
+    resizeObserver.observe(anchor);
+    resizeObserver.observe(scrollViewport);
+    scrollViewport.addEventListener("scroll", scheduleSync, { passive: true });
+    window.addEventListener("resize", scheduleSync);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver.disconnect();
+      scrollViewport.removeEventListener("scroll", scheduleSync);
+      window.removeEventListener("resize", scheduleSync);
+    };
+  }, [anchorRef, enabled, preferredMinHeight, scrollViewportRef, textareaRef]);
+}
+
 function useLibrarySplitContext(): LibrarySplitContextValue {
   const context = useContext(LibrarySplitContext);
   if (!context) {
@@ -190,9 +298,24 @@ function SplitNoteEditorPanel({
   onOpenConversation,
   formatTimeAgo,
 }: SplitNoteEditorPanelProps) {
-  const { pendingExcerpts, consumePendingExcerpt, noteSaveStatus, exitSplit } =
-    useLibrarySplitContext();
+  const {
+    pendingExcerpts,
+    consumePendingExcerpt,
+    noteSaveStatus,
+    exitSplit,
+  } = useLibrarySplitContext();
   const splitTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const splitEditorViewportRef = useRef<HTMLDivElement>(null);
+  const splitScrollViewportRef = useRef<HTMLDivElement>(null);
+
+  useBoundedTextareaHeight(
+    splitTextareaRef,
+    splitEditorViewportRef,
+    splitScrollViewportRef,
+    noteContent,
+    SPLIT_NOTE_EDITOR_PREFERRED_MIN_HEIGHT,
+    Boolean(selectedNote),
+  );
 
   useEffect(() => {
     if (!selectedNote || pendingExcerpts.length === 0) return;
@@ -211,13 +334,6 @@ function SplitNoteEditorPanel({
     selectedNote,
   ]);
 
-  useEffect(() => {
-    const element = splitTextareaRef.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight}px`;
-  }, [noteContent]);
-
   const saveStatusLabel = selectedNote
     ? noteSaveStatus === "saving"
       ? "Saving..."
@@ -228,7 +344,7 @@ function SplitNoteEditorPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-primary">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={splitScrollViewportRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-10 bg-bg-primary/95 px-6 py-4 backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -267,15 +383,16 @@ function SplitNoteEditorPanel({
                 className="w-full border-0 bg-transparent px-0 text-2xl font-serif font-normal text-text-primary outline-none placeholder:text-text-tertiary"
               />
 
-              <div className="relative mt-6">
+              <div ref={splitEditorViewportRef} className="relative mt-6">
                 <textarea
                   ref={splitTextareaRef}
                   value={noteContent}
                   onChange={(event) => onContentChange(event.target.value)}
                   placeholder="Extracted excerpts and your notes will appear here..."
-                  className="min-h-[520px] w-full resize-none overflow-hidden border-0 bg-transparent px-0 pb-14 text-[13px] leading-[1.75] text-text-primary outline-none placeholder:text-text-tertiary"
+                  className="w-full resize-none overflow-hidden border-0 bg-transparent px-0 pb-14 text-[13px] leading-[1.75] text-text-primary outline-none placeholder:text-text-tertiary"
                   style={{
                     fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
+                    minHeight: `${NOTE_EDITOR_FALLBACK_MIN_HEIGHT}px`,
                   }}
                 />
                 <button
@@ -460,6 +577,8 @@ export function LibraryTab({
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [isEditingNoteBody, setIsEditingNoteBody] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const noteEditorViewportRef = useRef<HTMLDivElement>(null);
+  const noteEditorScrollViewportRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const renameNoteInputRef = useRef<HTMLInputElement>(null);
   const annotationTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -919,15 +1038,6 @@ export function LibraryTab({
     isConversationExpanded,
   ]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        textareaRef.current.scrollHeight + "px";
-    }
-  }, [noteContent]);
-
   useEffect(() => {
     if (isEditingNoteBody && textareaRef.current) {
       textareaRef.current.focus();
@@ -1120,6 +1230,16 @@ export function LibraryTab({
     isDesktopSplitAvailable &&
     Boolean(selectedConversation);
   const isReaderConversationExpanded = isSplitActive || isConversationExpanded;
+
+  useBoundedTextareaHeight(
+    textareaRef,
+    noteEditorViewportRef,
+    noteEditorScrollViewportRef,
+    noteContent,
+    STANDARD_NOTE_EDITOR_PREFERRED_MIN_HEIGHT,
+    isEditingNoteBody && !isSplitActive && Boolean(selectedNote),
+  );
+
   const canToggleConversationExpanded = !isSplitActive && messageCount > 0;
 
   useEffect(() => {
@@ -3890,8 +4010,8 @@ export function LibraryTab({
             ) : null}
 
             {!isSplitActive && viewMode === "notes" && selectedNote && (
-              <div className="flex-1 bg-bg-primary overflow-y-auto">
-                <div className="max-w-3xl mx-auto px-8 py-6">
+              <div ref={noteEditorScrollViewportRef} className="flex-1 bg-bg-primary overflow-y-auto">
+                <div className="mx-auto flex min-h-full max-w-3xl flex-col px-8 py-6">
                   <div className="mb-4">
                     {editingTitle ? (
                       <input
@@ -3930,25 +4050,27 @@ export function LibraryTab({
                   </div>
 
                   {isEditingNoteBody ? (
-                    <textarea
-                      ref={textareaRef}
-                      value={noteContent}
-                      onChange={(e) => setNoteContent(e.target.value)}
-                      onBlur={() => setIsEditingNoteBody(false)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && event.metaKey) {
-                          event.preventDefault();
-                          setIsEditingNoteBody(false);
-                        }
-                      }}
-                      placeholder="Start writing..."
-                      className="w-full bg-transparent border-none outline-none resize-none text-[13px] leading-[1.7] text-text-primary placeholder:text-text-tertiary mb-12"
-                      style={{
-                        fontFamily:
-                          '"JetBrains Mono", "SF Mono", Menlo, monospace',
-                        minHeight: "240px",
-                      }}
-                    />
+                    <div ref={noteEditorViewportRef} className="mb-12">
+                      <textarea
+                        ref={textareaRef}
+                        value={noteContent}
+                        onChange={(e) => setNoteContent(e.target.value)}
+                        onBlur={() => setIsEditingNoteBody(false)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && event.metaKey) {
+                            event.preventDefault();
+                            setIsEditingNoteBody(false);
+                          }
+                        }}
+                        placeholder="Start writing..."
+                        className="w-full bg-transparent border-none outline-none resize-none overflow-hidden text-[13px] leading-[1.7] text-text-primary placeholder:text-text-tertiary"
+                        style={{
+                          fontFamily:
+                            '"JetBrains Mono", "SF Mono", Menlo, monospace',
+                          minHeight: `${NOTE_EDITOR_FALLBACK_MIN_HEIGHT}px`,
+                        }}
+                      />
+                    </div>
                   ) : (
                     <div
                       role="button"
