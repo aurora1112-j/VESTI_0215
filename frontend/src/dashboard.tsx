@@ -4,6 +4,11 @@ import "katex/dist/katex.min.css";
 import { useCallback, useEffect, useState } from "react";
 import type { UiThemeMode } from "~lib/types";
 import {
+  connectObsidianVault,
+  exportNoteToObsidian,
+  getObsidianVaultStatus,
+} from "~lib/services/obsidianVaultService";
+import {
   applyUiTheme,
   getUiSettings,
   initializeUiTheme,
@@ -43,6 +48,9 @@ import {
   saveNote,
   updateNote,
   deleteNote,
+  importObsidianDirectory,
+  importObsidianZip,
+  getNoteAsset,
   getStorageUsage,
   exportData,
   clearAllData,
@@ -161,6 +169,12 @@ export default function VestiDashboardPage() {
         saveNote,
         updateNote,
         deleteNote,
+        getObsidianVaultStatus,
+        connectObsidianVault,
+        exportNoteToObsidian,
+        importObsidianDirectory,
+        importObsidianZip,
+        getNoteAsset,
         getStorageUsage,
         exportData,
         clearAllData,

@@ -5,6 +5,7 @@ import type {
   Annotation,
   Conversation,
   ConversationMatchSummary,
+  CreateNoteInput,
   DashboardStats,
   DataOverviewSnapshot,
   ExploreAskOptions,
@@ -18,6 +19,9 @@ import type {
   LlmConfig,
   Message,
   Note,
+  NoteAssetRecord,
+  ObsidianImportFileEntry,
+  ObsidianImportSummary,
   Platform,
   RagResponse,
   RelatedConversation,
@@ -25,6 +29,7 @@ import type {
   StorageUsageSnapshot,
   SummaryRecord,
   Topic,
+  UpdateNoteChanges,
   WeeklyReportRecord
 } from "../types"
 import type { ChatSummaryData } from "../types/insightsPresentation"
@@ -311,7 +316,7 @@ export async function getNotes(): Promise<Note[]> {
 }
 
 export async function saveNote(
-  data: Omit<Note, "id" | "created_at" | "updated_at">
+  data: CreateNoteInput
 ): Promise<Note> {
   const result = (await sendRequest({
     type: "CREATE_NOTE",
@@ -323,7 +328,7 @@ export async function saveNote(
 
 export async function updateNote(
   id: number,
-  changes: Partial<Pick<Note, "title" | "content">>
+  changes: UpdateNoteChanges
 ): Promise<Note> {
   const result = (await sendRequest({
     type: "UPDATE_NOTE",
@@ -339,6 +344,44 @@ export async function deleteNote(id: number): Promise<void> {
     target: "offscreen",
     payload: { id }
   })
+}
+
+export async function importObsidianDirectory(
+  vaultName: string,
+  entries: ObsidianImportFileEntry[]
+): Promise<ObsidianImportSummary> {
+  return sendRequest(
+    {
+      type: "IMPORT_OBSIDIAN_DIRECTORY",
+      target: "offscreen",
+      payload: { vaultName, entries }
+    },
+    LONG_RUNNING_TIMEOUT_MS
+  ) as Promise<ObsidianImportSummary>
+}
+
+export async function importObsidianZip(
+  fileName: string,
+  data: ArrayBuffer
+): Promise<ObsidianImportSummary> {
+  return sendRequest(
+    {
+      type: "IMPORT_OBSIDIAN_ZIP",
+      target: "offscreen",
+      payload: { fileName, data }
+    },
+    LONG_RUNNING_TIMEOUT_MS
+  ) as Promise<ObsidianImportSummary>
+}
+
+export async function getNoteAsset(
+  assetId: string
+): Promise<NoteAssetRecord | null> {
+  return sendRequest({
+    type: "GET_NOTE_ASSET",
+    target: "offscreen",
+    payload: { assetId }
+  }) as Promise<NoteAssetRecord | null>
 }
 
 export async function searchConversationIdsByText(

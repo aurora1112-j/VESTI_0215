@@ -22,6 +22,8 @@ It is not the correct home for:
 
 ## Active canonical entries
 
+- `markdown_note_editor_and_obsidian_import_spec.md`
+  - Canonical Library notes contract for the shared CodeMirror Markdown editor, richer note schema, and Obsidian vault export-first behavior.
 - `threads_search_engineering_spec.md`
   - Canonical engineering spec for Threads search contract upgrade, list highlight, Reader navigation, and phased delivery boundaries.
 - `threads_search_state_machine_contract.md`

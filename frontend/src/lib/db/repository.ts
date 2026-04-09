@@ -15,6 +15,7 @@ import type {
   Conversation,
   ConversationMatchSummary,
   ConversationSummaryV2,
+  CreateNoteInput,
   DashboardStats,
   DataOverviewSnapshot,
   ExploreAgentMeta,
@@ -27,6 +28,11 @@ import type {
   InsightStatus,
   Message,
   Note,
+  NoteImportAssetRef,
+  NoteImportMeta,
+  NoteObsidianExportMeta,
+  ObsidianImportFileEntry,
+  ObsidianImportSummary,
   Platform,
   RelatedConversation,
   SearchConversationMatchesQuery,
@@ -34,6 +40,7 @@ import type {
   StorageUsageSnapshot,
   SummaryRecord,
   Topic,
+  UpdateNoteChanges,
   WeeklyLiteReportV1,
   WeeklyReportRecord
 } from "../types"
@@ -50,6 +57,17 @@ import {
   normalizeSearchQuery,
   shouldRunFullTextSearch
 } from "../utils/searchReadiness"
+import {
+  buildNoteExcerpt,
+  computeNoteHash,
+  extractFrontmatterTitle,
+  parseNoteFrontmatter,
+  updateFrontmatterTitle
+} from "../notes/markdown"
+import {
+  prepareObsidianDirectoryImport,
+  prepareObsidianZipImport
+} from "../notes/obsidianImport"
 import { db } from "./schema"
 import type {
   AnnotationRecord,
@@ -57,7 +75,9 @@ import type {
   ExploreMessageRecord,
   ExploreSessionRecord,
   MessageRecord,
+  NoteAssetRecord,
   NoteRecord,
+  NoteSourceRecord,
   SummaryRecordRecord,
   TopicRecord,
   WeeklyReportRecordRecord
@@ -1995,10 +2015,214 @@ function toNote(record: NoteRecord & { id: number }): Note {
     id: record.id,
     title: record.title,
     content: record.content,
+    excerpt: record.excerpt ?? buildNoteExcerpt(record.content),
+    hash: record.hash ?? "",
     created_at: record.created_at,
     updated_at: record.updated_at,
-    linked_conversation_ids: record.linked_conversation_ids ?? []
+    linked_conversation_ids: record.linked_conversation_ids ?? [],
+    source_type: record.source_type ?? "native",
+    source_path: record.source_path ?? null,
+    import_meta: record.import_meta ?? null,
+    obsidian_export: record.obsidian_export ?? null
   }
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeLinkedConversationIds(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((item): item is number => typeof item === "number")
+}
+
+function normalizeNoteImportAssets(value: unknown): NoteImportAssetRef[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return []
+    }
+
+    const candidate = item as Record<string, unknown>
+    if (typeof candidate.path !== "string") {
+      return []
+    }
+
+    const kind = candidate.kind === "embed" ? "embed" : "link"
+    const assetId =
+      typeof candidate.asset_id === "string" && candidate.asset_id.trim()
+        ? candidate.asset_id
+        : null
+
+    return [
+      {
+        path: candidate.path,
+        asset_id: assetId,
+        kind
+      } satisfies NoteImportAssetRef
+    ]
+  })
+}
+
+function normalizeNoteImportMeta(value: NoteImportMeta | null | undefined): NoteImportMeta | null {
+  if (!value) {
+    return null
+  }
+
+  return {
+    vault_id: typeof value.vault_id === "string" ? value.vault_id : null,
+    vault_name: typeof value.vault_name === "string" ? value.vault_name : null,
+    relative_path:
+      typeof value.relative_path === "string" ? value.relative_path : null,
+    folder_path: typeof value.folder_path === "string" ? value.folder_path : null,
+    frontmatter:
+      value.frontmatter && typeof value.frontmatter === "object" && !Array.isArray(value.frontmatter)
+        ? value.frontmatter
+        : null,
+    wikilinks: normalizeStringArray(value.wikilinks),
+    embeds: normalizeStringArray(value.embeds),
+    tags: normalizeStringArray(value.tags),
+    assets: normalizeNoteImportAssets(value.assets),
+    source_mtime:
+      typeof value.source_mtime === "number" && Number.isFinite(value.source_mtime)
+        ? value.source_mtime
+        : null,
+    source_file_hash:
+      typeof value.source_file_hash === "string" ? value.source_file_hash : null,
+    last_imported_note_hash:
+      typeof value.last_imported_note_hash === "string"
+        ? value.last_imported_note_hash
+        : null,
+    imported_at:
+      typeof value.imported_at === "number" && Number.isFinite(value.imported_at)
+        ? value.imported_at
+        : null,
+    last_imported_at:
+      typeof value.last_imported_at === "number" && Number.isFinite(value.last_imported_at)
+        ? value.last_imported_at
+        : null,
+    conflict:
+      value.conflict &&
+      typeof value.conflict === "object" &&
+      typeof value.conflict.detected_at === "number" &&
+      typeof value.conflict.incoming_source_file_hash === "string" &&
+      typeof value.conflict.incoming_content === "string"
+        ? {
+            detected_at: value.conflict.detected_at,
+            incoming_source_file_hash: value.conflict.incoming_source_file_hash,
+            incoming_content: value.conflict.incoming_content,
+            incoming_frontmatter:
+              value.conflict.incoming_frontmatter &&
+              typeof value.conflict.incoming_frontmatter === "object" &&
+              !Array.isArray(value.conflict.incoming_frontmatter)
+                ? value.conflict.incoming_frontmatter
+                : null
+          }
+        : null
+  }
+}
+
+function normalizeNoteObsidianExportMeta(
+  value: NoteObsidianExportMeta | null | undefined
+): NoteObsidianExportMeta | null {
+  if (!value) {
+    return null
+  }
+
+  const vaultId =
+    typeof value.vault_id === "string" ? value.vault_id.trim() : ""
+  const relativePath =
+    typeof value.relative_path === "string" ? value.relative_path.trim() : ""
+  const lastExportedAt =
+    typeof value.last_exported_at === "number" &&
+    Number.isFinite(value.last_exported_at)
+      ? value.last_exported_at
+      : null
+
+  if (!vaultId || !relativePath || lastExportedAt === null) {
+    return null
+  }
+
+  return {
+    vault_id: vaultId,
+    relative_path: relativePath,
+    last_exported_at: lastExportedAt
+  }
+}
+
+async function resolveStoredNoteFields(
+  input: CreateNoteInput | UpdateNoteChanges,
+  existing?: NoteRecord & { id: number }
+): Promise<Omit<NoteRecord, "id" | "created_at" | "updated_at">> {
+  let content =
+    typeof input.content === "string" ? input.content : (existing?.content ?? "")
+
+  if (
+    input.content === undefined &&
+    typeof input.title === "string" &&
+    splitNoteSupportsFrontmatter(existing?.content)
+  ) {
+    content = updateFrontmatterTitle(existing?.content ?? "", input.title)
+  }
+
+  const titleFromFrontmatter = extractFrontmatterTitle(content)
+  const fallbackTitle =
+    typeof input.title === "string"
+      ? input.title.trim()
+      : typeof existing?.title === "string"
+        ? existing.title.trim()
+        : ""
+
+  const title = titleFromFrontmatter ?? fallbackTitle || "Untitled"
+  const sourceType = input.source_type ?? existing?.source_type ?? "native"
+  const sourcePath =
+    input.source_path !== undefined
+      ? input.source_path
+      : existing?.source_path ?? null
+  const importMeta =
+    input.import_meta !== undefined
+      ? normalizeNoteImportMeta(input.import_meta)
+      : normalizeNoteImportMeta(existing?.import_meta ?? null)
+  const obsidianExport =
+    input.obsidian_export !== undefined
+      ? normalizeNoteObsidianExportMeta(input.obsidian_export)
+      : normalizeNoteObsidianExportMeta(existing?.obsidian_export ?? null)
+
+  return {
+    title,
+    content,
+    excerpt: buildNoteExcerpt(content),
+    hash: await computeNoteHash(content),
+    linked_conversation_ids:
+      input.linked_conversation_ids !== undefined
+        ? normalizeLinkedConversationIds(input.linked_conversation_ids)
+        : normalizeLinkedConversationIds(existing?.linked_conversation_ids ?? []),
+    source_type: sourceType,
+    source_path: typeof sourcePath === "string" && sourcePath.trim() ? sourcePath : null,
+    import_meta: importMeta,
+    obsidian_export: obsidianExport
+  }
+}
+
+function splitNoteSupportsFrontmatter(content: string | undefined): boolean {
+  if (typeof content !== "string") {
+    return false
+  }
+
+  return parseNoteFrontmatter(content) !== null || content.startsWith("---\n") || content.startsWith("---\r\n")
 }
 
 export async function listNotes(): Promise<Note[]> {
@@ -2010,14 +2234,24 @@ export async function listNotes(): Promise<Note[]> {
     .map(toNote)
 }
 
+export async function getNoteById(id: number): Promise<Note | null> {
+  const record = await db.notes.get(id)
+  if (!record || record.id === undefined) {
+    return null
+  }
+
+  return toNote(record as NoteRecord & { id: number })
+}
+
 export async function createNote(
-  data: Omit<Note, "id" | "created_at" | "updated_at">
+  data: CreateNoteInput
 ): Promise<Note> {
+  await enforceStorageWriteGuard()
+
   const now = Date.now()
+  const resolved = await resolveStoredNoteFields(data)
   const id = await db.notes.add({
-    title: data.title,
-    content: data.content,
-    linked_conversation_ids: data.linked_conversation_ids,
+    ...resolved,
     created_at: now,
     updated_at: now
   })
@@ -2030,9 +2264,21 @@ export async function createNote(
 
 export async function updateNote(
   id: number,
-  changes: Partial<Pick<Note, "title" | "content">>
+  changes: UpdateNoteChanges
 ): Promise<Note> {
-  await db.notes.update(id, { ...changes, updated_at: Date.now() })
+  await enforceStorageWriteGuard()
+
+  const existing = await db.notes.get(id)
+  if (!existing || existing.id === undefined) {
+    throw new Error("Note not found")
+  }
+
+  const resolved = await resolveStoredNoteFields(
+    changes,
+    existing as NoteRecord & { id: number }
+  )
+
+  await db.notes.update(id, { ...resolved, updated_at: Date.now() })
   const record = await db.notes.get(id)
   if (!record || record.id === undefined) {
     throw new Error("Note not found")
@@ -2041,7 +2287,262 @@ export async function updateNote(
 }
 
 export async function deleteNote(id: number): Promise<void> {
+  await enforceStorageWriteGuard()
   await db.notes.delete(id)
+}
+
+export async function setNoteObsidianExportMeta(
+  id: number,
+  exportMeta: NoteObsidianExportMeta | null
+): Promise<Note> {
+  await enforceStorageWriteGuard()
+
+  const existing = await db.notes.get(id)
+  if (!existing || existing.id === undefined) {
+    throw new Error("Note not found")
+  }
+
+  await db.notes.update(id, {
+    obsidian_export: normalizeNoteObsidianExportMeta(exportMeta)
+  })
+
+  const record = await db.notes.get(id)
+  if (!record || record.id === undefined) {
+    throw new Error("Note not found")
+  }
+
+  return toNote(record as NoteRecord & { id: number })
+}
+
+async function findImportedNoteBySourcePath(
+  vaultId: string,
+  relativePath: string
+): Promise<(NoteRecord & { id: number }) | null> {
+  const candidates = await db.notes
+    .where("[source_type+source_path]")
+    .equals(["obsidian", relativePath])
+    .toArray()
+
+  const match = candidates.find(
+    (record): record is NoteRecord & { id: number } =>
+      typeof record.id === "number" && record.import_meta?.vault_id === vaultId
+  )
+
+  return match ?? null
+}
+
+async function resolveVaultSource(
+  name: string,
+  kind: NoteSourceRecord["kind"]
+): Promise<NoteSourceRecord> {
+  const now = Date.now()
+  const existing = await db.note_sources
+    .toCollection()
+    .filter((record) => record.name === name && record.kind === kind)
+    .first()
+
+  if (existing) {
+    const next = {
+      ...existing,
+      updated_at: now
+    }
+    await db.note_sources.put(next)
+    return next
+  }
+
+  const id = `vault_${(await computeNoteHash(`${kind}:${name}`)).slice(0, 16)}`
+  const record: NoteSourceRecord = {
+    id,
+    name,
+    kind,
+    created_at: now,
+    updated_at: now
+  }
+  await db.note_sources.put(record)
+  return record
+}
+
+async function upsertNoteAsset(
+  vaultId: string,
+  asset: {
+    relativePath: string
+    mimeType: string
+    hash: string
+    data: Uint8Array
+  }
+): Promise<{ assetId: string; imported: boolean }> {
+  const existing = await db.note_assets
+    .where("[vault_id+relative_path]")
+    .equals([vaultId, asset.relativePath])
+    .first()
+  const now = Date.now()
+
+  if (existing && existing.hash === asset.hash) {
+    return {
+      assetId: existing.id,
+      imported: false
+    }
+  }
+
+  const nextRecord: NoteAssetRecord = {
+    id: existing?.id ?? generateId("asset"),
+    vault_id: vaultId,
+    relative_path: asset.relativePath,
+    mime_type: asset.mimeType,
+    hash: asset.hash,
+    byte_size: asset.data.byteLength,
+    blob: new Blob([asset.data], { type: asset.mimeType }),
+    created_at: existing?.created_at ?? now,
+    updated_at: now
+  }
+
+  await db.note_assets.put(nextRecord)
+  return {
+    assetId: nextRecord.id,
+    imported: true
+  }
+}
+
+export async function getNoteAsset(
+  assetId: string
+): Promise<NoteAssetRecord | null> {
+  const asset = await db.note_assets.get(assetId)
+  return asset ?? null
+}
+
+export async function importObsidianDirectory(
+  vaultName: string,
+  entries: ObsidianImportFileEntry[]
+): Promise<ObsidianImportSummary> {
+  await enforceStorageWriteGuard()
+  const prepared = await prepareObsidianDirectoryImport(vaultName, entries)
+  return persistPreparedObsidianVault(prepared)
+}
+
+export async function importObsidianZip(
+  fileName: string,
+  data: ArrayBuffer
+): Promise<ObsidianImportSummary> {
+  await enforceStorageWriteGuard()
+  const prepared = await prepareObsidianZipImport(fileName, data)
+  return persistPreparedObsidianVault(prepared)
+}
+
+async function persistPreparedObsidianVault(
+  prepared: Awaited<ReturnType<typeof prepareObsidianDirectoryImport>>
+): Promise<ObsidianImportSummary> {
+  const source = await resolveVaultSource(prepared.name, prepared.kind)
+  const assetIdByPath = new Map<string, string>()
+  let importedAssets = 0
+
+  for (const asset of prepared.assets) {
+    const result = await upsertNoteAsset(source.id, asset)
+    assetIdByPath.set(asset.relativePath, result.assetId)
+    if (result.imported) {
+      importedAssets += 1
+    }
+  }
+
+  let importedNotes = 0
+  let updatedNotes = 0
+  let skippedNotes = 0
+  let conflictedNotes = 0
+  const now = Date.now()
+
+  for (const preparedNote of prepared.notes) {
+    const existing = await findImportedNoteBySourcePath(
+      source.id,
+      preparedNote.relativePath
+    )
+
+    const mappedAssets = preparedNote.importMeta.assets.map((asset) => ({
+      ...asset,
+      asset_id: assetIdByPath.get(asset.path) ?? null
+    }))
+
+    const nextImportMetaBase: NoteImportMeta = {
+      vault_id: source.id,
+      vault_name: source.name,
+      relative_path: preparedNote.relativePath,
+      folder_path: preparedNote.folderPath,
+      frontmatter: preparedNote.importMeta.frontmatter,
+      wikilinks: preparedNote.importMeta.wikilinks,
+      embeds: preparedNote.importMeta.embeds,
+      tags: preparedNote.importMeta.tags,
+      assets: mappedAssets,
+      source_mtime: preparedNote.sourceMtime,
+      source_file_hash: preparedNote.sourceFileHash,
+      last_imported_note_hash: await computeNoteHash(preparedNote.content),
+      imported_at: existing?.import_meta?.imported_at ?? now,
+      last_imported_at: now,
+      conflict: null
+    }
+
+    if (!existing) {
+      await createNote({
+        title: preparedNote.title,
+        content: preparedNote.content,
+        linked_conversation_ids: [],
+        source_type: "obsidian",
+        source_path: preparedNote.relativePath,
+        import_meta: nextImportMetaBase
+      })
+      importedNotes += 1
+      continue
+    }
+
+    if (existing.import_meta?.source_file_hash === preparedNote.sourceFileHash) {
+      skippedNotes += 1
+      continue
+    }
+
+    if (existing.hash === existing.import_meta?.last_imported_note_hash) {
+      await updateNote(existing.id, {
+        title: preparedNote.title,
+        content: preparedNote.content,
+        source_type: "obsidian",
+        source_path: preparedNote.relativePath,
+        import_meta: nextImportMetaBase
+      })
+      updatedNotes += 1
+      continue
+    }
+
+    await updateNote(existing.id, {
+      source_type: "obsidian",
+      source_path: preparedNote.relativePath,
+      import_meta: {
+        ...(normalizeNoteImportMeta(existing.import_meta ?? null) ?? {}),
+        vault_id: source.id,
+        vault_name: source.name,
+        relative_path: preparedNote.relativePath,
+        folder_path: preparedNote.folderPath,
+        frontmatter: preparedNote.importMeta.frontmatter,
+        wikilinks: preparedNote.importMeta.wikilinks,
+        embeds: preparedNote.importMeta.embeds,
+        tags: preparedNote.importMeta.tags,
+        assets: mappedAssets,
+        source_mtime: preparedNote.sourceMtime,
+        conflict: {
+          detected_at: now,
+          incoming_source_file_hash: preparedNote.sourceFileHash,
+          incoming_content: preparedNote.content,
+          incoming_frontmatter: preparedNote.importMeta.frontmatter
+        }
+      }
+    })
+    conflictedNotes += 1
+  }
+
+  return {
+    vaultId: source.id,
+    importedNotes,
+    updatedNotes,
+    skippedNotes,
+    conflictedNotes,
+    importedAssets,
+    unsupportedFiles: prepared.unsupportedFiles
+  }
 }
 
 // ===== Explore (RAG Chat) Operations =====

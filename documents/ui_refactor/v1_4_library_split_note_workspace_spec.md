@@ -44,6 +44,7 @@ Track: `v1.4`
 
 ## Note Editing Contract
 
+- The split note editor shares the same single CodeMirror Markdown editor surface used by `My Notes`.
 - The split note editor uses real debounced autosave rather than waiting for `onBlur`.
 - Title and body share the same autosave cycle.
 - Default debounce window is approximately `700-800ms`.
@@ -52,11 +53,12 @@ Track: `v1.4`
   - switching notes
   - exiting split
   - component unmount
+- Split note resolution only considers `native` notes; imported Obsidian notes do not become conversation notes.
 - The split note header/footer controls in this iteration include:
   - save status
   - `Exit Split`
   - `Delete Note`
-- Note-level Notion export and note archive are out of scope for this pass.
+- Note-level Notion export, Obsidian vault export, and note archive are out of scope for split in this pass; those actions remain in `My Notes`.
 
 ## Existing Library Feature Compatibility
 

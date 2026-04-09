@@ -3,9 +3,13 @@ import type { Table } from "dexie";
 import type {
   Conversation,
   Message,
+  NoteObsidianExportMeta,
+  NoteImportMeta,
+  NoteSourceType,
   SummaryRecord,
   WeeklyReportRecord,
 } from "../types";
+import { buildNoteExcerpt, computeNoteHash } from "../notes/markdown";
 import {
   extractAstPlainText,
   inspectAstStructure,
@@ -37,9 +41,15 @@ export interface NoteRecord {
   id?: number;
   title: string;
   content: string;
+  excerpt: string;
+  hash: string;
   created_at: number;
   updated_at: number;
   linked_conversation_ids: number[];
+  source_type: NoteSourceType;
+  source_path: string | null;
+  import_meta: NoteImportMeta | null;
+  obsidian_export: NoteObsidianExportMeta | null;
 }
 export interface AnnotationRecord {
   id?: number;
@@ -68,6 +78,26 @@ export interface ExploreMessageRecord {
   sources?: string; // JSON serialized RelatedConversation[]
   agentMeta?: string; // JSON serialized ExploreAgentMeta
   timestamp: number;
+}
+
+export interface NoteSourceRecord {
+  id: string;
+  name: string;
+  kind: "directory" | "zip";
+  created_at: number;
+  updated_at: number;
+}
+
+export interface NoteAssetRecord {
+  id: string;
+  vault_id: string;
+  relative_path: string;
+  mime_type: string;
+  hash: string;
+  byte_size: number;
+  blob: Blob;
+  created_at: number;
+  updated_at: number;
 }
 
 function normalizePersistedPlatform(value: unknown): ConversationRecord["platform"] | undefined {
@@ -132,6 +162,8 @@ export class MemoryHubDB extends Dexie {
   topics!: Table<TopicRecord, number>;
   vectors!: Table<VectorRecord, number>;
   notes!: Table<NoteRecord, number>;
+  note_sources!: Table<NoteSourceRecord, string>;
+  note_assets!: Table<NoteAssetRecord, string>;
   annotations!: Table<AnnotationRecord, number>;
   explore_sessions!: Table<ExploreSessionRecord, string>;
   explore_messages!: Table<ExploreMessageRecord, string>;
@@ -502,6 +534,102 @@ export class MemoryHubDB extends Dexie {
               })
             ) {
               record.content_text = canonicalText;
+            }
+          });
+      });
+    this.version(14)
+      .stores({
+        conversations:
+          "++id, platform, title, created_at, updated_at, uuid, source_created_at, turn_count, topic_id, is_starred, [platform+created_at], [platform+uuid], [topic_id+updated_at]",
+        messages:
+          "++id, conversation_id, role, created_at, [conversation_id+created_at]",
+        summaries: "++id, conversationId, createdAt",
+        weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
+        topics:
+          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+        vectors: "++id, conversation_id, text_hash",
+        notes:
+          "++id, created_at, updated_at, source_type, source_path, [source_type+updated_at], [source_type+source_path]",
+        annotations:
+          "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
+        explore_sessions: "id, updatedAt, createdAt",
+        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+      })
+      .upgrade(async (tx) => {
+        const notesTable = tx.table("notes");
+        const records = await notesTable.toArray();
+
+        for (const rawRecord of records) {
+          const record = rawRecord as Partial<NoteRecord>;
+          if (typeof record.id !== "number") {
+            continue;
+          }
+
+          const content = typeof record.content === "string" ? record.content : "";
+          await notesTable.update(record.id, {
+            excerpt: buildNoteExcerpt(content),
+            hash: await computeNoteHash(content),
+            source_type: record.source_type ?? "native",
+            source_path: record.source_path ?? null,
+            import_meta: record.import_meta ?? null,
+            linked_conversation_ids: Array.isArray(record.linked_conversation_ids)
+              ? record.linked_conversation_ids.filter(
+                  (item): item is number => typeof item === "number"
+                )
+              : [],
+          } satisfies Partial<NoteRecord>);
+        }
+      });
+    this.version(15)
+      .stores({
+        conversations:
+          "++id, platform, title, created_at, updated_at, uuid, source_created_at, turn_count, topic_id, is_starred, [platform+created_at], [platform+uuid], [topic_id+updated_at]",
+        messages:
+          "++id, conversation_id, role, created_at, [conversation_id+created_at]",
+        summaries: "++id, conversationId, createdAt",
+        weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
+        topics:
+          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+        vectors: "++id, conversation_id, text_hash",
+        notes:
+          "++id, created_at, updated_at, source_type, source_path, [source_type+updated_at], [source_type+source_path]",
+        note_sources: "id, kind, updated_at, created_at",
+        note_assets:
+          "id, vault_id, relative_path, hash, updated_at, [vault_id+relative_path]",
+        annotations:
+          "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
+        explore_sessions: "id, updatedAt, createdAt",
+        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+      })
+      .upgrade(() => undefined);
+    this.version(16)
+      .stores({
+        conversations:
+          "++id, platform, title, created_at, updated_at, uuid, source_created_at, turn_count, topic_id, is_starred, [platform+created_at], [platform+uuid], [topic_id+updated_at]",
+        messages:
+          "++id, conversation_id, role, created_at, [conversation_id+created_at]",
+        summaries: "++id, conversationId, createdAt",
+        weekly_reports: "++id, rangeStart, rangeEnd, createdAt",
+        topics:
+          "++id, parent_id, name, created_at, updated_at, [parent_id+name]",
+        vectors: "++id, conversation_id, text_hash",
+        notes:
+          "++id, created_at, updated_at, source_type, source_path, [source_type+updated_at], [source_type+source_path]",
+        note_sources: "id, kind, updated_at, created_at",
+        note_assets:
+          "id, vault_id, relative_path, hash, updated_at, [vault_id+relative_path]",
+        annotations:
+          "++id, conversation_id, message_id, created_at, days_after, [conversation_id+message_id], [conversation_id+created_at]",
+        explore_sessions: "id, updatedAt, createdAt",
+        explore_messages: "id, sessionId, timestamp, [sessionId+timestamp]",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("notes")
+          .toCollection()
+          .modify((record: Partial<NoteRecord>) => {
+            if (record.obsidian_export === undefined) {
+              record.obsidian_export = null
             }
           });
       });
