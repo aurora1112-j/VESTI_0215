@@ -19,6 +19,8 @@ import {
   getTopics,
   getWeeklyReport,
   importAllData,
+  importObsidianDirectory,
+  importObsidianZip,
   listAnnotations,
   listConversations,
   listExploreSessions,
@@ -30,6 +32,7 @@ import {
   saveAnnotation,
   searchConversationIdsByText,
   searchConversationMatchesByText,
+  getNoteAsset,
   updateConversation,
   updateConversationTitle,
   updateConversationTopic,
@@ -252,6 +255,24 @@ async function handleRequest(
       case "DELETE_NOTE": {
         await deleteNote(message.payload.id)
         return { ok: true, type: messageType, data: { deleted: true } }
+      }
+      case "IMPORT_OBSIDIAN_DIRECTORY": {
+        const data = await importObsidianDirectory(
+          message.payload.vaultName,
+          message.payload.entries
+        )
+        return { ok: true, type: messageType, data }
+      }
+      case "IMPORT_OBSIDIAN_ZIP": {
+        const data = await importObsidianZip(
+          message.payload.fileName,
+          message.payload.data
+        )
+        return { ok: true, type: messageType, data }
+      }
+      case "GET_NOTE_ASSET": {
+        const data = await getNoteAsset(message.payload.assetId)
+        return { ok: true, type: messageType, data }
       }
       case "SEARCH_CONVERSATION_IDS_BY_TEXT": {
         const data = await searchConversationIdsByText(message.payload.query)

@@ -16,6 +16,7 @@ Track: `v1.4`
 ## Layout Contract
 
 - The current left navigation rail plus middle list column are treated as one `navigation group`.
+- On desktop, the navigation rail width, middle list width, and split note pane width are user-adjustable via draggable vertical dividers.
 - In split, that `navigation group` is hidden by default instead of permanently occupying width.
 - A low-distraction toggle remains in the upper-left corner and opens the navigation group as an overlay.
 - Closing the overlay does not resize or push the reader and note panes.
@@ -37,13 +38,15 @@ Track: `v1.4`
   - ensures the target note has been resolved or created
   - enters split automatically
   - appends the selected text into the right-side note
-- Appended content uses lightweight plain text:
+- Appended content preserves lightweight Markdown structure when the selected reader content contains formatting:
   - add one blank line first if the note is not empty
-  - append only the selected excerpt body
+  - preserve visible headings, emphasis, links, lists, quotes, code fences, and tables when they are present in the selected content
+  - fall back to plain text only when no richer Markdown structure can be reconstructed from the selection
 - This iteration does not add a separate excerpt or anchor persistence table.
 
 ## Note Editing Contract
 
+- The split note editor shares the same single CodeMirror Markdown editor surface used by `My Notes`.
 - The split note editor uses real debounced autosave rather than waiting for `onBlur`.
 - Title and body share the same autosave cycle.
 - Default debounce window is approximately `700-800ms`.
@@ -52,11 +55,12 @@ Track: `v1.4`
   - switching notes
   - exiting split
   - component unmount
+- Split note resolution only considers `native` notes; imported Obsidian notes do not become conversation notes.
 - The split note header/footer controls in this iteration include:
   - save status
   - `Exit Split`
   - `Delete Note`
-- Note-level Notion export and note archive are out of scope for this pass.
+- Note-level Notion export, Obsidian vault export, and note archive are out of scope for split in this pass; those actions remain in `My Notes`.
 
 ## Existing Library Feature Compatibility
 
@@ -68,6 +72,8 @@ Track: `v1.4`
 
 1. `Split View` opens the two-pane workspace.
 2. Text extraction enters split automatically and appends the excerpt.
-3. The navigation group hides by default in split, can be reopened via the toggle, and auto-closes after selecting a conversation.
-4. Autosave persists through the existing `updateNote` path so content survives refreshes and conversation switches.
-5. Deleting the current split note keeps the reader usable and shows the right-side `Create Conversation Note` empty state.
+3. Extracted selections preserve visible Markdown structure when copied into the note.
+4. The navigation group hides by default in split, can be reopened via the toggle, and auto-closes after selecting a conversation.
+5. Desktop vertical pane dividers resize the navigation rail, middle list, and split note pane without breaking the reader flow.
+6. Autosave persists through the existing `updateNote` path so content survives refreshes and conversation switches.
+7. Deleting the current split note keeps the reader usable and shows the right-side `Create Conversation Note` empty state.

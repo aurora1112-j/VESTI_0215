@@ -2,19 +2,14 @@
 
 import {
   createContext,
-  useState,
+  useCallback,
   useEffect,
-  useLayoutEffect,
-  useRef,
-  useMemo,
+  useState,
   useContext,
+  useMemo,
+  useRef,
   type ReactNode,
-  type FocusEvent,
-  type KeyboardEvent,
-  type RefObject,
 } from "react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import {
   BookOpen,
   ArrowLeft,
@@ -44,10 +39,15 @@ import type {
   Message,
   ChatSummaryData,
   Note,
+  NoteAssetRecord,
+  ObsidianImportFileEntry,
+  ObsidianImportSummary,
   UiThemeMode,
 } from "../types";
 import { useLibraryData } from "../contexts/library-data";
 import { getPlatformBadgeStyle, getPlatformLabel } from "../constants/platform";
+import { MarkdownNoteEditor } from "../components/MarkdownNoteEditor";
+import { ResizablePanelDivider } from "../components/ResizablePanelDivider";
 import { StructuredSummaryCard } from "../components/StructuredSummaryCard";
 import { SummaryPipelineProgress } from "../components/SummaryPipelineProgress";
 import type { PipelineStageState } from "../components/SummaryPipelineProgress";
@@ -57,14 +57,16 @@ import {
 } from "../notion-integration";
 import { RichMessageContent } from "../components/RichMessageContent";
 import { ReaderTimestampFooter } from "../components/ReaderTimestampFooter";
+import { useResizableWidth } from "../hooks/use-resizable-width";
+import { useNoteDraft, type NoteSaveStatus } from "../hooks/use-note-draft";
 import { buildMessagePreviewText } from "../lib/messagePackage";
 import { buildReaderTimestampFooterModel } from "../lib/reader-timestamps";
+import { serializeSelectionFragmentToMarkdown } from "../lib/selection-markdown";
 
 type ViewMode = "conversations" | "notes";
 type FolderItem = { name: string; isCustom: boolean; isTag: boolean };
 type FolderMeta = { customFolders: string[] };
 type WorkspaceMode = "single" | "split";
-type NoteSaveStatus = "saved" | "saving" | "unsaved";
 type PendingExcerpt = {
   id: string;
   conversationId: number;
@@ -103,110 +105,145 @@ const LibrarySplitContext = createContext<LibrarySplitContextValue | null>(
   null,
 );
 
-const NOTE_EDITOR_FALLBACK_MIN_HEIGHT = 180;
-const NOTE_EDITOR_VIEWPORT_PADDING = 24;
-const SPLIT_NOTE_EDITOR_PREFERRED_MIN_HEIGHT = 520;
-const STANDARD_NOTE_EDITOR_PREFERRED_MIN_HEIGHT = 240;
+const STANDARD_NOTE_EDITOR_MIN_HEIGHT = 280;
+const SPLIT_NOTE_EDITOR_MIN_HEIGHT = 520;
 
-function syncBoundedTextareaHeight(
-  textareaRef: RefObject<HTMLTextAreaElement | null>,
-  anchorRef: RefObject<HTMLElement | null>,
-  scrollViewportRef: RefObject<HTMLElement | null>,
-  preferredMinHeight: number,
-) {
-  if (typeof window === "undefined") return;
+type ImportedVaultFolderNode = {
+  name: string;
+  path: string;
+  folders: ImportedVaultFolderNode[];
+  notes: Note[];
+  noteCount: number;
+};
 
-  const textarea = textareaRef.current;
-  const anchor = anchorRef.current;
-  const scrollViewport = scrollViewportRef.current;
-  if (!textarea || !anchor || !scrollViewport) return;
+type ImportedVaultNode = {
+  id: string;
+  name: string;
+  folders: ImportedVaultFolderNode[];
+  rootNotes: Note[];
+  noteCount: number;
+};
 
-  const viewportRect = scrollViewport.getBoundingClientRect();
-  const anchorRect = anchor.getBoundingClientRect();
-  const topOffset = Math.max(0, anchorRect.top - viewportRect.top);
-  const availableHeight =
-    scrollViewport.clientHeight - topOffset - NOTE_EDITOR_VIEWPORT_PADDING;
-  const maxHeight = Math.max(
-    NOTE_EDITOR_FALLBACK_MIN_HEIGHT,
-    Math.floor(availableHeight),
-  );
-  const minimumHeight = Math.min(preferredMinHeight, maxHeight);
-
-  textarea.style.height = "auto";
-  textarea.style.maxHeight = `${maxHeight}px`;
-
-  const scrollHeight = textarea.scrollHeight;
-  const nextHeight = Math.max(minimumHeight, Math.min(scrollHeight, maxHeight));
-
-  textarea.style.height = `${nextHeight}px`;
-  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+function compareAlphaNumeric(a: string, b: string): number {
+  return a.localeCompare(b, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
-function useBoundedTextareaHeight(
-  textareaRef: RefObject<HTMLTextAreaElement | null>,
-  anchorRef: RefObject<HTMLElement | null>,
-  scrollViewportRef: RefObject<HTMLElement | null>,
-  value: string,
-  preferredMinHeight: number,
-  enabled = true,
-) {
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    syncBoundedTextareaHeight(
-      textareaRef,
-      anchorRef,
-      scrollViewportRef,
-      preferredMinHeight,
-    );
-  }, [
-    anchorRef,
-    enabled,
-    preferredMinHeight,
-    scrollViewportRef,
-    textareaRef,
-    value,
-  ]);
+function basename(path: string | null | undefined): string {
+  if (!path) return "";
+  const normalized = path.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? normalized;
+}
 
-  useEffect(() => {
-    if (!enabled || typeof window === "undefined") return;
+function buildImportedVaults(notes: Note[]): ImportedVaultNode[] {
+  type MutableFolderNode = {
+    name: string;
+    path: string;
+    children: Map<string, MutableFolderNode>;
+    notes: Note[];
+  };
 
-    let frameId: number | null = null;
-    const scheduleSync = () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
+  type MutableVaultNode = {
+    id: string;
+    name: string;
+    root: MutableFolderNode;
+  };
+
+  const vaults = new Map<string, MutableVaultNode>();
+
+  for (const note of notes) {
+    if (note.source_type !== "obsidian") continue;
+
+    const vaultId = note.import_meta?.vault_id ?? "unknown-vault";
+    const vaultName = note.import_meta?.vault_name ?? "Imported Vault";
+    let vault = vaults.get(vaultId);
+    if (!vault) {
+      vault = {
+        id: vaultId,
+        name: vaultName,
+        root: {
+          name: "",
+          path: "",
+          children: new Map(),
+          notes: [],
+        },
+      };
+      vaults.set(vaultId, vault);
+    }
+
+    const folderSegments = (note.import_meta?.folder_path ?? "")
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    let currentFolder = vault.root;
+    let currentPath = "";
+
+    for (const segment of folderSegments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      const existingFolder = currentFolder.children.get(segment);
+      if (existingFolder) {
+        currentFolder = existingFolder;
+        continue;
       }
-      frameId = window.requestAnimationFrame(() => {
-        frameId = null;
-        syncBoundedTextareaHeight(
-          textareaRef,
-          anchorRef,
-          scrollViewportRef,
-          preferredMinHeight,
-        );
-      });
+
+      const nextFolder: MutableFolderNode = {
+        name: segment,
+        path: currentPath,
+        children: new Map(),
+        notes: [],
+      };
+      currentFolder.children.set(segment, nextFolder);
+      currentFolder = nextFolder;
+    }
+
+    currentFolder.notes.push(note);
+  }
+
+  const finalizeFolder = (
+    folder: MutableFolderNode,
+  ): ImportedVaultFolderNode => {
+    const folders = [...folder.children.values()]
+      .sort((a, b) => compareAlphaNumeric(a.name, b.name))
+      .map(finalizeFolder);
+    const noteCount =
+      folder.notes.length +
+      folders.reduce((sum, child) => sum + child.noteCount, 0);
+
+    return {
+      name: folder.name,
+      path: folder.path,
+      folders,
+      notes: [...folder.notes].sort((a, b) =>
+        compareAlphaNumeric(a.title, b.title),
+      ),
+      noteCount,
     };
+  };
 
-    const anchor = anchorRef.current;
-    const scrollViewport = scrollViewportRef.current;
-    if (!anchor || !scrollViewport) return;
+  return [...vaults.values()]
+    .map((vault) => {
+      const folders = [...vault.root.children.values()]
+        .sort((a, b) => compareAlphaNumeric(a.name, b.name))
+        .map(finalizeFolder);
+      const rootNotes = [...vault.root.notes].sort((a, b) =>
+        compareAlphaNumeric(a.title, b.title),
+      );
 
-    scheduleSync();
-
-    const resizeObserver = new ResizeObserver(scheduleSync);
-    resizeObserver.observe(anchor);
-    resizeObserver.observe(scrollViewport);
-    scrollViewport.addEventListener("scroll", scheduleSync, { passive: true });
-    window.addEventListener("resize", scheduleSync);
-
-    return () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-      resizeObserver.disconnect();
-      scrollViewport.removeEventListener("scroll", scheduleSync);
-      window.removeEventListener("resize", scheduleSync);
-    };
-  }, [anchorRef, enabled, preferredMinHeight, scrollViewportRef, textareaRef]);
+      return {
+        id: vault.id,
+        name: vault.name,
+        folders,
+        rootNotes,
+        noteCount:
+          rootNotes.length +
+          folders.reduce((sum, folder) => sum + folder.noteCount, 0),
+      };
+    })
+    .sort((a, b) => compareAlphaNumeric(a.name, b.name));
 }
 
 function useLibrarySplitContext(): LibrarySplitContextValue {
@@ -277,6 +314,7 @@ type SplitNoteEditorPanelProps = {
   linkedConversations: Conversation[];
   onTitleChange: (value: string) => void;
   onContentChange: (value: string) => void;
+  onSaveRequest: () => void | Promise<void>;
   onAppendExcerpt: (excerpt: PendingExcerpt) => void;
   onCreateConversationNote: () => void | Promise<void>;
   onDeleteCurrentNote: () => void | Promise<void>;
@@ -292,6 +330,7 @@ function SplitNoteEditorPanel({
   linkedConversations,
   onTitleChange,
   onContentChange,
+  onSaveRequest,
   onAppendExcerpt,
   onCreateConversationNote,
   onDeleteCurrentNote,
@@ -304,18 +343,7 @@ function SplitNoteEditorPanel({
     noteSaveStatus,
     exitSplit,
   } = useLibrarySplitContext();
-  const splitTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const splitEditorViewportRef = useRef<HTMLDivElement>(null);
   const splitScrollViewportRef = useRef<HTMLDivElement>(null);
-
-  useBoundedTextareaHeight(
-    splitTextareaRef,
-    splitEditorViewportRef,
-    splitScrollViewportRef,
-    noteContent,
-    SPLIT_NOTE_EDITOR_PREFERRED_MIN_HEIGHT,
-    Boolean(selectedNote),
-  );
 
   useEffect(() => {
     if (!selectedNote || pendingExcerpts.length === 0) return;
@@ -383,27 +411,25 @@ function SplitNoteEditorPanel({
                 className="w-full border-0 bg-transparent px-0 text-2xl font-serif font-normal text-text-primary outline-none placeholder:text-text-tertiary"
               />
 
-              <div ref={splitEditorViewportRef} className="relative mt-6">
-                <textarea
-                  ref={splitTextareaRef}
+              <div className="mt-6">
+                <MarkdownNoteEditor
                   value={noteContent}
-                  onChange={(event) => onContentChange(event.target.value)}
-                  placeholder="Extracted excerpts and your notes will appear here..."
-                  className="w-full resize-none overflow-hidden border-0 bg-transparent px-0 pb-14 text-[13px] leading-[1.75] text-text-primary outline-none placeholder:text-text-tertiary"
-                  style={{
-                    fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
-                    minHeight: `${NOTE_EDITOR_FALLBACK_MIN_HEIGHT}px`,
-                  }}
+                  onChange={onContentChange}
+                  onSaveRequest={onSaveRequest}
+                  placeholderText="Extracted excerpts and your notes will appear here..."
+                  minHeight={SPLIT_NOTE_EDITOR_MIN_HEIGHT}
                 />
-                <button
-                  type="button"
-                  onClick={() => void onDeleteCurrentNote()}
-                  aria-label="Delete note"
-                  title="Delete note"
-                  className="absolute bottom-2 right-0 inline-flex h-8 w-8 items-center justify-center text-[#B42318] transition-colors hover:bg-[#FEF2F2]"
-                >
-                  <Trash2 strokeWidth={1.6} className="h-4 w-4" />
-                </button>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void onDeleteCurrentNote()}
+                    aria-label="Delete note"
+                    title="Delete note"
+                    className="inline-flex h-8 w-8 items-center justify-center text-[#B42318] transition-colors hover:bg-[#FEF2F2]"
+                  >
+                    <Trash2 strokeWidth={1.6} className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="mt-8">
@@ -563,6 +589,36 @@ export function LibraryTab({
   const [hasLinkedNote, setHasLinkedNote] = useState(false);
   const [renameNoteTarget, setRenameNoteTarget] = useState<Note | null>(null);
   const [renameNoteTitle, setRenameNoteTitle] = useState("");
+  const [obsidianActionBusy, setObsidianActionBusy] = useState<number | null>(
+    null,
+  );
+  const [obsidianNotice, setObsidianNotice] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [noteImportBusy, setNoteImportBusy] = useState<"directory" | "zip" | null>(
+    null,
+  );
+  const [noteImportNotice, setNoteImportNotice] = useState<{
+    tone: "success" | "error";
+    message: string;
+    summary?: ObsidianImportSummary;
+  } | null>(null);
+  const [expandedVaultIds, setExpandedVaultIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedFolderPaths, setExpandedFolderPaths] = useState<
+    Record<string, boolean>
+  >({});
+  const [previewedAssetPath, setPreviewedAssetPath] = useState<string | null>(
+    null,
+  );
+  const [previewedAssetUrl, setPreviewedAssetUrl] = useState<string | null>(
+    null,
+  );
+  const [previewedAssetMimeType, setPreviewedAssetMimeType] = useState<
+    string | null
+  >(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("single");
   const [isSplitNavigationOpen, setIsSplitNavigationOpen] = useState(false);
   const [isDesktopSplitAvailable, setIsDesktopSplitAvailable] = useState(false);
@@ -572,39 +628,248 @@ export function LibraryTab({
 
   // Note editing state
   const [editingTitle, setEditingTitle] = useState(false);
-  const [noteTitle, setNoteTitle] = useState("");
-  const [noteContent, setNoteContent] = useState("");
-  const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
-  const [isEditingNoteBody, setIsEditingNoteBody] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const noteEditorViewportRef = useRef<HTMLDivElement>(null);
-  const noteEditorScrollViewportRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const directoryImportInputRef = useRef<HTMLInputElement>(null);
+  const zipImportInputRef = useRef<HTMLInputElement>(null);
   const renameNoteInputRef = useRef<HTMLInputElement>(null);
   const annotationTextareaRef = useRef<HTMLTextAreaElement>(null);
   const annotationSurfaceRef = useRef<HTMLDivElement>(null);
   const annotationDismissInFlightRef = useRef(false);
+  const libraryWorkspaceRef = useRef<HTMLDivElement>(null);
   const annotationTriggerRefs = useRef<Map<number, HTMLButtonElement>>(
     new Map(),
   );
   const messageContentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const conversationPreviewScrollRef = useRef<HTMLDivElement>(null);
-  const notesRef = useRef<Note[]>([]);
-  const notePersistTimerRef = useRef<number | null>(null);
-  const noteHydratingRef = useRef(false);
-  const hydratedNoteIdRef = useRef<number | null>(null);
-  const noteDraftRef = useRef<{
-    noteId: number | null;
-    title: string;
-    content: string;
-  }>({
-    noteId: null,
-    title: "",
-    content: "",
-  });
   const FOLDER_META_KEY = "vesti_folder_meta";
   const NOTION_SETTINGS_KEY = "vesti_notion_settings";
   const [hasNotionExportConfig, setHasNotionExportConfig] = useState(false);
+  const [libraryWorkspaceWidth, setLibraryWorkspaceWidth] = useState(0);
+  const previewedAssetUrlRef = useRef<string | null>(null);
+  const flushPendingNoteSaveRef = useRef<() => Promise<Note | null> | void>(
+    () => undefined,
+  );
+  const selectedNote = useMemo(
+    () => notes.find((note) => note.id === selectedNoteId) ?? null,
+    [notes, selectedNoteId],
+  );
+
+  const persistNoteDraft = async (
+    noteId: number,
+    changes: { title?: string; content?: string },
+  ): Promise<Note> => {
+    if (!storage.updateNote) {
+      throw new Error("Note update is not available.");
+    }
+
+    const updated = await storage.updateNote(noteId, changes);
+    setNotes((prev) =>
+      prev.map((note) => (note.id === updated.id ? updated : note)),
+    );
+    return updated;
+  };
+
+  const {
+    title: noteTitle,
+    content: noteContent,
+    saveStatus: noteSaveStatus,
+    setTitle: setNoteTitle,
+    setContent: setNoteContent,
+    flush: flushPendingNoteSave,
+  } = useNoteDraft({
+    note: selectedNote,
+    persistNote: storage.updateNote ? persistNoteDraft : undefined,
+    debounceMs: 750,
+  });
+  const localNotes = useMemo(
+    () => notes.filter((note) => note.source_type !== "obsidian"),
+    [notes],
+  );
+  const importedVaults = useMemo(() => buildImportedVaults(notes), [notes]);
+  const canUseObsidianVault = Boolean(
+    storage.connectObsidianVault && storage.exportNoteToObsidian,
+  );
+  const sidebarPane = useResizableWidth({
+    storageKey: "vesti.library.sidebar-width",
+    defaultWidth: 200,
+    minWidth: 168,
+    maxWidth: 280,
+  });
+  const listPane = useResizableWidth({
+    storageKey: "vesti.library.list-width",
+    defaultWidth: 320,
+    minWidth: 260,
+    maxWidth: 420,
+  });
+  const splitNotePane = useResizableWidth({
+    storageKey: "vesti.library.split-note-width",
+    defaultWidth: 540,
+    minWidth: 360,
+    direction: -1,
+    getMaxWidth: () => {
+      if (libraryWorkspaceWidth <= 0) {
+        if (typeof window === "undefined") {
+          return 720;
+        }
+
+        return 720;
+      }
+
+      const splitReaderMinWidth = Math.max(
+        280,
+        Math.min(420, Math.round(libraryWorkspaceWidth * 0.4)),
+      );
+
+      return Math.max(
+        420,
+        libraryWorkspaceWidth - splitReaderMinWidth,
+      );
+    },
+  });
+  const navigationGroupWidth = sidebarPane.width + listPane.width;
+
+  useEffect(() => {
+    flushPendingNoteSaveRef.current = flushPendingNoteSave;
+  }, [flushPendingNoteSave]);
+
+  useEffect(() => {
+    const node = libraryWorkspaceRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const updateWidth = () => {
+      setLibraryWorkspaceWidth(node.getBoundingClientRect().width);
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!obsidianNotice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setObsidianNotice((current) =>
+        current?.message === obsidianNotice.message ? null : current,
+      );
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [obsidianNotice]);
+
+  const revokePreviewedAssetUrl = () => {
+    if (previewedAssetUrlRef.current) {
+      URL.revokeObjectURL(previewedAssetUrlRef.current);
+      previewedAssetUrlRef.current = null;
+    }
+  };
+
+  const setPreviewAsset = (
+    url: string | null,
+    mimeType: string | null,
+    assetPath: string | null,
+  ) => {
+    revokePreviewedAssetUrl();
+    previewedAssetUrlRef.current = url;
+    setPreviewedAssetUrl(url);
+    setPreviewedAssetMimeType(mimeType);
+    setPreviewedAssetPath(assetPath);
+  };
+
+  const updateNoteInState = useCallback((updated: Note) => {
+    setNotes((prev) =>
+      prev.map((note) => (note.id === updated.id ? updated : note)),
+    );
+  }, []);
+
+  const handleCreateLocalNote = useCallback(async () => {
+    if (!storage.saveNote) return;
+
+    try {
+      await flushPendingNoteSave();
+      const newNote = await storage.saveNote({
+        title: "New Note",
+        content: "",
+        linked_conversation_ids: selectedConversationId
+          ? [selectedConversationId]
+          : [],
+        source_type: "native",
+      });
+      setNotes((prev) => [newNote, ...prev]);
+      await openNotesView(newNote.id);
+    } catch (error) {
+      console.error("[library] New Note failed", error);
+    }
+  }, [
+    flushPendingNoteSave,
+    openNotesView,
+    selectedConversationId,
+    storage.saveNote,
+  ]);
+
+  const handleExportNoteToObsidian = useCallback(
+    async (note: Note) => {
+      if (!storage.connectObsidianVault || !storage.exportNoteToObsidian) return;
+
+      setObsidianActionBusy(note.id);
+      setObsidianNotice(null);
+
+      try {
+        let nextNote = note;
+
+        if (selectedNoteId === note.id) {
+          const flushed = await flushPendingNoteSave();
+          if (flushed) {
+            nextNote = flushed;
+            updateNoteInState(flushed);
+          } else if (noteSaveStatus === "unsaved") {
+            throw new Error("NOTE_SAVE_REQUIRED_BEFORE_EXPORT");
+          }
+        }
+
+        await storage.connectObsidianVault();
+        const result = await storage.exportNoteToObsidian(nextNote);
+        updateNoteInState(result.note);
+        setObsidianNotice({
+          tone: "success",
+          message: result.vault_name
+            ? `Exported to ${result.vault_name}/${result.relative_path}.`
+            : `Exported to ${result.relative_path}.`,
+        });
+      } catch (error) {
+        console.error("[library] Failed to export note to Obsidian", error);
+        setObsidianNotice({
+          tone: "error",
+          message:
+            error instanceof Error &&
+            error.message === "OBSIDIAN_VAULT_UNSUPPORTED"
+              ? "This browser surface does not support local directory export."
+              : error instanceof Error &&
+                  error.message === "OBSIDIAN_VAULT_PERMISSION_DENIED"
+                ? "Directory selection was cancelled."
+                : error instanceof Error &&
+                    error.message === "NOTE_SAVE_REQUIRED_BEFORE_EXPORT"
+                  ? "Save the current note before exporting it."
+                  : "Could not export this note to Obsidian.",
+        });
+      } finally {
+        setObsidianActionBusy(null);
+      }
+    },
+    [
+      flushPendingNoteSave,
+      noteSaveStatus,
+      selectedNoteId,
+      storage.connectObsidianVault,
+      storage.exportNoteToObsidian,
+      updateNoteInState,
+    ],
+  );
 
   function getInitialStages(): PipelineStageState[] {
     return [
@@ -653,16 +918,28 @@ export function LibraryTab({
   }, [storage]);
 
   useEffect(() => {
-    notesRef.current = notes;
-  }, [notes]);
+    const input = directoryImportInputRef.current;
+    if (!input) return;
+
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+  }, []);
 
   useEffect(() => {
-    noteDraftRef.current = {
-      noteId: selectedNoteId,
-      title: noteTitle,
-      content: noteContent,
-    };
-  }, [noteContent, noteTitle, selectedNoteId]);
+    setExpandedVaultIds((current) => {
+      const next = { ...current };
+      for (const vault of importedVaults) {
+        if (next[vault.id] === undefined) {
+          next[vault.id] = true;
+        }
+      }
+      return next;
+    });
+  }, [importedVaults]);
+
+  useEffect(() => {
+    setPreviewAsset(null, null, null);
+  }, [selectedNoteId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -693,32 +970,6 @@ export function LibraryTab({
     setIsSplitNavigationOpen(false);
     setReaderSelectionAction(null);
   }, [isDesktopSplitAvailable, workspaceMode]);
-
-  useEffect(() => {
-    if (!selectedNoteId) {
-      hydratedNoteIdRef.current = null;
-      noteHydratingRef.current = true;
-      setNoteTitle("");
-      setNoteContent("");
-      setNoteSaveStatus("saved");
-      setIsEditingNoteBody(false);
-      setEditingTitle(false);
-      return;
-    }
-
-    if (hydratedNoteIdRef.current === selectedNoteId) return;
-
-    const note = notes.find((item) => item.id === selectedNoteId);
-    if (!note) return;
-
-    hydratedNoteIdRef.current = selectedNoteId;
-    noteHydratingRef.current = true;
-    setNoteTitle(note.title);
-    setNoteContent(note.content);
-    setNoteSaveStatus("saved");
-    setIsEditingNoteBody(false);
-    setEditingTitle(false);
-  }, [notes, selectedNoteId]);
 
   const persistFolderMeta = (nextCustom: string[]) => {
     setCustomFolders(nextCustom);
@@ -819,8 +1070,10 @@ export function LibraryTab({
       return;
     }
     setHasLinkedNote(
-      notes.some((note) =>
-        note.linked_conversation_ids.includes(selectedConversationId),
+      notes.some(
+        (note) =>
+          note.source_type === "native" &&
+          note.linked_conversation_ids.includes(selectedConversationId),
       ),
     );
   }, [selectedConversationId, notes]);
@@ -1038,12 +1291,6 @@ export function LibraryTab({
     isConversationExpanded,
   ]);
 
-  useEffect(() => {
-    if (isEditingNoteBody && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [isEditingNoteBody]);
-
   // Focus title input when editing
   useEffect(() => {
     if (editingTitle && titleInputRef.current) {
@@ -1062,7 +1309,6 @@ export function LibraryTab({
   const selectedConversation = conversations.find(
     (c) => c.id === selectedConversationId,
   );
-  const selectedNote = notes.find((n) => n.id === selectedNoteId);
   const activeAnnotationMessage =
     activeAnnotationMessageId !== null
       ? messages.find((message) => message.id === activeAnnotationMessageId) ??
@@ -1115,14 +1361,6 @@ export function LibraryTab({
     messages.length > 0
       ? messages[0].created_at
       : selectedConversation?.updated_at;
-  const renderedNoteContent = useMemo(() => {
-    if (!noteContent.trim()) return "";
-    const html = marked.parse(noteContent, {
-      gfm: true,
-      breaks: true,
-    }) as string;
-    return DOMPurify.sanitize(html);
-  }, [noteContent]);
   const normalizeTags = (value: unknown): string[] => {
     if (!Array.isArray(value)) return [];
     return value.filter(
@@ -1231,15 +1469,6 @@ export function LibraryTab({
     Boolean(selectedConversation);
   const isReaderConversationExpanded = isSplitActive || isConversationExpanded;
 
-  useBoundedTextareaHeight(
-    textareaRef,
-    noteEditorViewportRef,
-    noteEditorScrollViewportRef,
-    noteContent,
-    STANDARD_NOTE_EDITOR_PREFERRED_MIN_HEIGHT,
-    isEditingNoteBody && !isSplitActive && Boolean(selectedNote),
-  );
-
   const canToggleConversationExpanded = !isSplitActive && messageCount > 0;
 
   useEffect(() => {
@@ -1262,16 +1491,13 @@ export function LibraryTab({
     selectedConversationId,
   ]);
 
-  function clearPendingNotePersistTimer() {
-    if (notePersistTimerRef.current !== null) {
-      window.clearTimeout(notePersistTimerRef.current);
-      notePersistTimerRef.current = null;
-    }
-  }
-
   function getConversationLinkedNotes(conversationId: number): Note[] {
     return notes
-      .filter((note) => note.linked_conversation_ids.includes(conversationId))
+      .filter(
+        (note) =>
+          note.source_type === "native" &&
+          note.linked_conversation_ids.includes(conversationId),
+      )
       .sort((a, b) => b.updated_at - a.updated_at);
   }
 
@@ -1283,42 +1509,6 @@ export function LibraryTab({
       return selectedNote;
     }
     return getConversationLinkedNotes(conversationId)[0] ?? null;
-  }
-
-  async function flushPendingNoteSave() {
-    clearPendingNotePersistTimer();
-
-    const draft = noteDraftRef.current;
-    if (!draft.noteId || !storage.updateNote) {
-      setNoteSaveStatus("saved");
-      return;
-    }
-
-    const baseline = notesRef.current.find((note) => note.id === draft.noteId);
-    if (!baseline) {
-      setNoteSaveStatus("saved");
-      return;
-    }
-
-    if (baseline.title === draft.title && baseline.content === draft.content) {
-      setNoteSaveStatus("saved");
-      return;
-    }
-
-    setNoteSaveStatus("saving");
-    try {
-      const updated = await storage.updateNote(draft.noteId, {
-        title: draft.title,
-        content: draft.content,
-      });
-      setNotes((prev) =>
-        prev.map((note) => (note.id === updated.id ? updated : note)),
-      );
-      setNoteSaveStatus("saved");
-    } catch (error) {
-      console.error("[library] updateNote failed", error);
-      setNoteSaveStatus("unsaved");
-    }
   }
 
   async function ensureConversationNote(
@@ -1343,6 +1533,7 @@ export function LibraryTab({
       title: conversation?.title ?? "Untitled",
       content: "",
       linked_conversation_ids: [conversationId],
+      source_type: "native",
     });
     setNotes((prev) => [
       createdNote,
@@ -1479,6 +1670,7 @@ export function LibraryTab({
         title,
         content,
         linked_conversation_ids: [selectedConversationId],
+        source_type: "native",
       });
       setNotes((prev) => [
         note as Note,
@@ -1522,9 +1714,6 @@ export function LibraryTab({
       await storage.deleteNote(selectedNote.id);
       setNotes((prev) => prev.filter((note) => note.id !== selectedNote.id));
       setSelectedNoteId(null);
-      setNoteTitle("");
-      setNoteContent("");
-      setNoteSaveStatus("saved");
     } catch (error) {
       console.error("[library] deleteNote failed", error);
     }
@@ -1560,7 +1749,13 @@ export function LibraryTab({
       return;
     }
 
-    const content = selection.toString().replace(/\s+\n/g, "\n").trim();
+    const markdownContent = serializeSelectionFragmentToMarkdown(
+      range.cloneContents(),
+    );
+    const content = (
+      markdownContent ||
+      selection.toString().replace(/\s+\n/g, "\n")
+    ).trim();
     if (!content) {
       setReaderSelectionAction(null);
       return;
@@ -1604,33 +1799,6 @@ export function LibraryTab({
   }
 
   useEffect(() => {
-    if (noteHydratingRef.current) {
-      noteHydratingRef.current = false;
-      return;
-    }
-
-    if (!selectedNoteId || !storage.updateNote) return;
-    const baseline = notesRef.current.find(
-      (note) => note.id === selectedNoteId,
-    );
-    if (!baseline) return;
-
-    if (baseline.title === noteTitle && baseline.content === noteContent) {
-      setNoteSaveStatus("saved");
-      clearPendingNotePersistTimer();
-      return;
-    }
-
-    setNoteSaveStatus("unsaved");
-    clearPendingNotePersistTimer();
-    notePersistTimerRef.current = window.setTimeout(() => {
-      void flushPendingNoteSave();
-    }, 750);
-
-    return () => clearPendingNotePersistTimer();
-  }, [noteContent, noteTitle, selectedNoteId, storage.updateNote]);
-
-  useEffect(() => {
     if (!isSplitActive || !selectedConversationId) return;
 
     const nextNote = resolveConversationSplitNote(selectedConversationId);
@@ -1666,8 +1834,8 @@ export function LibraryTab({
 
   useEffect(() => {
     return () => {
-      clearPendingNotePersistTimer();
-      void flushPendingNoteSave();
+      revokePreviewedAssetUrl();
+      void flushPendingNoteSaveRef.current();
     };
   }, []);
 
@@ -1938,6 +2106,365 @@ export function LibraryTab({
     } catch (error) {
       window.alert((error as Error)?.message ?? "Failed to rename note.");
     }
+  };
+
+  const refreshNotes = async (): Promise<Note[]> => {
+    if (!storage.getNotes) {
+      return notes;
+    }
+
+    const nextNotes = await storage.getNotes();
+    setNotes(nextNotes);
+    return nextNotes;
+  };
+
+  const formatImportNotice = (summary: ObsidianImportSummary): string => {
+    const parts = [
+      `Imported ${summary.importedNotes} note${summary.importedNotes === 1 ? "" : "s"}`,
+      summary.updatedNotes > 0
+        ? `updated ${summary.updatedNotes}`
+        : null,
+      summary.skippedNotes > 0
+        ? `skipped ${summary.skippedNotes}`
+        : null,
+      summary.conflictedNotes > 0
+        ? `conflicts ${summary.conflictedNotes}`
+        : null,
+      summary.importedAssets > 0
+        ? `assets ${summary.importedAssets}`
+        : null,
+    ].filter(Boolean);
+
+    return parts.join(" · ");
+  };
+
+  const clearImportInputs = () => {
+    if (directoryImportInputRef.current) {
+      directoryImportInputRef.current.value = "";
+    }
+    if (zipImportInputRef.current) {
+      zipImportInputRef.current.value = "";
+    }
+  };
+
+  const handleDirectoryImportSelection = async (fileList: FileList | null) => {
+    if (!fileList?.length || !storage.importObsidianDirectory) return;
+
+    setNoteImportBusy("directory");
+    setNoteImportNotice(null);
+
+    try {
+      const files = Array.from(fileList);
+      const entries = await Promise.all(
+        files.map(async (file) => {
+          const relativePath = file.webkitRelativePath || file.name;
+          return {
+            path: relativePath,
+            mime_type: file.type || "application/octet-stream",
+            last_modified: file.lastModified,
+            data: await file.arrayBuffer(),
+          } satisfies ObsidianImportFileEntry;
+        }),
+      );
+      const inferredVaultName =
+        files[0]?.webkitRelativePath?.split("/").filter(Boolean)[0] ??
+        "Obsidian Vault";
+      const summary = await storage.importObsidianDirectory(
+        inferredVaultName,
+        entries,
+      );
+      const nextNotes = await refreshNotes();
+      const firstImportedNote = nextNotes.find(
+        (note) => note.import_meta?.vault_id === summary.vaultId,
+      );
+
+      setExpandedVaultIds((current) => ({
+        ...current,
+        [summary.vaultId]: true,
+      }));
+      setNoteImportNotice({
+        tone: "success",
+        message: formatImportNotice(summary),
+        summary,
+      });
+      setViewMode("notes");
+      if (firstImportedNote) {
+        await openNotesView(firstImportedNote.id);
+      }
+    } catch (error) {
+      setNoteImportNotice({
+        tone: "error",
+        message:
+          (error as Error)?.message ?? "Couldn't import this Obsidian vault.",
+      });
+    } finally {
+      setNoteImportBusy(null);
+      clearImportInputs();
+    }
+  };
+
+  const handleZipImportSelection = async (file: File | null) => {
+    if (!file || !storage.importObsidianZip) return;
+
+    setNoteImportBusy("zip");
+    setNoteImportNotice(null);
+
+    try {
+      const summary = await storage.importObsidianZip(
+        file.name,
+        await file.arrayBuffer(),
+      );
+      const nextNotes = await refreshNotes();
+      const firstImportedNote = nextNotes.find(
+        (note) => note.import_meta?.vault_id === summary.vaultId,
+      );
+
+      setExpandedVaultIds((current) => ({
+        ...current,
+        [summary.vaultId]: true,
+      }));
+      setNoteImportNotice({
+        tone: "success",
+        message: formatImportNotice(summary),
+        summary,
+      });
+      setViewMode("notes");
+      if (firstImportedNote) {
+        await openNotesView(firstImportedNote.id);
+      }
+    } catch (error) {
+      setNoteImportNotice({
+        tone: "error",
+        message:
+          (error as Error)?.message ?? "Couldn't import this Obsidian zip.",
+      });
+    } finally {
+      setNoteImportBusy(null);
+      clearImportInputs();
+    }
+  };
+
+  const toggleVaultExpansion = (vaultId: string) => {
+    setExpandedVaultIds((current) => ({
+      ...current,
+      [vaultId]: !(current[vaultId] ?? true),
+    }));
+  };
+
+  const toggleFolderExpansion = (folderKey: string) => {
+    setExpandedFolderPaths((current) => ({
+      ...current,
+      [folderKey]: !(current[folderKey] ?? true),
+    }));
+  };
+
+  const loadNoteAssetUrl = async (
+    assetId: string,
+  ): Promise<{ asset: NoteAssetRecord; url: string } | null> => {
+    if (!storage.getNoteAsset) {
+      window.alert("Asset preview is not available yet.");
+      return null;
+    }
+
+    const asset = await storage.getNoteAsset(assetId);
+    if (!asset) {
+      window.alert("This attachment is no longer available.");
+      return null;
+    }
+
+    return {
+      asset,
+      url: URL.createObjectURL(asset.blob),
+    };
+  };
+
+  const handlePreviewImportedAsset = async (
+    assetPath: string,
+    assetId: string | null,
+  ) => {
+    if (!assetId) {
+      window.alert("This attachment hasn't been imported yet.");
+      return;
+    }
+
+    const resolved = await loadNoteAssetUrl(assetId);
+    if (!resolved) return;
+
+    setPreviewAsset(resolved.url, resolved.asset.mime_type, assetPath);
+  };
+
+  const handleOpenImportedAsset = async (
+    assetPath: string,
+    assetId: string | null,
+  ) => {
+    if (!assetId) {
+      window.alert("This attachment hasn't been imported yet.");
+      return;
+    }
+
+    const resolved = await loadNoteAssetUrl(assetId);
+    if (!resolved) return;
+
+    const opened = window.open(resolved.url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      setPreviewAsset(resolved.url, resolved.asset.mime_type, assetPath);
+      return;
+    }
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(resolved.url);
+    }, 60_000);
+  };
+
+  const renderNoteListRow = (note: Note, depth = 0) => {
+    const isSelected = note.id === selectedNoteId;
+    const hasLinkedConversations = note.linked_conversation_ids.length > 0;
+    const isExporting = obsidianActionBusy === note.id;
+    const noteSourceLabel =
+      note.source_type === "obsidian"
+        ? note.import_meta?.relative_path ?? note.source_path ?? "Imported"
+        : note.obsidian_export?.relative_path
+          ? note.obsidian_export.relative_path
+          : "Local note";
+
+    return (
+      <div
+        key={note.id}
+        className={`w-full text-left rounded-lg p-3 transition-all duration-200 relative group ${
+          isSelected
+            ? "bg-bg-surface-card-active shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+            : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+        }`}
+        style={{ marginLeft: depth > 0 ? `${depth * 14}px` : undefined }}
+      >
+        <span className="absolute right-3 top-3 text-[11px] font-sans text-text-tertiary">
+          {formatTimeAgo(note.updated_at)}
+        </span>
+        <button
+          type="button"
+          onClick={() => void selectNote(note.id)}
+          className="w-full text-left"
+        >
+          <h3 className="mb-1.5 pr-16 text-sm font-sans font-medium leading-snug text-text-primary">
+            {note.title}
+          </h3>
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
+              isSelected
+                ? "grid-rows-[1fr] opacity-100"
+                : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
+            }`}
+          >
+            <div className="overflow-hidden pb-7">
+              <p className="mb-2 line-clamp-2 text-[13px] font-sans leading-relaxed text-text-secondary">
+                {note.excerpt || "No excerpt yet."}
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-bg-secondary px-2 py-0.5 text-[11px] font-sans text-text-secondary">
+                  {note.source_type === "obsidian" ? "Obsidian" : "Local"}
+                </span>
+                {hasLinkedConversations ? (
+                  <span
+                    title={`Linked to ${note.linked_conversation_ids.length} conversation${
+                      note.linked_conversation_ids.length > 1 ? "s" : ""
+                    }`}
+                    style={{
+                      display: "inline-block",
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      backgroundColor: "#3266AD",
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : null}
+                {note.import_meta?.conflict ? (
+                  <span className="rounded-full bg-[#FEF3F2] px-2 py-0.5 text-[11px] font-sans text-[#B42318]">
+                    Conflict
+                  </span>
+                ) : null}
+                {note.obsidian_export ? (
+                  <span className="rounded-full bg-bg-secondary px-2 py-0.5 text-[11px] font-sans text-text-secondary">
+                    Obsidian
+                  </span>
+                ) : null}
+                <span className="truncate text-[11px] font-sans text-text-tertiary">
+                  {noteSourceLabel}
+                </span>
+              </div>
+            </div>
+          </div>
+        </button>
+        <div
+          className={`absolute right-2 bottom-2 flex items-center gap-1 transition-opacity ${
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              void selectNote(note.id);
+              openNoteRenameDialog(note);
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-surface-card hover:text-text-primary"
+            aria-label={`Rename note ${note.title}`}
+          >
+            <Pencil strokeWidth={1.5} className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void handleNoteDelete(note);
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-bg-surface-card hover:text-[#B42318]"
+            aria-label={`Delete note ${note.title}`}
+          >
+            <Trash2 strokeWidth={1.5} className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderImportedFolderNode = (
+    vaultId: string,
+    folder: ImportedVaultFolderNode,
+    depth = 1,
+  ): ReactNode => {
+    const folderKey = `${vaultId}:${folder.path}`;
+    const isExpanded = expandedFolderPaths[folderKey] ?? true;
+
+    return (
+      <div key={folderKey} className="space-y-1.5">
+        <button
+          type="button"
+          onClick={() => toggleFolderExpansion(folderKey)}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-surface-card"
+          style={{ paddingLeft: `${depth * 14 + 12}px` }}
+        >
+          <ChevronDown
+            strokeWidth={1.5}
+            className={`h-4 w-4 text-text-tertiary transition-transform ${
+              isExpanded ? "" : "-rotate-90"
+            }`}
+          />
+          <span className="flex-1 truncate text-[13px] font-sans text-text-primary">
+            {folder.name}
+          </span>
+          <span className="text-[11px] font-sans text-text-tertiary">
+            {folder.noteCount}
+          </span>
+        </button>
+        {isExpanded ? (
+          <div className="space-y-1.5">
+            {folder.folders.map((childFolder) =>
+              renderImportedFolderNode(vaultId, childFolder, depth + 1),
+            )}
+            {folder.notes.map((note) => renderNoteListRow(note, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   function formatDate(timestamp?: number): string {
@@ -2527,7 +3054,10 @@ export function LibraryTab({
         </div>
       ) : null}
       <LibrarySplitContext.Provider value={splitContextValue}>
-        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div
+          ref={libraryWorkspaceRef}
+          className="relative flex min-h-0 flex-1 overflow-hidden"
+        >
           <SplitNavigationToggle />
           {isSplitActive && isSplitNavigationOpen ? (
             <button
@@ -2540,7 +3070,7 @@ export function LibraryTab({
           <div
             className={`${
               isSplitActive
-                ? "absolute inset-y-0 left-0 z-30 flex w-[520px] max-w-[calc(100%-32px)] overflow-hidden transition-[transform,opacity] duration-300 ease-out"
+                ? "absolute inset-y-0 left-0 z-30 flex overflow-hidden transition-[transform,opacity] duration-300 ease-out"
                 : "flex shrink-0"
             } ${
               isSplitActive
@@ -2549,9 +3079,16 @@ export function LibraryTab({
                   : "-translate-x-[calc(100%+16px)] opacity-0 pointer-events-none"
                 : ""
             }`}
+            style={{
+              width: `${navigationGroupWidth}px`,
+              maxWidth: isSplitActive ? "calc(100% - 32px)" : undefined,
+            }}
           >
             {/* Left Column - Sidebar (200px) */}
-            <aside className="w-[200px] bg-bg-secondary flex flex-col">
+            <aside
+              className="flex shrink-0 flex-col bg-bg-secondary"
+              style={{ width: `${sidebarPane.width}px` }}
+            >
               <div className="px-2 pt-3 pb-2">
                 <button
                   onClick={() => {
@@ -2779,8 +3316,18 @@ export function LibraryTab({
               </div>
             </aside>
 
+            <ResizablePanelDivider
+              ariaLabel="Resize library sidebar"
+              onPointerDown={sidebarPane.handlePointerDown}
+              onNudge={sidebarPane.nudgeWidth}
+              isDragging={sidebarPane.isDragging}
+            />
+
             {/* Middle Column - Conversation/Note List (320px) */}
-            <div className="w-[320px] bg-bg-tertiary flex flex-col">
+            <div
+              className="flex shrink-0 flex-col bg-bg-tertiary"
+              style={{ width: `${listPane.width}px` }}
+            >
               {viewMode === "conversations" ? (
                 <>
                   <div className="px-4 py-3">
@@ -2982,7 +3529,29 @@ export function LibraryTab({
               ) : (
                 <>
                   <div className="px-4 py-3 border-b border-border-subtle">
-                    <div className="flex items-baseline justify-between">
+                    <input
+                      ref={directoryImportInputRef}
+                      type="file"
+                      className="hidden"
+                      multiple
+                      onChange={(event) => {
+                        void handleDirectoryImportSelection(
+                          event.target.files,
+                        );
+                      }}
+                    />
+                    <input
+                      ref={zipImportInputRef}
+                      type="file"
+                      className="hidden"
+                      accept=".zip,application/zip"
+                      onChange={(event) => {
+                        void handleZipImportSelection(
+                          event.target.files?.[0] ?? null,
+                        );
+                      }}
+                    />
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <h2 className="text-lg font-serif font-normal text-text-primary">
                           My Notes
@@ -2991,28 +3560,6 @@ export function LibraryTab({
                           · {notes.length} notes
                         </span>
                       </div>
-                      <button
-                        onClick={async () => {
-                          if (!storage.saveNote) return;
-                          try {
-                            await flushPendingNoteSave();
-                            const newNote = await storage.saveNote({
-                              title: "New Note",
-                              content: "",
-                              linked_conversation_ids: selectedConversationId
-                                ? [selectedConversationId]
-                                : [],
-                            });
-                            setNotes((prev) => [newNote, ...prev]);
-                            await openNotesView(newNote.id);
-                          } catch (error) {
-                            console.error("[library] New Note failed", error);
-                          }
-                        }}
-                        className="px-3 py-1.5 text-[13px] font-sans font-medium text-text-primary bg-bg-surface-card hover:bg-bg-surface-card-hover rounded-md transition-colors"
-                      >
-                        + New Note
-                      </button>
                     </div>
                   </div>
 
@@ -3021,118 +3568,146 @@ export function LibraryTab({
                       <div className="text-[13px] font-sans text-text-tertiary">
                         Loading notes...
                       </div>
-                    ) : (
-                      notes.map((note) => {
-                        const isSelected = note.id === selectedNoteId;
-                        const preview = note.content
-                          .replace(/[#*\[\]]/g, "")
-                          .slice(0, 100);
-                        return (
-                          <div
-                            key={note.id}
-                            className={`w-full text-left p-3 rounded-lg transition-all duration-200 relative group ${
-                              isSelected
-                                ? "bg-bg-surface-card-active shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-                                : "bg-bg-surface-card hover:bg-bg-surface-card-hover hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-                            }`}
-                          >
-                            <span className="absolute right-3 top-3 text-[11px] font-sans text-text-tertiary">
-                              {formatTimeAgo(note.updated_at)}
-                            </span>
+                    ) : notes.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border-subtle bg-bg-surface-card px-4 py-6 text-[13px] font-sans text-text-tertiary">
+                        <div>
+                          Create a local note, then export it to an Obsidian
+                          folder whenever you are ready.
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px]">
+                          {storage.saveNote ? (
                             <button
                               type="button"
-                              onClick={() => void selectNote(note.id)}
-                              className="w-full text-left"
+                              onClick={() => {
+                                void handleCreateLocalNote();
+                              }}
+                              className="font-medium text-text-primary transition-colors hover:text-accent-primary"
                             >
-                              <h3 className="text-sm font-sans font-medium text-text-primary mb-1.5 leading-snug pr-16">
-                                {note.title}
-                              </h3>
-                              <div
-                                className={`grid transition-[grid-template-rows,opacity] duration-150 ease-in-out ${
-                                  isSelected
-                                    ? "grid-rows-[1fr] opacity-100"
-                                    : "grid-rows-[0fr] opacity-0 group-hover:opacity-100 group-hover:grid-rows-[1fr]"
-                                }`}
-                              >
-                                <div className="overflow-hidden pb-7">
-                                  <p className="text-[13px] font-sans text-text-secondary leading-relaxed mb-2 line-clamp-2">
-                                    {preview}
-                                  </p>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {note.linked_conversation_ids.length >
-                                      0 && (
-                                      <span
-                                        title={`Linked to ${note.linked_conversation_ids.length} conversation${
-                                          note.linked_conversation_ids.length >
-                                          1
-                                            ? "s"
-                                            : ""
-                                        }`}
-                                        style={{
-                                          display: "inline-block",
-                                          width: 6,
-                                          height: 6,
-                                          borderRadius: "50%",
-                                          backgroundColor: "#3266AD",
-                                          flexShrink: 0,
-                                        }}
-                                      />
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
+                              Create a note
                             </button>
-                            <div
-                              className={`absolute right-2 bottom-2 flex items-center gap-1 transition-opacity ${
-                                isSelected
-                                  ? "opacity-100"
-                                  : "opacity-0 group-hover:opacity-100"
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void selectNote(note.id);
-                                  openNoteRenameDialog(note);
-                                }}
-                                className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-bg-surface-card transition-colors"
-                                aria-label={`Rename note ${note.title}`}
-                              >
-                                <Pencil strokeWidth={1.5} className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleNoteDelete(note);
-                                }}
-                                className="w-7 h-7 rounded-md flex items-center justify-center text-text-tertiary hover:text-[#B42318] hover:bg-bg-surface-card transition-colors"
-                                aria-label={`Delete note ${note.title}`}
-                              >
-                                <Trash2 strokeWidth={1.5} className="w-4 h-4" />
-                              </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="px-1 pt-1">
+                          <div className="mb-2 flex items-center justify-between px-2">
+                            <span className="text-[11px] font-sans uppercase tracking-[0.16em] text-text-tertiary">
+                              Local Notes
+                            </span>
+                            <div className="flex items-center gap-3">
+                              {storage.saveNote ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleCreateLocalNote();
+                                  }}
+                                  className="text-[11px] font-sans uppercase tracking-[0.16em] text-text-tertiary transition-colors hover:text-text-primary"
+                                >
+                                  New Note
+                                </button>
+                              ) : null}
+                              <span className="text-[11px] font-sans text-text-tertiary">
+                                {localNotes.length}
+                              </span>
                             </div>
                           </div>
-                        );
-                      })
+                          <div className="space-y-1.5">
+                            {localNotes.length > 0 ? (
+                              localNotes.map((note) => renderNoteListRow(note))
+                            ) : (
+                              <div className="rounded-lg bg-bg-surface-card px-3 py-3 text-[13px] font-sans text-text-tertiary">
+                                <div>No local notes yet.</div>
+                                {storage.saveNote ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handleCreateLocalNote();
+                                    }}
+                                    className="mt-2 text-[12px] font-medium text-text-primary transition-colors hover:text-accent-primary"
+                                  >
+                                    Create a note
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {importedVaults.length > 0 ? (
+                          <div className="px-1 pt-4">
+                            <div className="mb-2 px-2 text-[11px] font-sans uppercase tracking-[0.16em] text-text-tertiary">
+                              Imported Vaults
+                            </div>
+                            <div className="space-y-2">
+                              {importedVaults.map((vault) => {
+                                const isExpanded =
+                                  expandedVaultIds[vault.id] ?? true;
+                                return (
+                                  <div
+                                    key={vault.id}
+                                    className="rounded-xl border border-border-subtle bg-bg-surface-card"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleVaultExpansion(vault.id)
+                                      }
+                                      className="flex w-full items-center gap-2 px-3 py-3 text-left"
+                                    >
+                                      <ChevronDown
+                                        strokeWidth={1.5}
+                                        className={`h-4 w-4 text-text-tertiary transition-transform ${
+                                          isExpanded ? "" : "-rotate-90"
+                                        }`}
+                                      />
+                                      <span className="flex-1 truncate text-[13px] font-sans font-medium text-text-primary">
+                                        {vault.name}
+                                      </span>
+                                      <span className="text-[11px] font-sans text-text-tertiary">
+                                        {vault.noteCount}
+                                      </span>
+                                    </button>
+                                    {isExpanded ? (
+                                      <div className="space-y-1.5 border-t border-border-subtle px-2 py-2">
+                                        {vault.rootNotes.map((note) =>
+                                          renderNoteListRow(note, 1),
+                                        )}
+                                        {vault.folders.map((folder) =>
+                                          renderImportedFolderNode(
+                                            vault.id,
+                                            folder,
+                                          ),
+                                        )}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </div>
                 </>
               )}
             </div>
+
+            <ResizablePanelDivider
+              ariaLabel="Resize library list column"
+              onPointerDown={listPane.handlePointerDown}
+              onNudge={listPane.nudgeWidth}
+              isDragging={listPane.isDragging}
+            />
           </div>
 
-          <div
-            className={`min-w-0 flex-1 ${
-              isSplitActive
-                ? "grid grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]"
-                : "flex"
-            }`}
-          >
+          <div className="min-w-0 flex flex-1">
             {/* Right Column - Reader/Editor (flex-1) */}
             {viewMode === "conversations" && selectedConversation && (
               <div
                 className={`min-w-0 bg-bg-primary overflow-y-auto ${
-                  isSplitActive ? "border-r border-border-subtle" : "flex-1"
+                  isSplitActive ? "flex-1" : "flex-1"
                 }`}
               >
                 <div className="max-w-3xl mx-auto px-8 py-6">
@@ -3978,7 +4553,19 @@ export function LibraryTab({
             )}
 
             {isSplitActive && selectedConversation ? (
-              <div className="min-h-0 min-w-0 bg-bg-primary">
+              <ResizablePanelDivider
+                ariaLabel="Resize split note pane"
+                onPointerDown={splitNotePane.handlePointerDown}
+                onNudge={(delta) => splitNotePane.nudgeWidth(-delta)}
+                isDragging={splitNotePane.isDragging}
+              />
+            ) : null}
+
+            {isSplitActive && selectedConversation ? (
+              <div
+                className="min-h-0 shrink-0 bg-bg-primary"
+                style={{ width: `${splitNotePane.width}px` }}
+              >
                 <SplitNoteEditorPanel
                   selectedConversation={selectedConversation}
                   selectedNote={selectedNote}
@@ -4000,6 +4587,7 @@ export function LibraryTab({
                   }
                   onTitleChange={setNoteTitle}
                   onContentChange={setNoteContent}
+                  onSaveRequest={flushPendingNoteSave}
                   onAppendExcerpt={appendExcerptToDraft}
                   onCreateConversationNote={handleCreateConversationNote}
                   onDeleteCurrentNote={handleDeleteCurrentSplitNote}
@@ -4009,122 +4597,274 @@ export function LibraryTab({
               </div>
             ) : null}
 
-            {!isSplitActive && viewMode === "notes" && selectedNote && (
-              <div ref={noteEditorScrollViewportRef} className="flex-1 bg-bg-primary overflow-y-auto">
-                <div className="mx-auto flex min-h-full max-w-3xl flex-col px-8 py-6">
-                  <div className="mb-4">
-                    {editingTitle ? (
-                      <input
-                        ref={titleInputRef}
-                        type="text"
-                        value={noteTitle}
-                        onChange={(e) => setNoteTitle(e.target.value)}
-                        onBlur={() => setEditingTitle(false)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") setEditingTitle(false);
-                          if (e.key === "Escape") {
-                            setNoteTitle(selectedNote.title);
-                            setEditingTitle(false);
-                          }
-                        }}
-                        className="w-full text-2xl font-serif font-normal text-text-primary bg-transparent border-b border-accent-primary outline-none"
-                      />
-                    ) : (
-                      <h1
-                        onClick={() => setEditingTitle(true)}
-                        className="text-2xl font-serif font-normal text-text-primary cursor-text hover:opacity-70 transition-opacity"
-                      >
-                        {noteTitle || selectedNote.title}
-                      </h1>
-                    )}
+            {!isSplitActive && viewMode === "notes" && selectedNote ? (
+              <div className="flex-1 overflow-y-auto bg-bg-primary">
+                <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col px-8 py-6">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      {editingTitle ? (
+                        <input
+                          ref={titleInputRef}
+                          type="text"
+                          value={noteTitle}
+                          onChange={(event) => setNoteTitle(event.target.value)}
+                          onBlur={() => setEditingTitle(false)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") setEditingTitle(false);
+                            if (event.key === "Escape") {
+                              setNoteTitle(selectedNote.title);
+                              setEditingTitle(false);
+                            }
+                          }}
+                          className="w-full border-b border-accent-primary bg-transparent text-2xl font-serif font-normal text-text-primary outline-none"
+                        />
+                      ) : (
+                        <h1
+                          onClick={() => setEditingTitle(true)}
+                          className="cursor-text text-2xl font-serif font-normal text-text-primary transition-opacity hover:opacity-70"
+                        >
+                          {noteTitle || selectedNote.title}
+                        </h1>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center text-[13px] font-sans text-text-secondary mb-6 pb-6 border-b border-border-subtle">
+                  <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border-subtle pb-6 text-[13px] font-sans text-text-secondary">
+                    <span className="rounded-full bg-bg-secondary px-3 py-1 text-[12px] text-text-secondary">
+                      {selectedNote.source_type === "obsidian"
+                        ? "Obsidian"
+                        : "Local"}
+                    </span>
+                    {selectedNote.import_meta?.vault_name ? (
+                      <span className="rounded-full bg-bg-secondary px-3 py-1 text-[12px] text-text-secondary">
+                        {selectedNote.import_meta.vault_name}
+                      </span>
+                    ) : null}
+                    {selectedNote.source_path ? (
+                      <span className="truncate text-[12px] text-text-tertiary">
+                        {selectedNote.source_path}
+                      </span>
+                    ) : null}
+                    {selectedNote.obsidian_export?.relative_path ? (
+                      <span className="truncate rounded-full bg-bg-secondary px-3 py-1 text-[12px] text-text-secondary">
+                        {selectedNote.obsidian_export.relative_path}
+                      </span>
+                    ) : null}
                     <span className="ml-auto">
                       {noteSaveStatus === "saving"
                         ? "Saving..."
                         : noteSaveStatus === "unsaved"
                           ? "Unsaved changes"
-                          : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
+                        : `Updated ${formatTimeAgo(selectedNote.updated_at)}`}
                     </span>
                   </div>
 
-                  {isEditingNoteBody ? (
-                    <div ref={noteEditorViewportRef} className="mb-12">
-                      <textarea
-                        ref={textareaRef}
-                        value={noteContent}
-                        onChange={(e) => setNoteContent(e.target.value)}
-                        onBlur={() => setIsEditingNoteBody(false)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && event.metaKey) {
-                            event.preventDefault();
-                            setIsEditingNoteBody(false);
-                          }
-                        }}
-                        placeholder="Start writing..."
-                        className="w-full bg-transparent border-none outline-none resize-none overflow-hidden text-[13px] leading-[1.7] text-text-primary placeholder:text-text-tertiary"
-                        style={{
-                          fontFamily:
-                            '"JetBrains Mono", "SF Mono", Menlo, monospace',
-                          minHeight: `${NOTE_EDITOR_FALLBACK_MIN_HEIGHT}px`,
-                        }}
-                      />
+                  {selectedNote.import_meta?.conflict ? (
+                    <div className="mb-5 rounded-xl border border-[#FECDCA] bg-[#FEF3F2] px-4 py-3 text-[13px] font-sans text-[#B42318]">
+                      Source file changed after local edits. Re-import skipped to
+                      avoid overwriting this note.
                     </div>
-                  ) : (
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setIsEditingNoteBody(true)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setIsEditingNoteBody(true);
-                        }
-                      }}
-                      className="mb-12 cursor-text"
-                      style={{ minHeight: "240px" }}
-                    >
-                      {renderedNoteContent ? (
-                        <div
-                          className="prose prose-slate max-w-none text-text-primary"
-                          dangerouslySetInnerHTML={{
-                            __html: renderedNoteContent,
-                          }}
-                        />
-                      ) : (
-                        <div className="text-[13px] font-sans text-text-tertiary">
-                          Start writing...
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  ) : null}
 
-                  <div className="mt-8">
-                    <h3 className="text-[11px] font-sans font-medium text-text-tertiary uppercase tracking-wider mb-3">
+                  <div className="mb-10">
+                    <MarkdownNoteEditor
+                      value={noteContent}
+                      onChange={setNoteContent}
+                      onSaveRequest={flushPendingNoteSave}
+                      placeholderText="Start writing..."
+                      minHeight={STANDARD_NOTE_EDITOR_MIN_HEIGHT}
+                      className="w-full overflow-hidden rounded-2xl border border-border-subtle bg-bg-primary"
+                    />
+                  </div>
+
+                  {selectedNote.source_type === "obsidian" &&
+                  selectedNote.import_meta ? (
+                    <div className="mb-8 space-y-4">
+                      <h3 className="text-[11px] font-sans font-medium uppercase tracking-wider text-text-tertiary">
+                        Import Metadata
+                      </h3>
+                      <div className="rounded-2xl border border-border-subtle bg-bg-surface-card p-4">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-text-tertiary">
+                              Vault Path
+                            </div>
+                            <div className="mt-1 break-all text-[13px] font-sans text-text-primary">
+                              {selectedNote.import_meta.relative_path ??
+                                selectedNote.source_path ??
+                                "Unknown"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-text-tertiary">
+                              Source Hash
+                            </div>
+                            <div className="mt-1 break-all text-[13px] font-sans text-text-primary">
+                              {selectedNote.import_meta.source_file_hash ??
+                                "Unavailable"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {selectedNote.import_meta.tags.map((tag) => (
+                            <MetaChip key={tag}>#{tag}</MetaChip>
+                          ))}
+                          {selectedNote.import_meta.wikilinks.map((link) => (
+                            <MetaChip key={`wikilink:${link}`}>
+                              {`[[${link}]]`}
+                            </MetaChip>
+                          ))}
+                          {selectedNote.import_meta.embeds.map((embed) => (
+                            <MetaChip key={`embed:${embed}`}>
+                              {`![[${embed}]]`}
+                            </MetaChip>
+                          ))}
+                          {selectedNote.import_meta.frontmatter ? (
+                            <MetaChip>Frontmatter</MetaChip>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {selectedNote.import_meta.assets.length > 0 ? (
+                        <div>
+                          <h3 className="mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-text-tertiary">
+                            Attachments
+                          </h3>
+                          <div className="space-y-2">
+                            {selectedNote.import_meta.assets.map((asset) => (
+                              <div
+                                key={`${asset.kind}:${asset.path}`}
+                                className="flex flex-wrap items-center gap-2 rounded-xl border border-border-subtle bg-bg-surface-card px-3 py-3"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-[13px] font-sans text-text-primary">
+                                    {basename(asset.path) || asset.path}
+                                  </div>
+                                  <div className="truncate text-[11px] font-sans text-text-tertiary">
+                                    {asset.path}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handlePreviewImportedAsset(
+                                      asset.path,
+                                      asset.asset_id,
+                                    )
+                                  }
+                                  className="rounded-md bg-bg-primary px-3 py-1.5 text-[12px] font-sans text-text-primary transition-colors hover:bg-bg-secondary"
+                                >
+                                  Preview
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleOpenImportedAsset(
+                                      asset.path,
+                                      asset.asset_id,
+                                    )
+                                  }
+                                  className="rounded-md bg-bg-primary px-3 py-1.5 text-[12px] font-sans text-text-primary transition-colors hover:bg-bg-secondary"
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {previewedAssetUrl && previewedAssetPath ? (
+                            <div className="mt-4 rounded-2xl border border-border-subtle bg-bg-surface-card p-4">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-tertiary">
+                                    Attachment Preview
+                                  </div>
+                                  <div className="mt-1 text-[13px] font-sans text-text-primary">
+                                    {previewedAssetPath}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewAsset(null, null, null)}
+                                  className="rounded-md px-2 py-1 text-[12px] font-sans text-text-secondary transition-colors hover:bg-bg-primary hover:text-text-primary"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              {previewedAssetMimeType?.startsWith("image/") ? (
+                                <img
+                                  src={previewedAssetUrl}
+                                  alt={basename(previewedAssetPath)}
+                                  className="max-h-[360px] w-auto rounded-xl border border-border-subtle object-contain"
+                                />
+                              ) : (
+                                <div className="text-[13px] font-sans text-text-secondary">
+                                  Preview is available for imported images.
+                                  Use Open for other attachment types.
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {canUseObsidianVault ? (
+                    <div className="mb-8 flex flex-col items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleExportNoteToObsidian(selectedNote);
+                        }}
+                        disabled={obsidianActionBusy === selectedNote.id}
+                        className={`rounded-md px-3 py-1.5 text-[13px] font-sans font-medium transition-colors ${
+                          obsidianActionBusy === selectedNote.id
+                            ? "cursor-not-allowed bg-bg-surface-card text-text-tertiary"
+                            : "bg-accent-primary text-bg-primary hover:bg-accent-primary/90"
+                        }`}
+                      >
+                        {obsidianActionBusy === selectedNote.id
+                          ? "Choosing Folder..."
+                          : "Export to Obsidian"}
+                      </button>
+                      {obsidianNotice ? (
+                        <div
+                          className={`text-[12px] font-sans transition-opacity duration-300 ${
+                            obsidianNotice.tone === "success"
+                              ? "text-text-secondary"
+                              : "text-[#B42318]"
+                          }`}
+                        >
+                          {obsidianNotice.message}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-2">
+                    <h3 className="mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-text-tertiary">
                       Linked Conversations
                     </h3>
                     {selectedNote.linked_conversation_ids.length > 0 ? (
                       <div className="space-y-2">
                         {selectedNote.linked_conversation_ids.map((convId) => {
                           const conversation = conversations.find(
-                            (c) => c.id === convId,
+                            (item) => item.id === convId,
                           );
                           if (!conversation) return null;
+
                           return (
                             <button
                               key={convId}
-                              onClick={() =>
-                                switchToConversation(conversation.id)
-                              }
-                              className="w-full flex items-center justify-between p-3 rounded-lg bg-bg-surface-card hover:bg-bg-surface-card-hover transition-colors"
+                              onClick={() => switchToConversation(conversation.id)}
+                              className="flex w-full items-center justify-between rounded-lg bg-bg-surface-card p-3 transition-colors hover:bg-bg-surface-card-hover"
                             >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <span className="text-[13px] font-sans text-text-primary truncate">
+                              <div className="min-w-0 flex-1 text-left">
+                                <span className="truncate text-[13px] font-sans text-text-primary">
                                   {conversation.title}
                                 </span>
                               </div>
-                              <span className="text-xs font-sans text-accent-primary font-medium">
+                              <span className="text-xs font-sans font-medium text-accent-primary">
                                 Preview →
                               </span>
                             </button>
@@ -4132,24 +4872,31 @@ export function LibraryTab({
                         })}
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-bg-surface-card">
-                        <span className="text-[13px] font-sans text-text-tertiary">
-                          No linked conversations
-                        </span>
-                        <button
-                          onClick={() =>
-                            console.log("[dashboard] Link a conversation")
-                          }
-                          className="text-xs font-sans text-accent-primary"
-                        >
-                          + Link a conversation
-                        </button>
+                      <div className="rounded-lg bg-bg-surface-card p-3 text-[13px] font-sans text-text-tertiary">
+                        No linked conversations
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-            )}
+            ) : null}
+
+            {!isSplitActive && viewMode === "notes" && !selectedNote ? (
+              <div className="flex flex-1 items-center justify-center bg-bg-primary px-8">
+                <div className="max-w-md text-center">
+                  <div className="text-[11px] font-sans uppercase tracking-[0.18em] text-text-tertiary">
+                    Notes Workspace
+                  </div>
+                  <h2 className="mt-3 text-2xl font-serif font-normal text-text-primary">
+                    Select a note to start editing
+                  </h2>
+                  <p className="mt-3 text-[13px] font-sans leading-relaxed text-text-secondary">
+                    Local notes and imported Obsidian files now share the same
+                    Markdown editor surface.
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
           {renameNoteTarget && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

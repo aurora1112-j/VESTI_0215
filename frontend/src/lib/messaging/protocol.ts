@@ -4,6 +4,7 @@ import type {
   CaptureDecisionMeta,
   Conversation,
   ConversationMatchSummary,
+  CreateNoteInput,
   DashboardStats,
   DataOverviewSnapshot,
   ExploreAskOptions,
@@ -17,10 +18,13 @@ import type {
   ImportDataResult,
   LlmConfig,
   Message,
+  NoteAssetRecord,
   MessageArtifact,
   MessageAttachment,
   MessageCitation,
   Note,
+  ObsidianImportFileEntry,
+  ObsidianImportSummary,
   Platform,
   RagResponse,
   RelatedConversation,
@@ -28,6 +32,7 @@ import type {
   StorageUsageSnapshot,
   SummaryRecord,
   Topic,
+  UpdateNoteChanges,
   WeeklyReportRecord
 } from "../types"
 import type { AstRoot, AstVersion } from "../types/ast"
@@ -331,18 +336,14 @@ export type RequestMessage =
       target: "offscreen"
       via?: "background"
       requestId?: string
-      payload: {
-        title: string
-        content: string
-        linked_conversation_ids: number[]
-      }
+      payload: CreateNoteInput
     }
   | {
       type: "UPDATE_NOTE"
       target: "offscreen"
       via?: "background"
       requestId?: string
-      payload: { id: number; changes: { title?: string; content?: string } }
+      payload: { id: number; changes: UpdateNoteChanges }
     }
   | {
       type: "DELETE_NOTE"
@@ -350,6 +351,27 @@ export type RequestMessage =
       via?: "background"
       requestId?: string
       payload: { id: number }
+    }
+  | {
+      type: "IMPORT_OBSIDIAN_DIRECTORY"
+      target: "offscreen"
+      via?: "background"
+      requestId?: string
+      payload: { vaultName: string; entries: ObsidianImportFileEntry[] }
+    }
+  | {
+      type: "IMPORT_OBSIDIAN_ZIP"
+      target: "offscreen"
+      via?: "background"
+      requestId?: string
+      payload: { fileName: string; data: ArrayBuffer }
+    }
+  | {
+      type: "GET_NOTE_ASSET"
+      target: "offscreen"
+      via?: "background"
+      requestId?: string
+      payload: { assetId: string }
     }
   | {
       type: "SEARCH_CONVERSATION_IDS_BY_TEXT"
@@ -526,6 +548,9 @@ export type ResponseDataMap = {
   CREATE_NOTE: { note: Note }
   UPDATE_NOTE: { note: Note }
   DELETE_NOTE: { deleted: boolean }
+  IMPORT_OBSIDIAN_DIRECTORY: ObsidianImportSummary
+  IMPORT_OBSIDIAN_ZIP: ObsidianImportSummary
+  GET_NOTE_ASSET: NoteAssetRecord | null
   SEARCH_CONVERSATION_IDS_BY_TEXT: number[]
   SEARCH_CONVERSATION_MATCHES_BY_TEXT: ConversationMatchSummary[]
   DELETE_CONVERSATION: { deleted: boolean }

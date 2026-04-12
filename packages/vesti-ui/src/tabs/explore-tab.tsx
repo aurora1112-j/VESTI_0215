@@ -24,6 +24,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { ResizablePanelDivider } from "../components/ResizablePanelDivider";
+import { useResizableWidth } from "../hooks/use-resizable-width";
 import type {
   Conversation,
   ExploreAgentPlan,
@@ -466,6 +468,30 @@ export function ExploreTab({
   const [starterDeckRevision, setStarterDeckRevision] = useState(0);
   const [starterDeckStatus, setStarterDeckStatus] = useState<StarterDeckStatus>("loading");
   const [starterCards, setStarterCards] = useState<StarterPromptCard[]>([]);
+  const sidebarPane = useResizableWidth({
+    storageKey: "vesti.explore.sidebar-width",
+    defaultWidth: 256,
+    minWidth: 216,
+    maxWidth: 360,
+  });
+  const drawerPane = useResizableWidth({
+    storageKey: "vesti.explore.drawer-width",
+    defaultWidth: 390,
+    minWidth: 320,
+    maxWidth: 520,
+    direction: -1,
+    getMaxWidth: () => {
+      if (typeof window === "undefined") {
+        return 520;
+      }
+
+      const availableWidth =
+        window.innerWidth -
+        (sidebarOpen ? sidebarPane.width : 0) -
+        360;
+      return Math.max(320, availableWidth);
+    },
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1342,70 +1368,80 @@ export function ExploreTab({
 
   return (
     <div className="relative flex h-full">
-      <div
-        className={`border-r border-border-subtle bg-bg-tertiary transition-all duration-200 ${
-          sidebarOpen ? "w-64" : "w-0 overflow-hidden"
-        }`}
-      >
-        <div className="flex h-full flex-col">
-          <div className="border-b border-border-subtle p-3">
-            <button
-              onClick={handleNewChat}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors ${
-                themeMode === "dark"
-                  ? "bg-bg-secondary text-text-primary hover:bg-bg-surface-card-hover"
-                  : "bg-accent-primary text-white hover:bg-accent-primary/90"
-              }`}
-            >
-              <MessageSquarePlus className="h-4 w-4" strokeWidth={1.5} />
-              <span className="text-sm font-sans font-medium">New Chat</span>
-            </button>
+      {sidebarOpen ? (
+        <>
+          <div
+            className="shrink-0 bg-bg-tertiary"
+            style={{ width: `${sidebarPane.width}px` }}
+          >
+            <div className="flex h-full flex-col">
+              <div className="border-b border-border-subtle p-3">
+                <button
+                  onClick={handleNewChat}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors ${
+                    themeMode === "dark"
+                      ? "bg-bg-secondary text-text-primary hover:bg-bg-surface-card-hover"
+                      : "bg-accent-primary text-white hover:bg-accent-primary/90"
+                  }`}
+                >
+                  <MessageSquarePlus className="h-4 w-4" strokeWidth={1.5} />
+                  <span className="text-sm font-sans font-medium">New Chat</span>
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto p-2">
+                {sessionsLoading ? (
+                  <div className="py-4 text-center">
+                    <Loader2 className="mx-auto h-5 w-5 animate-spin text-accent-primary" />
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <div className="py-4 text-center text-xs font-sans text-text-tertiary">
+                    No conversations yet
+                  </div>
+                ) : (
+                  <>
+                    {groupedSessions.today.length > 0 && (
+                      <div>
+                        <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
+                          Today
+                        </p>
+                        <div className="space-y-0.5">{groupedSessions.today.map(renderSessionItem)}</div>
+                      </div>
+                    )}
+                    {groupedSessions.yesterday.length > 0 && (
+                      <div>
+                        <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
+                          Yesterday
+                        </p>
+                        <div className="space-y-0.5">
+                          {groupedSessions.yesterday.map(renderSessionItem)}
+                        </div>
+                      </div>
+                    )}
+                    {groupedSessions.earlier.length > 0 && (
+                      <div>
+                        <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
+                          Earlier
+                        </p>
+                        <div className="space-y-0.5">{groupedSessions.earlier.map(renderSessionItem)}</div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-2">
-            {sessionsLoading ? (
-              <div className="py-4 text-center">
-                <Loader2 className="mx-auto h-5 w-5 animate-spin text-accent-primary" />
-              </div>
-            ) : sessions.length === 0 ? (
-              <div className="py-4 text-center text-xs font-sans text-text-tertiary">
-                No conversations yet
-              </div>
-            ) : (
-              <>
-                {groupedSessions.today.length > 0 && (
-                  <div>
-                    <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
-                      Today
-                    </p>
-                    <div className="space-y-0.5">{groupedSessions.today.map(renderSessionItem)}</div>
-                  </div>
-                )}
-                {groupedSessions.yesterday.length > 0 && (
-                  <div>
-                    <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
-                      Yesterday
-                    </p>
-                    <div className="space-y-0.5">
-                      {groupedSessions.yesterday.map(renderSessionItem)}
-                    </div>
-                  </div>
-                )}
-                {groupedSessions.earlier.length > 0 && (
-                  <div>
-                    <p className="px-3 py-1 text-[10px] font-sans uppercase tracking-wider text-text-tertiary">
-                      Earlier
-                    </p>
-                    <div className="space-y-0.5">{groupedSessions.earlier.map(renderSessionItem)}</div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+          <ResizablePanelDivider
+            ariaLabel="Resize Explore sidebar"
+            onPointerDown={sidebarPane.handlePointerDown}
+            onNudge={sidebarPane.nudgeWidth}
+            isDragging={sidebarPane.isDragging}
+          />
+        </>
+      ) : null}
 
-      <div className={`flex min-w-0 flex-1 flex-col bg-bg-primary ${drawerMessage ? "pr-[390px]" : ""}`}>
+      <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
         <div className="flex h-12 items-center justify-between border-b border-border-subtle px-4">
           <div className="flex items-center gap-2">
             <button
@@ -1594,8 +1630,18 @@ export function ExploreTab({
         )}
       </div>
 
-      {drawerMessage && (
-        <aside className="absolute bottom-0 right-0 top-0 z-20 flex w-[390px] flex-col border-l border-border-subtle bg-bg-primary shadow-[0_0_24px_rgba(0,0,0,0.12)]">
+      {drawerMessage ? (
+        <>
+          <ResizablePanelDivider
+            ariaLabel="Resize Explore details drawer"
+            onPointerDown={drawerPane.handlePointerDown}
+            onNudge={(delta) => drawerPane.nudgeWidth(-delta)}
+            isDragging={drawerPane.isDragging}
+          />
+          <aside
+            className="z-20 flex shrink-0 flex-col bg-bg-primary"
+            style={{ width: `${drawerPane.width}px` }}
+          >
           <div className="flex h-12 items-center justify-between border-b border-border-subtle px-3">
             <div className="flex min-w-0 items-center gap-2">
               <Wrench className="h-4 w-4 text-text-secondary" strokeWidth={1.7} />
@@ -1922,8 +1968,9 @@ export function ExploreTab({
               </div>
             )}
           </div>
-        </aside>
-      )}
+          </aside>
+        </>
+      ) : null}
 
       {scopeChooserOpen && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 p-4">

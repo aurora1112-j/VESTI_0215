@@ -472,12 +472,21 @@ export type StorageApi = {
   getSummary?: (conversationId: number) => Promise<ChatSummaryData | null>;
   generateSummary?: (conversationId: number) => Promise<ChatSummaryData>;
   getNotes?: () => Promise<Note[]>;
-  saveNote?: (note: Omit<Note, "id" | "created_at" | "updated_at">) => Promise<Note>;
-  updateNote?: (
-    id: number,
-    changes: Partial<Pick<Note, "title" | "content">>
-  ) => Promise<Note>;
+  saveNote?: (note: CreateNoteInput) => Promise<Note>;
+  updateNote?: (id: number, changes: UpdateNoteChanges) => Promise<Note>;
   deleteNote?: (id: number) => Promise<void>;
+  getObsidianVaultStatus?: () => Promise<ObsidianVaultStatus>;
+  connectObsidianVault?: () => Promise<ObsidianVaultStatus>;
+  exportNoteToObsidian?: (note: Note) => Promise<ObsidianNoteExportResult>;
+  importObsidianDirectory?: (
+    vaultName: string,
+    entries: ObsidianImportFileEntry[]
+  ) => Promise<ObsidianImportSummary>;
+  importObsidianZip?: (
+    fileName: string,
+    data: ArrayBuffer
+  ) => Promise<ObsidianImportSummary>;
+  getNoteAsset?: (assetId: string) => Promise<NoteAssetRecord | null>;
   getStorageUsage?: () => Promise<StorageUsageSnapshot>;
   exportData?: (
     format: ExportFormat
@@ -516,11 +525,134 @@ export interface ChatSummaryData {
   plain_text?: string;
 }
 
+export type NoteSourceType = "native" | "obsidian";
+export type ObsidianImportSourceKind = "directory" | "zip";
+export type NoteImportAssetKind = "link" | "embed";
+
+export interface NoteImportAssetRef {
+  path: string;
+  asset_id: string | null;
+  kind: NoteImportAssetKind;
+}
+
+export interface NoteImportConflict {
+  detected_at: number;
+  incoming_source_file_hash: string;
+  incoming_content: string;
+  incoming_frontmatter: Record<string, unknown> | null;
+}
+
+export interface NoteImportMeta {
+  vault_id: string | null;
+  vault_name: string | null;
+  relative_path: string | null;
+  folder_path: string | null;
+  frontmatter: Record<string, unknown> | null;
+  wikilinks: string[];
+  embeds: string[];
+  tags: string[];
+  assets: NoteImportAssetRef[];
+  source_mtime: number | null;
+  source_file_hash: string | null;
+  last_imported_note_hash: string | null;
+  imported_at: number | null;
+  last_imported_at: number | null;
+  conflict: NoteImportConflict | null;
+}
+
+export interface NoteObsidianExportMeta {
+  vault_id: string;
+  relative_path: string;
+  last_exported_at: number;
+}
+
+export type ObsidianVaultConnectionState =
+  | "not_connected"
+  | "connected"
+  | "needs_reconnect";
+
+export interface ObsidianVaultStatus {
+  state: ObsidianVaultConnectionState;
+  vault_id: string | null;
+  vault_name: string | null;
+}
+
 export interface Note {
   id: number;
   title: string;
   content: string;
+  excerpt: string;
+  hash: string;
   created_at: number;
   updated_at: number;
   linked_conversation_ids: number[];
+  source_type: NoteSourceType;
+  source_path: string | null;
+  import_meta: NoteImportMeta | null;
+  obsidian_export: NoteObsidianExportMeta | null;
+}
+
+export interface CreateNoteInput {
+  title: string;
+  content: string;
+  linked_conversation_ids: number[];
+  source_type?: NoteSourceType;
+  source_path?: string | null;
+  import_meta?: NoteImportMeta | null;
+  obsidian_export?: NoteObsidianExportMeta | null;
+}
+
+export interface UpdateNoteChanges {
+  title?: string;
+  content?: string;
+  linked_conversation_ids?: number[];
+  source_type?: NoteSourceType;
+  source_path?: string | null;
+  import_meta?: NoteImportMeta | null;
+  obsidian_export?: NoteObsidianExportMeta | null;
+}
+
+export interface NoteSourceRecord {
+  id: string;
+  name: string;
+  kind: ObsidianImportSourceKind;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface NoteAssetRecord {
+  id: string;
+  vault_id: string;
+  relative_path: string;
+  mime_type: string;
+  hash: string;
+  byte_size: number;
+  blob: Blob;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ObsidianImportFileEntry {
+  path: string;
+  mime_type: string;
+  last_modified: number;
+  data: ArrayBuffer;
+}
+
+export interface ObsidianImportSummary {
+  vaultId: string;
+  importedNotes: number;
+  updatedNotes: number;
+  skippedNotes: number;
+  conflictedNotes: number;
+  importedAssets: number;
+  unsupportedFiles: string[];
+}
+
+export interface ObsidianNoteExportResult {
+  note: Note;
+  vault_id: string;
+  vault_name: string;
+  relative_path: string;
+  exported_at: number;
 }
